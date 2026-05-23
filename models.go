@@ -213,6 +213,20 @@ func (m Message) Body() string {
 	return body
 }
 
+func (m Message) ImageLink() string {
+	for _, value := range []string{m.ImageURL, m.Image, m.Img} {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (m Message) HasImage() bool {
+	return m.ImageLink() != ""
+}
+
 func (m Message) voiceDuration() int {
 	if m.Duration > 0 {
 		return m.Duration

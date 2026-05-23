@@ -38,3 +38,13 @@ func TestMessageDecodesMixedTimeFields(t *testing.T) {
 		t.Fatalf("Body() = %q", got)
 	}
 }
+
+func TestMessageImageLink(t *testing.T) {
+	msg := Message{ImageURL: "upload/a.png", Image: "ignored", Img: "ignored"}
+	if got := msg.ImageLink(); got != "upload/a.png" {
+		t.Fatalf("ImageLink() = %q", got)
+	}
+	if !msg.HasImage() {
+		t.Fatal("HasImage() = false")
+	}
+}

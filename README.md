@@ -12,6 +12,7 @@ https://cschat.ccccocccc.cc/rpc/UniCsAC.php
 ## Features
 
 - Login and register with PHP session cookie persistence inside the running process.
+- Persist session cookies locally after login so the next launch can restore the session.
 - List friends, groups, and public groups.
 - Open private chats and group chats.
 - Send text messages.
@@ -51,6 +52,18 @@ go telemetry off
 - `F5`: refresh current list/chat
 - `Enter`: send message in chat
 - Error dialogs include a `Copy` button for the full error text.
+
+## Session
+
+After login or register, CsAC-Terminal saves the API cookies to the user config
+directory, usually:
+
+```text
+%APPDATA%\CsAC-Terminal\session.json
+```
+
+On startup it loads that file and validates it with `user/get_info`. Logging out
+removes the saved session file.
 
 ## Notes
 

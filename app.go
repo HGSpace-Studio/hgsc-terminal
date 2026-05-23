@@ -2,32 +2,57 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os/exec"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
 type App struct {
-	client *UniCsACClient
-	ui     *tview.Application
-	pages  *tview.Pages
+	client  *UniCsACClient
+	session *SessionStore
+	ui      *tview.Application
+	pages   *tview.Pages
 
 	user       *User
 	status     *tview.TextView
 	statusText string
+	chatMu     sync.Mutex
+	activeChat *ChatSession
+}
+
+type ChatSession struct {
+	Conv       Conversation
+	View       *tview.TextView
+	Input      *tview.InputField
+	Messages   []Message
+	LastID     int
+	Stop       chan struct{}
+	ImageLinks []string
 }
 
 func NewApp(client *UniCsACClient) *App {
+	session, err := NewSessionStore()
 	return &App{
-		client: client,
-		ui:     tview.NewApplication(),
-		pages:  tview.NewPages(),
+		client:  client,
+		session: sessionOrNil(session, err),
+		ui:      tview.NewApplication(),
+		pages:   tview.NewPages(),
 	}
+}
+
+func sessionOrNil(session *SessionStore, err error) *SessionStore {
+	if err != nil {
+		return nil
+	}
+	return session
 }
 
 func (a *App) Run() error {
@@ -40,11 +65,66 @@ func (a *App) Run() error {
 		return event
 	})
 
-	a.showAuth("")
+	a.showSplash("Checking saved session...")
+	a.trySavedSession()
 	return a.ui.SetRoot(a.pages, true).Run()
 }
 
+func (a *App) showSplash(message string) {
+	a.statusText = message
+	panel := tview.NewTextView()
+	panel.SetDynamicColors(true)
+	panel.SetTextAlign(tview.AlignCenter)
+	panel.SetText("\n[::b]CsAC-Terminal[::-]\n\n" + tview.Escape(message))
+	panel.SetBorder(true).SetTitle(" Starting ")
+
+	root := tview.NewFlex().SetDirection(tview.FlexRow)
+	root.AddItem(nil, 0, 1, false)
+	root.AddItem(centerPrimitive(panel, 64, 8), 8, 0, true)
+	root.AddItem(nil, 0, 1, false)
+
+	a.pages.RemovePage("splash")
+	a.pages.AddPage("splash", root, true, true)
+	a.pages.SwitchToPage("splash")
+}
+
+func (a *App) trySavedSession() {
+	go func() {
+		if a.session == nil {
+			a.ui.QueueUpdateDraw(func() {
+				a.showAuth("Session storage unavailable.")
+			})
+			return
+		}
+		loaded, err := a.session.Load(a.client)
+		if err != nil {
+			_ = a.session.Clear()
+			a.ui.QueueUpdateDraw(func() {
+				a.showAuth("Saved session could not be loaded.")
+			})
+			return
+		}
+		if !loaded {
+			a.ui.QueueUpdateDraw(func() {
+				a.showAuth("")
+			})
+			return
+		}
+		user, err := a.client.CurrentUser()
+		a.ui.QueueUpdateDraw(func() {
+			if err != nil {
+				_ = a.session.Clear()
+				a.showAuth("Saved session expired. Please login.")
+				return
+			}
+			a.user = user
+			a.showHome("Restored saved session.")
+		})
+	}()
+}
+
 func (a *App) showAuth(message string) {
+	a.stopActiveChat()
 	if message != "" {
 		a.statusText = message
 	}
@@ -80,6 +160,7 @@ func (a *App) showAuth(message string) {
 }
 
 func (a *App) showRegister(message string) {
+	a.stopActiveChat()
 	if message != "" {
 		a.statusText = message
 	}
@@ -133,6 +214,9 @@ func (a *App) login(username, password string) {
 				return
 			}
 			a.user = user
+			if err := a.saveSession(); err != nil {
+				a.setStatus("Logged in, but saving session failed: " + err.Error())
+			}
 			a.showHome("Logged in.")
 		})
 	}()
@@ -152,12 +236,16 @@ func (a *App) register(username, nickname, password string) {
 				return
 			}
 			a.user = user
+			if err := a.saveSession(); err != nil {
+				a.setStatus("Registered, but saving session failed: " + err.Error())
+			}
 			a.showHome("Account created and logged in.")
 		})
 	}()
 }
 
 func (a *App) showHome(message string) {
+	a.stopActiveChat()
 	content := tview.NewTextView()
 	content.SetDynamicColors(true)
 	content.SetWrap(true)
@@ -218,6 +306,7 @@ func (a *App) showMain(title string, content tview.Primitive, focus tview.Primit
 	} else {
 		a.ui.SetFocus(menu)
 	}
+	a.refreshUnreadSummary()
 }
 
 func (a *App) headerText(title string) string {
@@ -226,6 +315,27 @@ func (a *App) headerText(title string) string {
 		user = fmt.Sprintf("%s / UID %d", tview.Escape(a.user.Nickname), a.user.UID)
 	}
 	return fmt.Sprintf("[::b]CsAC-Terminal[::-]  [gray]%s[-]  [teal]%s[-]", title, user)
+}
+
+func (a *App) refreshUnreadSummary() {
+	if a.user == nil {
+		return
+	}
+	go func() {
+		conversations, err := a.conversations()
+		a.ui.QueueUpdateDraw(func() {
+			if err != nil {
+				return
+			}
+			total := 0
+			for _, conv := range conversations {
+				total += conv.UnreadCount
+			}
+			if total > 0 {
+				a.setStatus(fmt.Sprintf("Unread messages: %d", total))
+			}
+		})
+	}()
 }
 
 func (a *App) loadConversations() {
@@ -402,40 +512,55 @@ func (a *App) loadPublicGroups() {
 }
 
 func (a *App) openChat(conv Conversation) {
-	a.showChat(conv, nil, "Loading messages...")
+	a.stopActiveChat()
+	session := &ChatSession{
+		Conv: conv,
+		Stop: make(chan struct{}),
+	}
+	a.showChat(session, "Loading messages...")
 	go func() {
 		messages, err := a.loadMessages(conv)
 		a.ui.QueueUpdateDraw(func() {
+			if !a.isActiveChat(session) {
+				return
+			}
 			if err != nil {
 				a.showError("Load messages failed", err)
 				return
 			}
-			a.showChat(conv, messages, "Messages loaded.")
+			session.Messages = mergeMessages(nil, messages)
+			session.LastID = maxMessageID(session.Messages)
+			a.renderChatMessages(session)
+			a.setStatus("Messages loaded. Auto refresh every 4s.")
+			go a.pollChat(session)
 		})
 	}()
 }
 
-func (a *App) showChat(conv Conversation, messages []Message, message string) {
+func (a *App) showChat(session *ChatSession, message string) {
 	if message != "" {
 		a.statusText = message
 	}
+	conv := session.Conv
 
 	header := tview.NewTextView()
 	header.SetDynamicColors(true)
 	header.SetTextAlign(tview.AlignCenter)
-	header.SetText(fmt.Sprintf("[::b]%s[::-]  [gray]%s | Esc back | F5 refresh | Enter send[-]", tview.Escape(conv.Name), conv.Type))
+	header.SetText(fmt.Sprintf("[::b]%s[::-]  [gray]%s | Esc back | F5 refresh | Enter send | /img list[-]", tview.Escape(conv.Name), conv.Type))
 
 	view := tview.NewTextView()
 	view.SetDynamicColors(true)
 	view.SetScrollable(true)
 	view.SetWrap(true)
 	view.SetBorder(true).SetTitle(" Messages ")
-	a.writeMessages(view, messages)
+	session.View = view
+	a.renderChatMessages(session)
 	view.ScrollToEnd()
 
 	input := tview.NewInputField()
 	input.SetLabel("> ")
 	input.SetFieldWidth(0)
+	session.Input = input
 	input.SetDoneFunc(func(key tcell.Key) {
 		if key != tcell.KeyEnter {
 			return
@@ -449,11 +574,16 @@ func (a *App) showChat(conv Conversation, messages []Message, message string) {
 		case "/b":
 			a.showHome("")
 		case "/r":
-			a.openChat(conv)
+			a.refreshChat(session, true)
 		case "/q":
 			a.ui.Stop()
 		case "/clear":
-			a.showChat(conv, nil, "Local message view cleared.")
+			session.Messages = nil
+			session.LastID = 0
+			a.renderChatMessages(session)
+			a.setStatus("Local message view cleared.")
+		case "/img":
+			a.showImageLinks(session)
 		default:
 			if strings.HasPrefix(text, "/") {
 				a.setStatus("Unknown chat command.")
@@ -475,12 +605,13 @@ func (a *App) showChat(conv Conversation, messages []Message, message string) {
 			a.showHome("")
 			return nil
 		case tcell.KeyF5:
-			a.openChat(conv)
+			a.refreshChat(session, true)
 			return nil
 		}
 		return event
 	})
 
+	a.setActiveChat(session)
 	a.pages.RemovePage("chat")
 	a.pages.AddPage("chat", root, true, true)
 	a.pages.SwitchToPage("chat")
@@ -496,7 +627,14 @@ func (a *App) sendChatMessage(conv Conversation, content string) {
 				a.showError("Send failed", err)
 				return
 			}
-			a.openChat(conv)
+			a.chatMu.Lock()
+			session := a.activeChat
+			a.chatMu.Unlock()
+			if session != nil && session.Conv.Type == conv.Type && session.Conv.ID == conv.ID {
+				a.refreshChat(session, true)
+				return
+			}
+			a.setStatus("Message sent.")
 		})
 	}()
 }
@@ -611,9 +749,17 @@ func (a *App) logout() {
 	a.setStatus("Logging out...")
 	go func() {
 		err := a.client.Logout()
+		clearErr := a.clearSession()
 		a.ui.QueueUpdateDraw(func() {
+			if clearErr != nil {
+				a.showError("Clear saved session failed", clearErr)
+				return
+			}
 			if err != nil {
 				a.showError("Logout failed", err)
+				a.user = nil
+				a.statusText = "Local session cleared. Server logout failed."
+				a.showAuth("")
 				return
 			}
 			a.user = nil
@@ -621,6 +767,20 @@ func (a *App) logout() {
 			a.showAuth("")
 		})
 	}()
+}
+
+func (a *App) saveSession() error {
+	if a.session == nil {
+		return nil
+	}
+	return a.session.Save(a.client, a.user)
+}
+
+func (a *App) clearSession() error {
+	if a.session == nil {
+		return nil
+	}
+	return a.session.Clear()
 }
 
 func (a *App) loadMessages(conv Conversation) ([]Message, error) {
@@ -680,6 +840,227 @@ func (a *App) writeMessages(view *tview.TextView, messages []Message) {
 		}
 		fmt.Fprintf(view, "[green]%s%s[-]: %s\n", tview.Escape(sender), flags, tview.Escape(msg.Body()))
 	}
+}
+
+func (a *App) renderChatMessages(session *ChatSession) {
+	if session == nil || session.View == nil {
+		return
+	}
+	session.View.Clear()
+	session.ImageLinks = nil
+	if len(session.Messages) == 0 {
+		fmt.Fprintln(session.View, "[gray]No messages.[-]")
+		return
+	}
+	start := 0
+	if len(session.Messages) > 120 {
+		start = len(session.Messages) - 120
+		fmt.Fprintf(session.View, "[gray]... %d earlier messages hidden ...[-]\n\n", start)
+	}
+	for _, msg := range session.Messages[start:] {
+		ts := msg.Timestamp()
+		if ts != "" {
+			fmt.Fprintf(session.View, "[gray][%s][-] ", tview.Escape(ts))
+		}
+		sender := msg.Sender()
+		if a.user != nil && msg.SenderID() == a.user.UID {
+			sender = "me"
+		}
+		flags := ""
+		if msg.IsMentioned {
+			flags += " @"
+		}
+		if msg.IsEssence {
+			flags += " *"
+		}
+		body := msg.Body()
+		if img := msg.ImageLink(); img != "" {
+			session.ImageLinks = append(session.ImageLinks, normalizeAPIURL(img))
+			body = body + fmt.Sprintf(" [image #%d]", len(session.ImageLinks))
+		}
+		fmt.Fprintf(session.View, "[green]%s%s[-]: %s\n", tview.Escape(sender), flags, tview.Escape(body))
+	}
+	session.View.ScrollToEnd()
+}
+
+func (a *App) pollChat(session *ChatSession) {
+	ticker := time.NewTicker(4 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-session.Stop:
+			return
+		case <-ticker.C:
+			a.refreshChat(session, false)
+		}
+	}
+}
+
+func (a *App) refreshChat(session *ChatSession, manual bool) {
+	if session == nil {
+		return
+	}
+	if manual {
+		a.setStatus("Refreshing messages...")
+	}
+	go func() {
+		messages, err := a.loadMessagesAfter(session.Conv, session.LastID)
+		a.ui.QueueUpdateDraw(func() {
+			if !a.isActiveChat(session) {
+				return
+			}
+			if err != nil {
+				if manual {
+					a.showError("Refresh messages failed", err)
+				} else {
+					a.setStatus("Auto refresh failed: " + err.Error())
+				}
+				return
+			}
+			before := len(session.Messages)
+			session.Messages = mergeMessages(session.Messages, messages)
+			session.LastID = maxMessageID(session.Messages)
+			after := len(session.Messages)
+			a.renderChatMessages(session)
+			if after > before {
+				count := after - before
+				a.setStatus(fmt.Sprintf("New messages: %d in %s", count, session.Conv.Name))
+				_ = a.client.MarkRead(session.Conv, session.LastID)
+			} else if manual {
+				a.setStatus("No new messages.")
+			}
+		})
+	}()
+}
+
+func (a *App) loadMessagesAfter(conv Conversation, lastID int) ([]Message, error) {
+	var (
+		messages []Message
+		err      error
+	)
+	if conv.Type == ConversationGroup {
+		messages, err = a.client.GroupMessagesAfter(conv.ID, lastID)
+	} else {
+		messages, err = a.client.PrivateMessagesAfter(conv.ID, lastID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(messages, func(i, j int) bool {
+		return messages[i].MessageID() < messages[j].MessageID()
+	})
+	return messages, nil
+}
+
+func (a *App) showImageLinks(session *ChatSession) {
+	if session == nil || len(session.ImageLinks) == 0 {
+		a.setStatus("No image links in current chat view.")
+		return
+	}
+	list := tview.NewList()
+	list.SetBorder(true).SetTitle(" Images ")
+	for i, link := range session.ImageLinks {
+		link := link
+		list.AddItem(fmt.Sprintf("#%d", i+1), link, 0, func() {
+			a.showImageAction(link)
+		})
+	}
+	list.AddItem("Close", "", 'q', func() { a.closeModal() })
+	list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEsc {
+			a.closeModal()
+			return nil
+		}
+		return event
+	})
+	a.showModal(list, 96, 18)
+}
+
+func (a *App) showImageAction(link string) {
+	form := tview.NewForm()
+	text := tview.NewTextView()
+	text.SetDynamicColors(true)
+	text.SetWrap(true)
+	text.SetText(tview.Escape(link))
+	form.AddFormItem(text)
+	form.AddButton("Copy", func() {
+		if err := copyToClipboard(link); err != nil {
+			a.setStatus("Copy image link failed: " + err.Error())
+			return
+		}
+		a.setStatus("Copied image link.")
+	})
+	form.AddButton("Open", func() {
+		if err := openExternalURL(link); err != nil {
+			a.setStatus("Open image link failed: " + err.Error())
+			return
+		}
+		a.setStatus("Opened image link.")
+	})
+	form.AddButton("Back", func() {
+		a.closeModal()
+		a.chatMu.Lock()
+		session := a.activeChat
+		a.chatMu.Unlock()
+		if session != nil {
+			a.showImageLinks(session)
+		}
+	})
+	form.AddButton("Close", func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" Image Link ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 96, 11)
+}
+
+func (a *App) setActiveChat(session *ChatSession) {
+	a.chatMu.Lock()
+	defer a.chatMu.Unlock()
+	a.activeChat = session
+}
+
+func (a *App) stopActiveChat() {
+	a.chatMu.Lock()
+	session := a.activeChat
+	a.activeChat = nil
+	a.chatMu.Unlock()
+	if session != nil {
+		close(session.Stop)
+	}
+}
+
+func (a *App) isActiveChat(session *ChatSession) bool {
+	a.chatMu.Lock()
+	defer a.chatMu.Unlock()
+	return a.activeChat == session
+}
+
+func mergeMessages(existing, incoming []Message) []Message {
+	if len(incoming) == 0 {
+		return existing
+	}
+	seen := make(map[int]struct{}, len(existing)+len(incoming))
+	merged := make([]Message, 0, len(existing)+len(incoming))
+	for _, msg := range existing {
+		id := msg.MessageID()
+		if id != 0 {
+			seen[id] = struct{}{}
+		}
+		merged = append(merged, msg)
+	}
+	for _, msg := range incoming {
+		id := msg.MessageID()
+		if id != 0 {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+		}
+		merged = append(merged, msg)
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i].MessageID() < merged[j].MessageID()
+	})
+	return merged
 }
 
 func (a *App) conversations() ([]Conversation, error) {
@@ -799,6 +1180,42 @@ func copyToClipboard(text string) error {
 		return err
 	}
 	return nil
+}
+
+func openExternalURL(rawURL string) error {
+	rawURL = normalizeAPIURL(rawURL)
+	if rawURL == "" {
+		return fmt.Errorf("empty URL")
+	}
+	switch runtime.GOOS {
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
+	case "darwin":
+		return exec.Command("open", rawURL).Start()
+	default:
+		return exec.Command("xdg-open", rawURL).Start()
+	}
+}
+
+func normalizeAPIURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err == nil && u.IsAbs() {
+		return rawURL
+	}
+	base, err := url.Parse(DefaultBaseURL)
+	if err != nil {
+		return rawURL
+	}
+	root := &url.URL{Scheme: base.Scheme, Host: base.Host, Path: "/"}
+	rel, err := url.Parse(strings.TrimLeft(rawURL, "/"))
+	if err != nil {
+		return rawURL
+	}
+	return root.ResolveReference(rel).String()
 }
 
 func (a *App) showModal(primitive tview.Primitive, width, height int) {

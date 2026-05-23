@@ -43,6 +43,37 @@ func NewUniCsACClient(baseURL string) *UniCsACClient {
 	}
 }
 
+func (c *UniCsACClient) BaseURL() string {
+	return c.baseURL
+}
+
+func (c *UniCsACClient) SessionCookies() ([]*http.Cookie, error) {
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if c.http.Jar == nil {
+		return nil, nil
+	}
+	return c.http.Jar.Cookies(u), nil
+}
+
+func (c *UniCsACClient) SetSessionCookies(cookies []*http.Cookie) error {
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return err
+	}
+	if c.http.Jar == nil {
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			return err
+		}
+		c.http.Jar = jar
+	}
+	c.http.Jar.SetCookies(u, cookies)
+	return nil
+}
+
 func (c *UniCsACClient) Login(username, password string) (*User, error) {
 	var out APIResponse
 	if err := c.PostForm("auth/login", url.Values{"username": {username}, "pwd": {password}}, &out); err != nil {
@@ -196,6 +227,10 @@ func (c *UniCsACClient) GroupMessages(roomID, afterID, beforeID, limit int) ([]M
 	return decodeMessages(out), nil
 }
 
+func (c *UniCsACClient) GroupMessagesAfter(roomID, afterID int) ([]Message, error) {
+	return c.GroupMessages(roomID, afterID, 0, 80)
+}
+
 func (c *UniCsACClient) PrivateMessages(friendID, lastID, beforeID, afterID int) ([]Message, error) {
 	values := url.Values{"friend_id": {fmt.Sprint(friendID)}}
 	if lastID > 0 {
@@ -212,6 +247,13 @@ func (c *UniCsACClient) PrivateMessages(friendID, lastID, beforeID, afterID int)
 		return nil, err
 	}
 	return decodeMessages(out), nil
+}
+
+func (c *UniCsACClient) PrivateMessagesAfter(friendID, afterID int) ([]Message, error) {
+	if afterID > 0 {
+		return c.PrivateMessages(friendID, 0, 0, afterID)
+	}
+	return c.PrivateMessages(friendID, 0, 0, 0)
 }
 
 func (c *UniCsACClient) SendGroupMessage(roomID int, content string) error {
