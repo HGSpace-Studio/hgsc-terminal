@@ -55,3 +55,7 @@ go telemetry off
 ## Notes
 
 The API supports images, voice messages, moderation, notices, and profile changes; the current UI focuses on the daily chat flow.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
