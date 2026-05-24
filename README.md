@@ -18,6 +18,7 @@ https://cschat.ccccocccc.cc/rpc/UniCsAC.php
 - Send text messages.
 - Refresh conversations and mark messages as read.
 - Send friend requests.
+- View and handle incoming friend requests.
 - Create groups and apply to public groups.
 - Built on tview/tcell for forms, lists, layouts, input handling, and shortcuts.
 
@@ -52,6 +53,7 @@ go telemetry off
 - `F5`: refresh current list/chat
 - `Enter`: send message in chat
 - Error dialogs include a `Copy` button for the full error text.
+- Main menu includes a friend requests page with agree/refuse actions.
 
 ## Session
 

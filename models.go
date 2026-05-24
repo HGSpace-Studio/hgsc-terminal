@@ -15,6 +15,7 @@ type APIResponse struct {
 	Message  string                     `json:"message"`
 	User     *User                      `json:"user,omitempty"`
 	Friends  []Friend                   `json:"friends,omitempty"`
+	Requests []FriendRequest            `json:"requests,omitempty"`
 	Groups   []Group                    `json:"groups,omitempty"`
 	Room     *Group                     `json:"room,omitempty"`
 	Messages []Message                  `json:"messages,omitempty"`
@@ -41,6 +42,97 @@ type Friend struct {
 	OnlineStatus string `json:"online_status"`
 	LastMsg      string `json:"last_msg"`
 	LastMessage  string `json:"last_message"`
+}
+
+type FriendRequest struct {
+	RequestID  int            `json:"request_id"`
+	ID         int            `json:"id"`
+	FromUID    int            `json:"from_uid"`
+	ToUID      int            `json:"to_uid"`
+	Type       int            `json:"type"`
+	Status     int            `json:"status"`
+	Nickname   string         `json:"nickname"`
+	Username   string         `json:"username"`
+	Avatar     string         `json:"avatar"`
+	Content    string         `json:"content"`
+	Message    string         `json:"message"`
+	Reason     string         `json:"reason"`
+	CreateTime FlexibleString `json:"create_time"`
+	HandleTime FlexibleString `json:"handle_time"`
+	CreatedAt  FlexibleString `json:"created_at"`
+	AddTime    FlexibleString `json:"add_time"`
+}
+
+func (r FriendRequest) RID() int {
+	if r.RequestID != 0 {
+		return r.RequestID
+	}
+	return r.ID
+}
+
+func (r FriendRequest) DisplayName() string {
+	name := strings.TrimSpace(r.Nickname)
+	if name == "" {
+		name = strings.TrimSpace(r.Username)
+	}
+	if name == "" {
+		name = fmt.Sprintf("UID %d", r.FromUID)
+	}
+	return name
+}
+
+func (r FriendRequest) Text() string {
+	msg := strings.TrimSpace(r.Content)
+	if msg == "" {
+		msg = strings.TrimSpace(r.Message)
+	}
+	if msg == "" {
+		msg = strings.TrimSpace(r.Reason)
+	}
+	return msg
+}
+
+func (r FriendRequest) StatusLabel() string {
+	switch r.Status {
+	case 0:
+		return "pending"
+	case 1:
+		return "accepted"
+	case 2:
+		return "refused"
+	default:
+		return fmt.Sprintf("status %d", r.Status)
+	}
+}
+
+func (r FriendRequest) KindLabel() string {
+	switch r.Type {
+	case 1:
+		return "friend"
+	default:
+		return fmt.Sprintf("type %d", r.Type)
+	}
+}
+
+func (r FriendRequest) Timestamp() string {
+	for _, value := range []FlexibleString{r.CreateTime, r.HandleTime, r.CreatedAt, r.AddTime} {
+		text := strings.TrimSpace(string(value))
+		if text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func (r FriendRequest) Summary() string {
+	msg := strings.TrimSpace(r.Message)
+	if msg == "" {
+		msg = strings.TrimSpace(r.Content)
+	}
+	if msg == "" {
+		msg = strings.TrimSpace(r.Reason)
+	}
+	return fmt.Sprintf("[%s/%s] %s", r.KindLabel(), r.StatusLabel(), msg)
 }
 
 func (f Friend) ID() int {

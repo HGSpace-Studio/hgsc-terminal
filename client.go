@@ -209,6 +209,29 @@ func (c *UniCsACClient) SendFriendRequest(uid int, message string) error {
 	return c.PostForm("friend/send_request", values, &out)
 }
 
+func (c *UniCsACClient) FriendRequests() ([]FriendRequest, error) {
+	var out APIResponse
+	if err := c.Get("friend/get_friend_requests", nil, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Requests) > 0 {
+		return out.Requests, nil
+	}
+	if requests := decodeFriendRequests(out); len(requests) > 0 {
+		return requests, nil
+	}
+	return nil, nil
+}
+
+func (c *UniCsACClient) HandleFriendRequest(requestID int, action string) error {
+	values := url.Values{
+		"request_id": {fmt.Sprint(requestID)},
+		"action":     {action},
+	}
+	var out APIResponse
+	return c.PostForm("friend/handle_request", values, &out)
+}
+
 func (c *UniCsACClient) GroupMessages(roomID, afterID, beforeID, limit int) ([]Message, error) {
 	values := url.Values{"room_id": {fmt.Sprint(roomID)}}
 	if afterID > 0 {
@@ -599,6 +622,35 @@ func decodeMessages(out APIResponse) []Message {
 		if json.Unmarshal(raw, &wrapped) == nil {
 			if len(wrapped.Messages) > 0 {
 				return wrapped.Messages
+			}
+			if len(wrapped.List) > 0 {
+				return wrapped.List
+			}
+		}
+	}
+	return nil
+}
+
+func decodeFriendRequests(out APIResponse) []FriendRequest {
+	if len(out.Raw) == 0 {
+		return nil
+	}
+	for _, key := range []string{"requests", "friend_requests", "list", "data"} {
+		raw, ok := out.Raw[key]
+		if !ok {
+			continue
+		}
+		var requests []FriendRequest
+		if json.Unmarshal(raw, &requests) == nil && len(requests) > 0 {
+			return requests
+		}
+		var wrapped struct {
+			Requests []FriendRequest `json:"requests"`
+			List     []FriendRequest `json:"list"`
+		}
+		if json.Unmarshal(raw, &wrapped) == nil {
+			if len(wrapped.Requests) > 0 {
+				return wrapped.Requests
 			}
 			if len(wrapped.List) > 0 {
 				return wrapped.List

@@ -283,6 +283,7 @@ func (a *App) showMain(title string, content tview.Primitive, focus tview.Primit
 	menu.AddItem("Groups", "", 'g', func() { a.loadGroups() })
 	menu.AddItem("Public Groups", "", 'p', func() { a.loadPublicGroups() })
 	menu.AddItem("Add Friend", "", 'a', func() { a.showFriendRequestForm() })
+	menu.AddItem("Friend Requests", "", 'r', func() { a.loadFriendRequests() })
 	menu.AddItem("Create Group", "", 'n', func() { a.showCreateGroupForm() })
 	menu.AddItem("Refresh User", "", 'u', func() { a.refreshUser() })
 	menu.AddItem("Logout", "", 'l', func() { a.logout() })
@@ -423,7 +424,48 @@ func (a *App) loadFriends() {
 					})
 				})
 			}
+			list.AddItem("Friend requests", "Open incoming friend requests.", 0, func() { a.loadFriendRequests() })
 			a.showMain("Friends", list, list, "Friends loaded.")
+		})
+	}()
+}
+
+func (a *App) loadFriendRequests() {
+	a.showMain("Friend Requests", a.textPanel("Friend Requests", "Loading friend requests..."), nil, "Loading friend requests...")
+	go func() {
+		requests, err := a.client.FriendRequests()
+		a.ui.QueueUpdateDraw(func() {
+			if err != nil {
+				a.showError("Load friend requests failed", err)
+				return
+			}
+			list := tview.NewList()
+			list.SetBorder(true).SetTitle(" Friend Requests ")
+			list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+				switch event.Key() {
+				case tcell.KeyEsc:
+					a.showHome("")
+					return nil
+				case tcell.KeyF5:
+					a.loadFriendRequests()
+					return nil
+				}
+				return event
+			})
+			if len(requests) == 0 {
+				list.AddItem("No friend requests", "", 0, nil)
+			}
+			for _, req := range requests {
+				req := req
+				label := req.DisplayName()
+				if req.RID() != 0 {
+					label += fmt.Sprintf(" [#%d]", req.RID())
+				}
+				list.AddItem(label, req.Summary(), 0, func() {
+					a.showFriendRequestDetail(req)
+				})
+			}
+			a.showMain("Friend Requests", list, list, "Friend requests loaded.")
 		})
 	}()
 }
@@ -728,6 +770,67 @@ func (a *App) showJoinGroupForm(group Group) {
 	form.SetButtonsAlign(tview.AlignRight)
 	form.SetBorder(true).SetTitle(" Join " + group.DisplayName() + " ").SetTitleAlign(tview.AlignLeft)
 	a.showModal(form, 68, 11)
+}
+
+func (a *App) showFriendRequestDetail(req FriendRequest) {
+	form := tview.NewForm()
+	details := tview.NewTextView()
+	details.SetDynamicColors(true)
+	details.SetWrap(true)
+	details.SetText(fmt.Sprintf(
+		"[::b]From[::-] %s\n[::b]UID[::-] %d\n[::b]Request ID[::-] %d\n[::b]Type[::-] %s\n[::b]Status[::-] %s\n[::b]Message[::-] %s\n[::b]Time[::-] %s",
+		tview.Escape(req.DisplayName()),
+		req.FromUID,
+		req.RID(),
+		req.KindLabel(),
+		req.StatusLabel(),
+		tview.Escape(req.Text()),
+		tview.Escape(req.Timestamp()),
+	))
+	form.AddFormItem(details)
+	form.AddButton("Agree", func() {
+		a.closeModal()
+		a.setStatus("Accepting friend request...")
+		go func() {
+			err := a.client.HandleFriendRequest(req.RID(), "agree")
+			a.ui.QueueUpdateDraw(func() {
+				if err != nil {
+					a.showError("Accept friend request failed", err)
+					return
+				}
+				a.setStatus("Friend request accepted.")
+				a.loadFriendRequests()
+			})
+		}()
+	})
+	form.AddButton("Refuse", func() {
+		a.closeModal()
+		a.setStatus("Refusing friend request...")
+		go func() {
+			err := a.client.HandleFriendRequest(req.RID(), "refuse")
+			a.ui.QueueUpdateDraw(func() {
+				if err != nil {
+					a.showError("Refuse friend request failed", err)
+					return
+				}
+				a.setStatus("Friend request refused.")
+				a.loadFriendRequests()
+			})
+		}()
+	})
+	form.AddButton("Copy", func() {
+		text := fmt.Sprintf("From: %s\nUID: %d\nRequest ID: %d\nMessage: %s\nTime: %s",
+			req.DisplayName(), req.FromUID, req.RID(), req.Text(), req.Timestamp())
+		if err := copyToClipboard(text); err != nil {
+			a.setStatus("Copy failed: " + err.Error())
+			return
+		}
+		a.setStatus("Copied request details.")
+	})
+	form.AddButton("Back", func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" Friend Request ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 90, 16)
 }
 
 func (a *App) refreshUser() {
