@@ -19,6 +19,7 @@ type App struct {
 	client  *UniCsACClient
 	session *SessionStore
 	config  *ConfigStore
+	cache   *CacheStore
 	ui      *tview.Application
 	pages   *tview.Pages
 
@@ -37,6 +38,8 @@ type ChatSession struct {
 	Input      *tview.InputField
 	Messages   []Message
 	LastID     int
+	ReplyTo    int
+	Mentions   []int
 	Stop       chan struct{}
 	ImageLinks []string
 }
@@ -44,10 +47,12 @@ type ChatSession struct {
 func NewApp(client *UniCsACClient) *App {
 	session, err := NewSessionStore()
 	config, cfg := loadAppConfig()
+	cache, cacheErr := NewCacheStore()
 	return &App{
 		client:  client,
 		session: sessionOrNil(session, err),
 		config:  config,
+		cache:   cacheOrNil(cache, cacheErr),
 		lang:    cfg.Language,
 		ui:      tview.NewApplication(),
 		pages:   tview.NewPages(),
@@ -322,6 +327,8 @@ func (a *App) showMain(title string, content tview.Primitive, focus tview.Primit
 	menu.AddItem(translate(a.lang, "menu.friends"), "", 'f', func() { a.loadFriends() })
 	menu.AddItem(translate(a.lang, "menu.groups"), "", 'g', func() { a.loadGroups() })
 	menu.AddItem(translate(a.lang, "menu.public_groups"), "", 'p', func() { a.loadPublicGroups() })
+	menu.AddItem(translate(a.lang, "menu.search"), "", 's', func() { a.showSearch() })
+	menu.AddItem(translate(a.lang, "menu.join_group"), "", 'j', func() { a.showJoinGroupEntryForm() })
 	menu.AddItem(translate(a.lang, "menu.add_friend"), "", 'a', func() { a.showFriendRequestForm() })
 	menu.AddItem(translate(a.lang, "menu.friend_requests"), "", 'r', func() { a.loadFriendRequests() })
 	menu.AddItem(translate(a.lang, "menu.notices"), "", 'o', func() { a.loadNotices() })
@@ -440,8 +447,16 @@ func (a *App) loadConversations() {
 		conversations, err := a.conversations()
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
+				if cached := cachedConversationsOrNil(a.cache); len(cached) > 0 {
+					a.showConversationList(translate(a.lang, "menu.chats"), cached, translate(a.lang, "status.showing_cached_conversations"))
+					a.setStatus(translate(a.lang, "status.load_chats_failed_using_cache"))
+					return
+				}
 				a.showError(translate(a.lang, "error.load_chats_failed"), err)
 				return
+			}
+			if a.cache != nil {
+				_ = a.cache.SaveConversations(conversations)
 			}
 			a.showConversationList(translate(a.lang, "menu.chats"), conversations, translate(a.lang, "status.logged_in"))
 		})
@@ -513,6 +528,7 @@ func (a *App) loadFriends() {
 					a.openChat(Conversation{
 						Type:        ConversationFriend,
 						ID:          friend.ID(),
+						PeerUID:     friend.UID,
 						Name:        friend.DisplayName(),
 						Subtitle:    friend.Subtitle(),
 						UnreadCount: friend.UnreadCount,
@@ -696,19 +712,48 @@ func (a *App) openChat(conv Conversation) {
 	}
 	a.showChat(session, translate(a.lang, "loading.messages"))
 	go func() {
-		messages, err := a.loadMessages(conv)
+		var cachedMessages []Message
+		cachedLastID := 0
+		if a.cache != nil {
+			cachedMessages, _ = a.cache.LoadMessages(conv, 120)
+			cachedLastID = maxMessageID(cachedMessages)
+		}
+		if len(cachedMessages) > 0 {
+			a.ui.QueueUpdateDraw(func() {
+				if !a.isActiveChat(session) {
+					return
+				}
+				session.Messages = mergeMessages(nil, cachedMessages)
+				session.LastID = maxMessageID(session.Messages)
+				a.renderChatMessages(session)
+				a.setStatus(translate(a.lang, "status.cached_messages_loaded"))
+			})
+		}
+		messages, err := a.loadMessagesAfter(conv, cachedLastID)
 		a.ui.QueueUpdateDraw(func() {
 			if !a.isActiveChat(session) {
 				return
 			}
 			if err != nil {
+				if len(session.Messages) > 0 {
+					a.setStatus(translate(a.lang, "status.cached_history_offline"))
+					go a.pollChat(session)
+					return
+				}
 				a.showError(translate(a.lang, "error.load_messages_failed"), err)
 				return
 			}
-			session.Messages = mergeMessages(nil, messages)
+			session.Messages = mergeMessages(session.Messages, messages)
 			session.LastID = maxMessageID(session.Messages)
+			if a.cache != nil && len(messages) > 0 {
+				_ = a.cache.SaveMessages(conv, messages)
+			}
 			a.renderChatMessages(session)
-			a.setStatus(translate(a.lang, "status.messages_loaded_auto_refresh"))
+			if len(session.Messages) == 0 {
+				a.setStatus(translate(a.lang, "status.no_messages_loaded"))
+			} else {
+				a.setStatus(translate(a.lang, "status.messages_loaded_auto_refresh"))
+			}
 			go a.pollChat(session)
 		})
 	}()
@@ -719,12 +764,21 @@ func (a *App) showChat(session *ChatSession, message string) {
 	if message != "" {
 		a.statusText = message
 	}
+	replyText := ""
+	if session.ReplyTo > 0 {
+		replyText = translate(a.lang, "chat.replying_to", session.ReplyTo)
+	}
 	conv := session.Conv
 
 	header := tview.NewTextView()
 	header.SetDynamicColors(true)
 	header.SetTextAlign(tview.AlignCenter)
-	header.SetText(fmt.Sprintf("[::b]%s[::-]  [gray]%s | %s[-]", tview.Escape(conv.Name), a.conversationTypeLabel(conv.Type), translate(a.lang, "chat.shortcuts")))
+	header.SetText(fmt.Sprintf("[::b]%s[::-]  [gray]%s | %s[-]%s", tview.Escape(conv.Name), a.conversationTypeLabel(conv.Type), translate(a.lang, "chat.shortcuts"), func() string {
+		if replyText == "" {
+			return ""
+		}
+		return " [yellow]" + tview.Escape(replyText) + "[-]"
+	}()))
 
 	view := tview.NewTextView()
 	view.SetDynamicColors(true)
@@ -762,12 +816,73 @@ func (a *App) showChat(session *ChatSession, message string) {
 			a.setStatus(translate(a.lang, "status.local_message_view_cleared"))
 		case "/img":
 			a.showImageLinks(session)
+		case "/search":
+			a.showChatSearch(session)
+		case "/info":
+			a.showConversationInfo(session.Conv)
+		case "/essence":
+			a.showEssenceMessages(session.Conv)
+		case "/members":
+			a.showGroupMembers(session.Conv)
+		case "/reply":
+			session.ReplyTo = 0
+			a.setStatus(translate(a.lang, "status.reply_cleared"))
+		case "/mentions":
+			session.Mentions = nil
+			a.setStatus(translate(a.lang, "status.mentions_cleared"))
 		default:
+			if strings.HasPrefix(text, "/reply ") {
+				id, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(text, "/reply ")))
+				if err != nil || id <= 0 {
+					a.setStatus(translate(a.lang, "status.invalid_message_id"))
+					return
+				}
+				session.ReplyTo = id
+				a.setStatus(translate(a.lang, "status.reply_target_set", id))
+				return
+			}
+			if strings.HasPrefix(text, "/recall ") {
+				id, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(text, "/recall ")))
+				if err != nil || id <= 0 {
+					a.setStatus(translate(a.lang, "status.invalid_message_id"))
+					return
+				}
+				a.recallMessage(session.Conv, id)
+				return
+			}
+			if strings.HasPrefix(text, "/essence ") {
+				id, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(text, "/essence ")))
+				if err != nil || id <= 0 {
+					a.setStatus(translate(a.lang, "status.invalid_message_id"))
+					return
+				}
+				a.toggleEssence(session.Conv, id)
+				return
+			}
+			if strings.HasPrefix(text, "/mention ") {
+				session.Mentions = parseUIDList(strings.TrimSpace(strings.TrimPrefix(text, "/mention ")))
+				a.setStatus(translate(a.lang, "status.mentions_target_set", len(session.Mentions)))
+				return
+			}
+			if strings.HasPrefix(text, "/imgsend ") {
+				parts := strings.Fields(strings.TrimSpace(strings.TrimPrefix(text, "/imgsend ")))
+				if len(parts) == 0 {
+					a.setStatus(translate(a.lang, "status.image_path_required"))
+					return
+				}
+				path := parts[0]
+				caption := ""
+				if len(parts) > 1 {
+					caption = strings.Join(parts[1:], " ")
+				}
+				a.sendChatImageMessage(session, path, caption)
+				return
+			}
 			if strings.HasPrefix(text, "/") {
 				a.setStatus(translate(a.lang, "status.unknown_chat_command"))
 				return
 			}
-			a.sendChatMessage(conv, text)
+			a.sendChatMessage(session, text)
 		}
 	})
 
@@ -794,20 +909,32 @@ func (a *App) showChat(session *ChatSession, message string) {
 	a.ui.SetFocus(input)
 }
 
-func (a *App) sendChatMessage(conv Conversation, content string) {
+func (a *App) sendChatMessage(session *ChatSession, content string) {
+	if session == nil {
+		return
+	}
+	conv := session.Conv
 	a.setStatus(translate(a.lang, "action.sending_message"))
+	replyTo := session.ReplyTo
+	mentions := append([]int(nil), session.Mentions...)
 	go func() {
-		err := a.sendMessage(conv, content)
+		err := a.sendMessage(conv, SendMessageOptions{
+			Content:     content,
+			ReplyTo:     replyTo,
+			MentionUIDs: mentions,
+		})
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
 				a.showError(translate(a.lang, "error.send_failed"), err)
 				return
 			}
 			a.chatMu.Lock()
-			session := a.activeChat
+			active := a.activeChat
 			a.chatMu.Unlock()
-			if session != nil && session.Conv.Type == conv.Type && session.Conv.ID == conv.ID {
-				a.refreshChat(session, true)
+			if active != nil && active.Conv.Type == conv.Type && active.Conv.ID == conv.ID {
+				active.ReplyTo = 0
+				active.Mentions = nil
+				a.refreshChat(active, true)
 				return
 			}
 			a.setStatus(translate(a.lang, "action.message_sent"))
@@ -1106,6 +1233,12 @@ func (a *App) loadMessages(conv Conversation) ([]Message, error) {
 		messages, err = a.client.PrivateMessages(conv.ID, 0, 0, 0)
 	}
 	if err != nil {
+		if a.cache != nil {
+			cached, cacheErr := a.cache.LoadMessages(conv, 120)
+			if cacheErr == nil && len(cached) > 0 {
+				return cached, err
+			}
+		}
 		return nil, err
 	}
 	sort.SliceStable(messages, func(i, j int) bool {
@@ -1113,15 +1246,19 @@ func (a *App) loadMessages(conv Conversation) ([]Message, error) {
 	})
 	if len(messages) > 0 {
 		_ = a.client.MarkRead(conv, maxMessageID(messages))
+		if a.cache != nil {
+			_ = a.cache.SaveMessages(conv, messages)
+		}
 	}
 	return messages, nil
 }
 
-func (a *App) sendMessage(conv Conversation, content string) error {
+func (a *App) sendMessage(conv Conversation, opts SendMessageOptions) error {
 	if conv.Type == ConversationGroup {
-		return a.client.SendGroupMessage(conv.ID, content)
+		return a.client.SendGroupMessageWithOptions(conv.ID, opts)
 	}
-	return a.client.SendPrivateMessage(conv.ID, content)
+	opts.MentionUIDs = nil
+	return a.client.SendPrivateMessageWithOptions(conv.ID, opts)
 }
 
 func (a *App) writeMessages(view *tview.TextView, messages []Message) {
@@ -1233,6 +1370,9 @@ func (a *App) refreshChat(session *ChatSession, manual bool) {
 			session.Messages = mergeMessages(session.Messages, messages)
 			session.LastID = maxMessageID(session.Messages)
 			after := len(session.Messages)
+			if a.cache != nil && len(messages) > 0 {
+				_ = a.cache.SaveMessages(session.Conv, messages)
+			}
 			a.renderChatMessages(session)
 			if after > before {
 				count := after - before
@@ -1286,42 +1426,6 @@ func (a *App) showImageLinks(session *ChatSession) {
 		return event
 	})
 	a.showModal(list, 96, 18)
-}
-
-func (a *App) showImageAction(link string) {
-	form := tview.NewForm()
-	text := tview.NewTextView()
-	text.SetDynamicColors(true)
-	text.SetWrap(true)
-	text.SetText(tview.Escape(link))
-	form.AddFormItem(text)
-	form.AddButton(translate(a.lang, "ui.copy"), func() {
-		if err := copyToClipboard(link); err != nil {
-			a.setStatus(translate(a.lang, "error.copy_image_failed") + ": " + err.Error())
-			return
-		}
-		a.setStatus(translate(a.lang, "status.copied_image_link"))
-	})
-	form.AddButton(translate(a.lang, "ui.open"), func() {
-		if err := openExternalURL(link); err != nil {
-			a.setStatus(translate(a.lang, "error.open_image_failed") + ": " + err.Error())
-			return
-		}
-		a.setStatus(translate(a.lang, "status.opened_image_link"))
-	})
-	form.AddButton(translate(a.lang, "ui.back"), func() {
-		a.closeModal()
-		a.chatMu.Lock()
-		session := a.activeChat
-		a.chatMu.Unlock()
-		if session != nil {
-			a.showImageLinks(session)
-		}
-	})
-	form.AddButton(translate(a.lang, "ui.close"), func() { a.closeModal() })
-	form.SetButtonsAlign(tview.AlignRight)
-	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.image_link") + " ").SetTitleAlign(tview.AlignLeft)
-	a.showModal(form, 96, 11)
 }
 
 func (a *App) setActiveChat(session *ChatSession) {

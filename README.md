@@ -16,12 +16,17 @@ https://cschat.ccccocccc.cc/rpc/UniCsAC.php
 - List friends, groups, and public groups.
 - Open private chats and group chats.
 - Send text messages.
+- Send local images from chat with `/imgsend <path> [caption]`.
 - Refresh conversations and mark messages as read.
+- Cache conversations and messages in local SQLite for faster startup and offline history.
+- Search conversations and cached messages from the main menu or `/search` in chat.
 - Send friend requests.
 - View and handle incoming friend requests.
 - Browse notices, mark them read, copy text, and open links.
 - Switch between English and Chinese UI language.
-- Create groups and apply to public groups.
+- Create groups, apply to public groups, or join by room ID/invite code.
+- View user/group info, group members, and essence messages.
+- Reply to messages, recall messages, set group essence, and mention group members.
 - Built on tview/tcell for forms, lists, layouts, input handling, and shortcuts.
 
 ## Build
@@ -54,6 +59,19 @@ go telemetry off
 - `Esc`: return from list/chat views
 - `F5`: refresh current list/chat
 - `Enter`: send message in chat
+- Main menu `Search`: search friends, groups, and cached chat content.
+- Main menu `Join Group`: join/apply by room ID, invite code, or answer.
+- Chat commands:
+  - `/search`: search current chat
+  - `/info`: show user or group details
+  - `/members`: show group members
+  - `/essence`: show group essence messages
+  - `/img`: list image links in the current view
+  - `/imgsend <path> [caption]`: send a local image
+  - `/reply <msg_id>`: reply to a message; `/reply` clears it
+  - `/mention <uid,uid>`: mention users in the next group message; `/mentions` clears it
+  - `/recall <msg_id>`: recall a message
+  - `/essence <msg_id>`: toggle essence for a group message
 - Error dialogs include a `Copy` button for the full error text.
 - Main menu includes a friend requests page with agree/refuse actions.
 - Main menu includes a notices page for `user/get_notice_list`.
@@ -70,6 +88,18 @@ directory, usually:
 On startup it loads that file and validates it with `user/get_info`. Logging out
 removes the saved session file.
 
+## Cache
+
+Messages and conversation metadata are cached in SQLite under the user cache
+directory, usually:
+
+```text
+%LOCALAPPDATA%\CsAC-Terminal\cache.db
+```
+
+The cache is used to show offline history immediately while the app refreshes
+new messages from the UniCsAC API.
+
 ## Language
 
 The default UI language is English. Use the `Language` button on the login page
@@ -82,7 +112,10 @@ to:
 
 ## Notes
 
-The API supports images, voice messages, moderation, notices, and profile changes; the current UI focuses on the daily chat flow.
+Image messages can be copied, opened in the system browser, downloaded to
+`Downloads\CsAC-Terminal`, or sent directly from a local path. Voice messages
+are decoded and displayed when returned by the API, but recording/sending voice
+from the TUI is not implemented yet.
 
 ## License
 

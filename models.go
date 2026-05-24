@@ -19,18 +19,24 @@ type APIResponse struct {
 	Notices  []Notice                   `json:"notices,omitempty"`
 	Groups   []Group                    `json:"groups,omitempty"`
 	Room     *Group                     `json:"room,omitempty"`
+	Members  []GroupMember              `json:"members,omitempty"`
 	Messages []Message                  `json:"messages,omitempty"`
+	Essences []Message                  `json:"essence_list,omitempty"`
 	Data     json.RawMessage            `json:"data,omitempty"`
 	Raw      map[string]json.RawMessage `json:"-"`
 }
 
 type User struct {
 	UID          int    `json:"uid"`
+	Username     string `json:"username"`
 	Nickname     string `json:"nickname"`
 	Avatar       string `json:"avatar"`
 	IsFriend     bool   `json:"is_friend"`
 	CanAddFriend bool   `json:"can_add_friend"`
 	OnlineStatus string `json:"online_status"`
+	Remark       string `json:"remark"`
+	Signature    string `json:"signature"`
+	Bio          string `json:"bio"`
 }
 
 type Friend struct {
@@ -249,6 +255,76 @@ func (g Group) Subtitle() string {
 	return strings.Join(parts, " | ")
 }
 
+type GroupMember struct {
+	UID          int            `json:"uid"`
+	UserID       int            `json:"user_id"`
+	Nickname     string         `json:"nickname"`
+	Username     string         `json:"username"`
+	Remark       string         `json:"remark"`
+	Avatar       string         `json:"avatar"`
+	Role         string         `json:"role"`
+	IsOwner      bool           `json:"is_owner"`
+	IsAdmin      bool           `json:"is_admin"`
+	OnlineStatus string         `json:"online_status"`
+	JoinTime     FlexibleString `json:"join_time"`
+	AddTime      FlexibleString `json:"add_time"`
+	MuteUntil    FlexibleString `json:"mute_until"`
+}
+
+func (m GroupMember) ID() int {
+	if m.UID != 0 {
+		return m.UID
+	}
+	return m.UserID
+}
+
+func (m GroupMember) DisplayName() string {
+	name := strings.TrimSpace(m.Remark)
+	if name == "" {
+		name = strings.TrimSpace(m.Nickname)
+	}
+	if name == "" {
+		name = strings.TrimSpace(m.Username)
+	}
+	if name == "" {
+		name = fmt.Sprintf("UID %d", m.ID())
+	}
+	return name
+}
+
+func (m GroupMember) RoleLabel() string {
+	switch {
+	case m.IsOwner:
+		return "owner"
+	case m.IsAdmin:
+		return "admin"
+	case strings.TrimSpace(m.Role) != "":
+		return m.Role
+	default:
+		return "member"
+	}
+}
+
+func (m GroupMember) Subtitle() string {
+	parts := make([]string, 0, 4)
+	if m.Username != "" {
+		parts = append(parts, "@"+m.Username)
+	}
+	if m.OnlineStatus != "" {
+		parts = append(parts, m.OnlineStatus)
+	}
+	if text := strings.TrimSpace(string(m.MuteUntil)); text != "" {
+		parts = append(parts, "muted until "+text)
+	}
+	for _, ts := range []FlexibleString{m.JoinTime, m.AddTime} {
+		if text := strings.TrimSpace(string(ts)); text != "" {
+			parts = append(parts, text)
+			break
+		}
+	}
+	return strings.Join(parts, " | ")
+}
+
 type Message struct {
 	ID            int            `json:"id"`
 	MsgID         int            `json:"msg_id"`
@@ -353,6 +429,24 @@ func (m Message) HasImage() bool {
 	return m.ImageLink() != ""
 }
 
+func (m Message) VoiceLink() string {
+	for _, value := range []string{m.VoiceURL, m.Voice} {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (m Message) SearchText() string {
+	parts := []string{m.Sender(), m.Body()}
+	if ts := m.Timestamp(); ts != "" {
+		parts = append(parts, ts)
+	}
+	return strings.Join(parts, " | ")
+}
+
 func (m Message) voiceDuration() int {
 	if m.Duration > 0 {
 		return m.Duration
@@ -370,6 +464,7 @@ const (
 type Conversation struct {
 	Type        ConversationType
 	ID          int
+	PeerUID     int
 	Name        string
 	Subtitle    string
 	UnreadCount int

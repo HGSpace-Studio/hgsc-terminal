@@ -32,6 +32,13 @@ type UniCsACClient struct {
 	http    *http.Client
 }
 
+type SendMessageOptions struct {
+	Content     string
+	ImagePath   string
+	ReplyTo     int
+	MentionUIDs []int
+}
+
 func NewUniCsACClient(baseURL string) *UniCsACClient {
 	jar, _ := cookiejar.New(nil)
 	return &UniCsACClient{
@@ -123,6 +130,21 @@ func (c *UniCsACClient) CurrentUser() (*User, error) {
 	return out.User, nil
 }
 
+func (c *UniCsACClient) UserInfo(uid int) (*User, error) {
+	values := url.Values{}
+	if uid > 0 {
+		values.Set("uid", fmt.Sprint(uid))
+	}
+	var out APIResponse
+	if err := c.Get("user/get_info", values, &out); err != nil {
+		return nil, err
+	}
+	if out.User == nil {
+		return nil, errors.New("server did not return user info")
+	}
+	return out.User, nil
+}
+
 func (c *UniCsACClient) Friends() ([]Friend, error) {
 	var out APIResponse
 	if err := c.Get("user/get_friends", nil, &out); err != nil {
@@ -198,6 +220,72 @@ func (c *UniCsACClient) ApplyJoinGroup(roomID int, code, answer string) error {
 	}
 	var out APIResponse
 	return c.PostForm("group/apply_join", values, &out)
+}
+
+func (c *UniCsACClient) GroupViewInfo(roomID int) (*Group, error) {
+	var out APIResponse
+	if err := c.Get("group/get_group_view_info", url.Values{"room_id": {fmt.Sprint(roomID)}}, &out); err != nil {
+		return nil, err
+	}
+	if out.Room != nil {
+		return out.Room, nil
+	}
+	for _, key := range []string{"room", "group", "data"} {
+		raw, ok := out.Raw[key]
+		if !ok {
+			continue
+		}
+		var group Group
+		if json.Unmarshal(raw, &group) == nil && group.Room() != 0 {
+			return &group, nil
+		}
+		var wrapped struct {
+			Room  Group `json:"room"`
+			Group Group `json:"group"`
+		}
+		if json.Unmarshal(raw, &wrapped) == nil {
+			if wrapped.Room.Room() != 0 {
+				return &wrapped.Room, nil
+			}
+			if wrapped.Group.Room() != 0 {
+				return &wrapped.Group, nil
+			}
+		}
+	}
+	return nil, errors.New("server did not return group info")
+}
+
+func (c *UniCsACClient) GroupMembers(roomID int) ([]GroupMember, error) {
+	var out APIResponse
+	if err := c.Get("group/get_members", url.Values{"room_id": {fmt.Sprint(roomID)}}, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Members) > 0 {
+		return out.Members, nil
+	}
+	for _, key := range []string{"members", "list", "data"} {
+		raw, ok := out.Raw[key]
+		if !ok {
+			continue
+		}
+		var members []GroupMember
+		if json.Unmarshal(raw, &members) == nil {
+			return members, nil
+		}
+		var wrapped struct {
+			Members []GroupMember `json:"members"`
+			List    []GroupMember `json:"list"`
+		}
+		if json.Unmarshal(raw, &wrapped) == nil {
+			if len(wrapped.Members) > 0 {
+				return wrapped.Members, nil
+			}
+			if len(wrapped.List) > 0 {
+				return wrapped.List, nil
+			}
+		}
+	}
+	return nil, nil
 }
 
 func (c *UniCsACClient) SendFriendRequest(uid int, message string) error {
@@ -311,19 +399,90 @@ func (c *UniCsACClient) PrivateMessagesAfter(friendID, afterID int) ([]Message, 
 }
 
 func (c *UniCsACClient) SendGroupMessage(roomID int, content string) error {
+	return c.SendGroupMessageWithOptions(roomID, SendMessageOptions{Content: content})
+}
+
+func (c *UniCsACClient) SendGroupMessageWithOptions(roomID int, opts SendMessageOptions) error {
+	fields := sendFields(opts)
+	fields.Set("room_id", fmt.Sprint(roomID))
 	var out APIResponse
-	return c.PostForm("message/send_group_msg", url.Values{
-		"room_id": {fmt.Sprint(roomID)},
-		"content": {content},
-	}, &out)
+	if strings.TrimSpace(opts.ImagePath) != "" {
+		return c.PostMultipart("message/send_group_msg", "img", opts.ImagePath, valuesToMap(fields), &out)
+	}
+	return c.PostForm("message/send_group_msg", fields, &out)
 }
 
 func (c *UniCsACClient) SendPrivateMessage(friendID int, content string) error {
+	return c.SendPrivateMessageWithOptions(friendID, SendMessageOptions{Content: content})
+}
+
+func (c *UniCsACClient) SendPrivateMessageWithOptions(friendID int, opts SendMessageOptions) error {
+	fields := sendFields(opts)
+	fields.Set("friend_id", fmt.Sprint(friendID))
 	var out APIResponse
-	return c.PostForm("message/send_private_msg", url.Values{
-		"friend_id": {fmt.Sprint(friendID)},
-		"content":   {content},
+	if strings.TrimSpace(opts.ImagePath) != "" {
+		return c.PostMultipart("message/send_private_msg", "img", opts.ImagePath, valuesToMap(fields), &out)
+	}
+	return c.PostForm("message/send_private_msg", fields, &out)
+}
+
+func (c *UniCsACClient) RecallMessage(conv Conversation, msgID int) error {
+	values := url.Values{
+		"msg_id": {fmt.Sprint(msgID)},
+	}
+	if conv.Type == ConversationGroup {
+		values.Set("type", "group")
+		values.Set("room_id", fmt.Sprint(conv.ID))
+	} else {
+		values.Set("type", "private")
+	}
+	var out APIResponse
+	return c.PostForm("message/recall_msg", values, &out)
+}
+
+func (c *UniCsACClient) ToggleEssence(roomID, msgID int) error {
+	var out APIResponse
+	return c.PostForm("essence/set_essence", url.Values{
+		"room_id": {fmt.Sprint(roomID)},
+		"msg_id":  {fmt.Sprint(msgID)},
 	}, &out)
+}
+
+func (c *UniCsACClient) EssenceMessages(roomID int) ([]Message, error) {
+	var out APIResponse
+	if err := c.Get("essence/get_essence", url.Values{"room_id": {fmt.Sprint(roomID)}}, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Essences) > 0 {
+		return out.Essences, nil
+	}
+	for _, key := range []string{"essence_list", "messages", "list", "data"} {
+		raw, ok := out.Raw[key]
+		if !ok {
+			continue
+		}
+		var messages []Message
+		if json.Unmarshal(raw, &messages) == nil {
+			return messages, nil
+		}
+		var wrapped struct {
+			EssenceList []Message `json:"essence_list"`
+			Messages    []Message `json:"messages"`
+			List        []Message `json:"list"`
+		}
+		if json.Unmarshal(raw, &wrapped) == nil {
+			if len(wrapped.EssenceList) > 0 {
+				return wrapped.EssenceList, nil
+			}
+			if len(wrapped.Messages) > 0 {
+				return wrapped.Messages, nil
+			}
+			if len(wrapped.List) > 0 {
+				return wrapped.List, nil
+			}
+		}
+	}
+	return nil, nil
 }
 
 func (c *UniCsACClient) MarkRead(conv Conversation, lastMsgID int) error {
@@ -354,6 +513,43 @@ func (c *UniCsACClient) UploadVoice(path string) (string, error) {
 		return "", err
 	}
 	return extractURL(out), nil
+}
+
+func (c *UniCsACClient) DownloadURL(rawURL, dest string) error {
+	rawURL = normalizeAPIURL(rawURL)
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return err
+	}
+	c.prepareHeaders(req)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, compactText(string(body), 120))
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
+		return err
+	}
+	tmp := dest + ".tmp"
+	file, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(file, resp.Body)
+	closeErr := file.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmp)
+		return copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmp)
+		return closeErr
+	}
+	return os.Rename(tmp, dest)
 }
 
 func (c *UniCsACClient) Get(route string, values url.Values, out *APIResponse) error {
@@ -703,4 +899,36 @@ func extractURL(out APIResponse) string {
 		}
 	}
 	return ""
+}
+
+func sendFields(opts SendMessageOptions) url.Values {
+	values := url.Values{}
+	if strings.TrimSpace(opts.Content) != "" {
+		values.Set("content", opts.Content)
+	}
+	if opts.ReplyTo > 0 {
+		values.Set("reply_to", fmt.Sprint(opts.ReplyTo))
+	}
+	if len(opts.MentionUIDs) > 0 {
+		parts := make([]string, 0, len(opts.MentionUIDs))
+		for _, uid := range opts.MentionUIDs {
+			if uid > 0 {
+				parts = append(parts, fmt.Sprint(uid))
+			}
+		}
+		if len(parts) > 0 {
+			values.Set("mention_uids", strings.Join(parts, ","))
+		}
+	}
+	return values
+}
+
+func valuesToMap(values url.Values) map[string]string {
+	fields := make(map[string]string, len(values))
+	for key, vals := range values {
+		if len(vals) > 0 {
+			fields[key] = vals[0]
+		}
+	}
+	return fields
 }
