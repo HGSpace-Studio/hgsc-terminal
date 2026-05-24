@@ -18,12 +18,15 @@ import (
 type App struct {
 	client  *UniCsACClient
 	session *SessionStore
+	config  *ConfigStore
 	ui      *tview.Application
 	pages   *tview.Pages
 
 	user       *User
 	status     *tview.TextView
 	statusText string
+	lang       Language
+	screen     string
 	chatMu     sync.Mutex
 	activeChat *ChatSession
 }
@@ -40,12 +43,28 @@ type ChatSession struct {
 
 func NewApp(client *UniCsACClient) *App {
 	session, err := NewSessionStore()
+	config, cfg := loadAppConfig()
 	return &App{
 		client:  client,
 		session: sessionOrNil(session, err),
+		config:  config,
+		lang:    cfg.Language,
 		ui:      tview.NewApplication(),
 		pages:   tview.NewPages(),
 	}
+}
+
+func loadAppConfig() (*ConfigStore, AppConfig) {
+	cfg := AppConfig{Language: LanguageEnglish}
+	config, err := NewConfigStore()
+	if err != nil {
+		return nil, cfg
+	}
+	loaded, err := config.Load()
+	if err == nil {
+		cfg = loaded
+	}
+	return config, cfg
 }
 
 func sessionOrNil(session *SessionStore, err error) *SessionStore {
@@ -53,6 +72,21 @@ func sessionOrNil(session *SessionStore, err error) *SessionStore {
 		return nil
 	}
 	return session
+}
+
+func (a *App) replacePage(name string, root tview.Primitive) {
+	for _, page := range []string{"splash", "auth", "register", "main", "chat", "modal"} {
+		if page != name {
+			a.pages.RemovePage(page)
+		}
+	}
+	a.pages.RemovePage(name)
+	a.pages.AddPage(name, root, true, true)
+	a.pages.ShowPage("bg")
+	a.pages.ShowPage(name)
+	if a.ui != nil {
+		a.ui.ForceDraw()
+	}
 }
 
 func (a *App) Run() error {
@@ -65,34 +99,34 @@ func (a *App) Run() error {
 		return event
 	})
 
-	a.showSplash("Checking saved session...")
+	a.pages.AddPage("bg", tview.NewBox().SetBackgroundColor(tcell.ColorDefault), true, true)
+	a.showSplash(translate(a.lang, "app.starting") + "...")
 	a.trySavedSession()
 	return a.ui.SetRoot(a.pages, true).Run()
 }
 
 func (a *App) showSplash(message string) {
+	a.screen = "splash"
 	a.statusText = message
 	panel := tview.NewTextView()
 	panel.SetDynamicColors(true)
 	panel.SetTextAlign(tview.AlignCenter)
 	panel.SetText("\n[::b]CsAC-Terminal[::-]\n\n" + tview.Escape(message))
-	panel.SetBorder(true).SetTitle(" Starting ")
+	panel.SetBorder(true).SetTitle(" " + translate(a.lang, "app.starting") + " ")
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	root.AddItem(nil, 0, 1, false)
 	root.AddItem(centerPrimitive(panel, 64, 8), 8, 0, true)
 	root.AddItem(nil, 0, 1, false)
 
-	a.pages.RemovePage("splash")
-	a.pages.AddPage("splash", root, true, true)
-	a.pages.SwitchToPage("splash")
+	a.replacePage("splash", root)
 }
 
 func (a *App) trySavedSession() {
 	go func() {
 		if a.session == nil {
 			a.ui.QueueUpdateDraw(func() {
-				a.showAuth("Session storage unavailable.")
+				a.showAuth(translate(a.lang, "status.session_storage_unavailable"))
 			})
 			return
 		}
@@ -100,7 +134,7 @@ func (a *App) trySavedSession() {
 		if err != nil {
 			_ = a.session.Clear()
 			a.ui.QueueUpdateDraw(func() {
-				a.showAuth("Saved session could not be loaded.")
+				a.showAuth(translate(a.lang, "status.saved_session_could_not_be_loaded"))
 			})
 			return
 		}
@@ -114,38 +148,42 @@ func (a *App) trySavedSession() {
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
 				_ = a.session.Clear()
-				a.showAuth("Saved session expired. Please login.")
+				a.showAuth(translate(a.lang, "status.session_expired"))
 				return
 			}
 			a.user = user
-			a.showHome("Restored saved session.")
+			a.showHome(translate(a.lang, "status.session_restored"))
 		})
 	}()
 }
 
 func (a *App) showAuth(message string) {
 	a.stopActiveChat()
+	a.screen = "auth"
 	if message != "" {
 		a.statusText = message
 	}
 
-	username := tview.NewInputField().SetLabel("Username: ").SetFieldWidth(32)
-	password := tview.NewInputField().SetLabel("Password: ").SetMaskCharacter('*').SetFieldWidth(32)
+	username := tview.NewInputField().SetLabel(translate(a.lang, "auth.username") + ": ").SetFieldWidth(32)
+	password := tview.NewInputField().SetLabel(translate(a.lang, "auth.password") + ": ").SetMaskCharacter('*').SetFieldWidth(32)
 
 	form := tview.NewForm()
 	form.AddFormItem(username)
 	form.AddFormItem(password)
-	form.AddButton("Login", func() {
+	form.AddButton(translate(a.lang, "auth.login"), func() {
 		a.login(strings.TrimSpace(username.GetText()), password.GetText())
 	})
-	form.AddButton("Register", func() {
+	form.AddButton(translate(a.lang, "auth.register"), func() {
 		a.showRegister("")
 	})
-	form.AddButton("Quit", func() {
+	form.AddButton(translate(a.lang, "auth.language"), func() {
+		a.showLanguagePicker()
+	})
+	form.AddButton(translate(a.lang, "auth.quit"), func() {
 		a.ui.Stop()
 	})
 	form.SetButtonsAlign(tview.AlignRight)
-	form.SetBorder(true).SetTitle(" CsAC-Terminal Login ").SetTitleAlign(tview.AlignLeft)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "auth.login_title") + " ").SetTitleAlign(tview.AlignLeft)
 
 	footer := a.newStatusBar()
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
@@ -153,40 +191,42 @@ func (a *App) showAuth(message string) {
 	root.AddItem(centerPrimitive(form, 62, 12), 12, 0, true)
 	root.AddItem(footer, 1, 0, false)
 
-	a.pages.RemovePage("auth")
-	a.pages.AddPage("auth", root, true, true)
-	a.pages.SwitchToPage("auth")
+	a.replacePage("auth", root)
 	a.ui.SetFocus(form)
 }
 
 func (a *App) showRegister(message string) {
 	a.stopActiveChat()
+	a.screen = "register"
 	if message != "" {
 		a.statusText = message
 	}
 
-	username := tview.NewInputField().SetLabel("Username: ").SetFieldWidth(32)
-	nickname := tview.NewInputField().SetLabel("Nickname: ").SetFieldWidth(32)
-	password := tview.NewInputField().SetLabel("Password: ").SetMaskCharacter('*').SetFieldWidth(32)
-	confirm := tview.NewInputField().SetLabel("Confirm:  ").SetMaskCharacter('*').SetFieldWidth(32)
+	username := tview.NewInputField().SetLabel(translate(a.lang, "auth.username") + ": ").SetFieldWidth(32)
+	nickname := tview.NewInputField().SetLabel(translate(a.lang, "auth.nickname") + ": ").SetFieldWidth(32)
+	password := tview.NewInputField().SetLabel(translate(a.lang, "auth.password") + ": ").SetMaskCharacter('*').SetFieldWidth(32)
+	confirm := tview.NewInputField().SetLabel(translate(a.lang, "auth.confirm") + ":  ").SetMaskCharacter('*').SetFieldWidth(32)
 
 	form := tview.NewForm()
 	form.AddFormItem(username)
 	form.AddFormItem(nickname)
 	form.AddFormItem(password)
 	form.AddFormItem(confirm)
-	form.AddButton("Create", func() {
+	form.AddButton(translate(a.lang, "auth.register"), func() {
 		if password.GetText() != confirm.GetText() {
-			a.setStatus("Passwords do not match.")
+			a.setStatus(translate(a.lang, "status.passwords_mismatch"))
 			return
 		}
 		a.register(strings.TrimSpace(username.GetText()), strings.TrimSpace(nickname.GetText()), password.GetText())
 	})
-	form.AddButton("Back", func() {
+	form.AddButton(translate(a.lang, "auth.back"), func() {
 		a.showAuth("")
 	})
+	form.AddButton(translate(a.lang, "auth.language"), func() {
+		a.showLanguagePicker()
+	})
 	form.SetButtonsAlign(tview.AlignRight)
-	form.SetBorder(true).SetTitle(" Create Account ").SetTitleAlign(tview.AlignLeft)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "auth.create_account_title") + " ").SetTitleAlign(tview.AlignLeft)
 
 	footer := a.newStatusBar()
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
@@ -194,80 +234,80 @@ func (a *App) showRegister(message string) {
 	root.AddItem(centerPrimitive(form, 62, 15), 15, 0, true)
 	root.AddItem(footer, 1, 0, false)
 
-	a.pages.RemovePage("register")
-	a.pages.AddPage("register", root, true, true)
-	a.pages.SwitchToPage("register")
+	a.replacePage("register", root)
 	a.ui.SetFocus(form)
 }
 
 func (a *App) login(username, password string) {
 	if username == "" || password == "" {
-		a.setStatus("Username and password are required.")
+		a.setStatus(translate(a.lang, "status.auth_required", translate(a.lang, "auth.username"), translate(a.lang, "auth.password")))
 		return
 	}
-	a.setStatus("Logging in...")
+	a.setStatus(translate(a.lang, "action.logging_in"))
 	go func() {
 		user, err := a.client.Login(username, password)
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
-				a.showError("Login failed", err)
+				a.showError(translate(a.lang, "error.login_failed"), err)
 				return
 			}
 			a.user = user
 			if err := a.saveSession(); err != nil {
-				a.setStatus("Logged in, but saving session failed: " + err.Error())
+				a.setStatus(translate(a.lang, "status.logged_in") + " " + err.Error())
 			}
-			a.showHome("Logged in.")
+			a.showHome(translate(a.lang, "status.logged_in"))
 		})
 	}()
 }
 
 func (a *App) register(username, nickname, password string) {
 	if username == "" || nickname == "" || password == "" {
-		a.setStatus("Username, nickname and password are required.")
+		a.setStatus(translate(a.lang, "status.auth_register_required", translate(a.lang, "auth.username"), translate(a.lang, "auth.nickname"), translate(a.lang, "auth.password")))
 		return
 	}
-	a.setStatus("Creating account...")
+	a.setStatus(translate(a.lang, "action.creating_account"))
 	go func() {
 		user, err := a.client.Register(username, nickname, password)
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
-				a.showError("Register failed", err)
+				a.showError(translate(a.lang, "error.register_failed"), err)
 				return
 			}
 			a.user = user
 			if err := a.saveSession(); err != nil {
-				a.setStatus("Registered, but saving session failed: " + err.Error())
+				a.setStatus(translate(a.lang, "status.account_created") + " " + err.Error())
 			}
-			a.showHome("Account created and logged in.")
+			a.showHome(translate(a.lang, "status.account_created"))
 		})
 	}()
 }
 
 func (a *App) showHome(message string) {
 	a.stopActiveChat()
+	a.screen = "home"
 	content := tview.NewTextView()
 	content.SetDynamicColors(true)
 	content.SetWrap(true)
-	content.SetBorder(true).SetTitle(" Home ")
+	content.SetBorder(true).SetTitle(" " + translate(a.lang, "home.title") + " ")
 
-	userLine := "Not logged in"
+	userLine := translate(a.lang, "status.not_logged_in")
 	if a.user != nil {
 		userLine = fmt.Sprintf("%s (UID %d)", tview.Escape(a.user.Nickname), a.user.UID)
 	}
-	fmt.Fprintf(content, "[::b]Current user[::-]\n%s\n\n", userLine)
-	fmt.Fprintln(content, "Use the menu on the left to open chats, friends, groups, public groups, or action forms.")
-	fmt.Fprintln(content, "Shortcuts: Ctrl+C quits, Esc returns from chat/list views, F5 refreshes lists and chats.")
+	fmt.Fprintf(content, "[::b]%s[::-]\n%s\n\n", translate(a.lang, "home.current_user"), userLine)
+	fmt.Fprintln(content, translate(a.lang, "home.use_menu"))
+	fmt.Fprintln(content, translate(a.lang, "home.shortcuts"))
 
-	a.showMain("Home", content, nil, message)
+	a.showMain(translate(a.lang, "home.title"), content, nil, message)
 }
 
 func (a *App) showMain(title string, content tview.Primitive, focus tview.Primitive, message string) {
+	a.screen = "home"
 	if message != "" {
 		a.statusText = message
 	}
 	if content == nil {
-		content = a.textPanel(title, "No content.")
+		content = a.textPanel(title, translate(a.lang, "ui.no_content"))
 	}
 
 	header := tview.NewTextView()
@@ -277,17 +317,19 @@ func (a *App) showMain(title string, content tview.Primitive, focus tview.Primit
 
 	menu := tview.NewList()
 	menu.ShowSecondaryText(false)
-	menu.SetBorder(true).SetTitle(" Menu ")
-	menu.AddItem("Chats", "", 'c', func() { a.loadConversations() })
-	menu.AddItem("Friends", "", 'f', func() { a.loadFriends() })
-	menu.AddItem("Groups", "", 'g', func() { a.loadGroups() })
-	menu.AddItem("Public Groups", "", 'p', func() { a.loadPublicGroups() })
-	menu.AddItem("Add Friend", "", 'a', func() { a.showFriendRequestForm() })
-	menu.AddItem("Friend Requests", "", 'r', func() { a.loadFriendRequests() })
-	menu.AddItem("Create Group", "", 'n', func() { a.showCreateGroupForm() })
-	menu.AddItem("Refresh User", "", 'u', func() { a.refreshUser() })
-	menu.AddItem("Logout", "", 'l', func() { a.logout() })
-	menu.AddItem("Quit", "", 'q', func() { a.ui.Stop() })
+	menu.SetBorder(true).SetTitle(" " + translate(a.lang, "menu.title") + " ")
+	menu.AddItem(translate(a.lang, "menu.chats"), "", 'c', func() { a.loadConversations() })
+	menu.AddItem(translate(a.lang, "menu.friends"), "", 'f', func() { a.loadFriends() })
+	menu.AddItem(translate(a.lang, "menu.groups"), "", 'g', func() { a.loadGroups() })
+	menu.AddItem(translate(a.lang, "menu.public_groups"), "", 'p', func() { a.loadPublicGroups() })
+	menu.AddItem(translate(a.lang, "menu.add_friend"), "", 'a', func() { a.showFriendRequestForm() })
+	menu.AddItem(translate(a.lang, "menu.friend_requests"), "", 'r', func() { a.loadFriendRequests() })
+	menu.AddItem(translate(a.lang, "menu.notices"), "", 'o', func() { a.loadNotices() })
+	menu.AddItem(translate(a.lang, "menu.create_group"), "", 'n', func() { a.showCreateGroupForm() })
+	menu.AddItem(translate(a.lang, "menu.refresh_user"), "", 'u', func() { a.refreshUser() })
+	menu.AddItem(translate(a.lang, "menu.language"), "", 'y', func() { a.showLanguagePicker() })
+	menu.AddItem(translate(a.lang, "menu.logout"), "", 'l', func() { a.logout() })
+	menu.AddItem(translate(a.lang, "menu.quit"), "", 'q', func() { a.ui.Stop() })
 
 	body := tview.NewFlex()
 	body.AddItem(menu, 28, 0, focus == nil)
@@ -299,9 +341,7 @@ func (a *App) showMain(title string, content tview.Primitive, focus tview.Primit
 	root.AddItem(body, 0, 1, true)
 	root.AddItem(footer, 1, 0, false)
 
-	a.pages.RemovePage("main")
-	a.pages.AddPage("main", root, true, true)
-	a.pages.SwitchToPage("main")
+	a.replacePage("main", root)
 	if focus != nil {
 		a.ui.SetFocus(focus)
 	} else {
@@ -311,11 +351,54 @@ func (a *App) showMain(title string, content tview.Primitive, focus tview.Primit
 }
 
 func (a *App) headerText(title string) string {
-	user := "not logged in"
+	user := translate(a.lang, "status.not_logged_in")
 	if a.user != nil {
 		user = fmt.Sprintf("%s / UID %d", tview.Escape(a.user.Nickname), a.user.UID)
 	}
 	return fmt.Sprintf("[::b]CsAC-Terminal[::-]  [gray]%s[-]  [teal]%s[-]", title, user)
+}
+
+func (a *App) setLanguage(lang Language) {
+	a.lang = normalizeLanguage(lang)
+	if a.config != nil {
+		_ = a.config.Save(AppConfig{Language: a.lang})
+	}
+	a.setStatus(translate(a.lang, "status.language_changed"))
+	switch a.screen {
+	case "auth":
+		a.showAuth("")
+	case "register":
+		a.showRegister("")
+	case "chat":
+		a.chatMu.Lock()
+		session := a.activeChat
+		a.chatMu.Unlock()
+		if session != nil {
+			a.showChat(session, "")
+		} else {
+			a.showHome("")
+		}
+	case "home":
+		a.showHome("")
+	default:
+		a.showHome("")
+	}
+}
+
+func (a *App) showLanguagePicker() {
+	form := tview.NewForm()
+	form.AddButton(translate(a.lang, "language.english"), func() {
+		a.closeModal()
+		a.setLanguage(LanguageEnglish)
+	})
+	form.AddButton(translate(a.lang, "language.chinese"), func() {
+		a.closeModal()
+		a.setLanguage(LanguageChinese)
+	})
+	form.AddButton(translate(a.lang, "ui.close"), func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "language.title") + " ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 60, 10)
 }
 
 func (a *App) refreshUnreadSummary() {
@@ -332,23 +415,35 @@ func (a *App) refreshUnreadSummary() {
 			for _, conv := range conversations {
 				total += conv.UnreadCount
 			}
+			notices, err := a.client.Notices()
+			if err == nil {
+				unreadNotices := 0
+				for _, notice := range notices {
+					if notice.IsRead == 0 {
+						unreadNotices++
+					}
+				}
+				if unreadNotices > 0 {
+					total += unreadNotices
+				}
+			}
 			if total > 0 {
-				a.setStatus(fmt.Sprintf("Unread messages: %d", total))
+				a.setStatus(translate(a.lang, "status.unread_items", total))
 			}
 		})
 	}()
 }
 
 func (a *App) loadConversations() {
-	a.showMain("Chats", a.textPanel("Chats", "Loading chats..."), nil, "Loading chats...")
+	a.showMain(translate(a.lang, "menu.chats"), a.textPanel(translate(a.lang, "menu.chats"), translate(a.lang, "loading.chats")), nil, translate(a.lang, "loading.chats"))
 	go func() {
 		conversations, err := a.conversations()
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
-				a.showError("Load chats failed", err)
+				a.showError(translate(a.lang, "error.load_chats_failed"), err)
 				return
 			}
-			a.showConversationList("Chats", conversations, "Chats loaded.")
+			a.showConversationList(translate(a.lang, "menu.chats"), conversations, translate(a.lang, "status.logged_in"))
 		})
 	}()
 }
@@ -369,13 +464,13 @@ func (a *App) showConversationList(title string, conversations []Conversation, m
 	})
 
 	if len(conversations) == 0 {
-		list.AddItem("No conversations", "Use friends or groups first.", 0, nil)
+		list.AddItem(translate(a.lang, "list.no_conversations"), translate(a.lang, "list.use_friends_or_groups_hint"), 0, nil)
 	} else {
 		for _, conv := range conversations {
 			conv := conv
-			label := fmt.Sprintf("[%s] %s", conv.Type, conv.Name)
+			label := fmt.Sprintf("[%s] %s", a.conversationTypeLabel(conv.Type), conv.Name)
 			if conv.UnreadCount > 0 {
-				label += fmt.Sprintf(" (%d unread)", conv.UnreadCount)
+				label += fmt.Sprintf(" (%d %s)", conv.UnreadCount, translate(a.lang, "ui.unread"))
 			}
 			list.AddItem(label, conv.Subtitle, 0, func() { a.openChat(conv) })
 		}
@@ -384,16 +479,16 @@ func (a *App) showConversationList(title string, conversations []Conversation, m
 }
 
 func (a *App) loadFriends() {
-	a.showMain("Friends", a.textPanel("Friends", "Loading friends..."), nil, "Loading friends...")
+	a.showMain(translate(a.lang, "menu.friends"), a.textPanel(translate(a.lang, "menu.friends"), translate(a.lang, "loading.friends")), nil, translate(a.lang, "loading.friends"))
 	go func() {
 		friends, err := a.client.Friends()
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
-				a.showError("Load friends failed", err)
+				a.showError(translate(a.lang, "error.load_friends_failed"), err)
 				return
 			}
 			list := tview.NewList()
-			list.SetBorder(true).SetTitle(" Friends ")
+			list.SetBorder(true).SetTitle(" " + translate(a.lang, "menu.friends") + " ")
 			list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 				switch event.Key() {
 				case tcell.KeyEsc:
@@ -406,13 +501,13 @@ func (a *App) loadFriends() {
 				return event
 			})
 			if len(friends) == 0 {
-				list.AddItem("No friends", "Send a friend request from the menu.", 0, nil)
+				list.AddItem(translate(a.lang, "list.no_friends"), translate(a.lang, "list.send_friend_request_hint"), 0, nil)
 			}
 			for _, friend := range friends {
 				friend := friend
 				label := friend.DisplayName()
 				if friend.UnreadCount > 0 {
-					label += fmt.Sprintf(" (%d unread)", friend.UnreadCount)
+					label += fmt.Sprintf(" (%d %s)", friend.UnreadCount, translate(a.lang, "ui.unread"))
 				}
 				list.AddItem(label, friend.Subtitle(), 0, func() {
 					a.openChat(Conversation{
@@ -424,23 +519,23 @@ func (a *App) loadFriends() {
 					})
 				})
 			}
-			list.AddItem("Friend requests", "Open incoming friend requests.", 0, func() { a.loadFriendRequests() })
-			a.showMain("Friends", list, list, "Friends loaded.")
+			list.AddItem(translate(a.lang, "menu.friend_requests"), translate(a.lang, "list.open_friend_requests_hint"), 0, func() { a.loadFriendRequests() })
+			a.showMain(translate(a.lang, "menu.friends"), list, list, translate(a.lang, "status.logged_in"))
 		})
 	}()
 }
 
 func (a *App) loadFriendRequests() {
-	a.showMain("Friend Requests", a.textPanel("Friend Requests", "Loading friend requests..."), nil, "Loading friend requests...")
+	a.showMain(translate(a.lang, "menu.friend_requests"), a.textPanel(translate(a.lang, "menu.friend_requests"), translate(a.lang, "loading.friend_requests")), nil, translate(a.lang, "loading.friend_requests"))
 	go func() {
 		requests, err := a.client.FriendRequests()
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
-				a.showError("Load friend requests failed", err)
+				a.showError(translate(a.lang, "error.load_friend_requests_failed"), err)
 				return
 			}
 			list := tview.NewList()
-			list.SetBorder(true).SetTitle(" Friend Requests ")
+			list.SetBorder(true).SetTitle(" " + translate(a.lang, "menu.friend_requests") + " ")
 			list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 				switch event.Key() {
 				case tcell.KeyEsc:
@@ -453,7 +548,7 @@ func (a *App) loadFriendRequests() {
 				return event
 			})
 			if len(requests) == 0 {
-				list.AddItem("No friend requests", "", 0, nil)
+				list.AddItem(translate(a.lang, "list.no_friend_requests"), "", 0, nil)
 			}
 			for _, req := range requests {
 				req := req
@@ -465,22 +560,62 @@ func (a *App) loadFriendRequests() {
 					a.showFriendRequestDetail(req)
 				})
 			}
-			a.showMain("Friend Requests", list, list, "Friend requests loaded.")
+			a.showMain(translate(a.lang, "menu.friend_requests"), list, list, translate(a.lang, "status.logged_in"))
+		})
+	}()
+}
+
+func (a *App) loadNotices() {
+	a.showMain(translate(a.lang, "menu.notices"), a.textPanel(translate(a.lang, "menu.notices"), translate(a.lang, "loading.notices")), nil, translate(a.lang, "loading.notices"))
+	go func() {
+		notices, err := a.client.Notices()
+		a.ui.QueueUpdateDraw(func() {
+			if err != nil {
+				a.showError(translate(a.lang, "error.load_notices_failed"), err)
+				return
+			}
+			list := tview.NewList()
+			list.SetBorder(true).SetTitle(" " + translate(a.lang, "menu.notices") + " ")
+			list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+				switch event.Key() {
+				case tcell.KeyEsc:
+					a.showHome("")
+					return nil
+				case tcell.KeyF5:
+					a.loadNotices()
+					return nil
+				}
+				return event
+			})
+			if len(notices) == 0 {
+				list.AddItem(translate(a.lang, "list.no_notices"), "", 0, nil)
+			}
+			for _, notice := range notices {
+				notice := notice
+				label := notice.Title
+				if notice.IsRead == 0 {
+					label += " [" + translate(a.lang, "ui.unread") + "]"
+				}
+				list.AddItem(label, notice.Summary(), 0, func() {
+					a.showNoticeDetail(notice)
+				})
+			}
+			a.showMain(translate(a.lang, "menu.notices"), list, list, translate(a.lang, "status.logged_in"))
 		})
 	}()
 }
 
 func (a *App) loadGroups() {
-	a.showMain("Groups", a.textPanel("Groups", "Loading groups..."), nil, "Loading groups...")
+	a.showMain(translate(a.lang, "menu.groups"), a.textPanel(translate(a.lang, "menu.groups"), translate(a.lang, "loading.groups")), nil, translate(a.lang, "loading.groups"))
 	go func() {
 		groups, err := a.client.Groups()
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
-				a.showError("Load groups failed", err)
+				a.showError(translate(a.lang, "error.load_groups_failed"), err)
 				return
 			}
 			list := tview.NewList()
-			list.SetBorder(true).SetTitle(" Groups ")
+			list.SetBorder(true).SetTitle(" " + translate(a.lang, "menu.groups") + " ")
 			list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 				switch event.Key() {
 				case tcell.KeyEsc:
@@ -493,13 +628,13 @@ func (a *App) loadGroups() {
 				return event
 			})
 			if len(groups) == 0 {
-				list.AddItem("No groups", "Create or join a group first.", 0, nil)
+				list.AddItem(translate(a.lang, "list.no_groups"), translate(a.lang, "list.create_or_join_group_hint"), 0, nil)
 			}
 			for _, group := range groups {
 				group := group
 				label := fmt.Sprintf("%s [Room %d]", group.DisplayName(), group.Room())
 				if group.UnreadCount > 0 {
-					label += fmt.Sprintf(" (%d unread)", group.UnreadCount)
+					label += fmt.Sprintf(" (%d %s)", group.UnreadCount, translate(a.lang, "ui.unread"))
 				}
 				list.AddItem(label, group.Subtitle(), 0, func() {
 					a.openChat(Conversation{
@@ -511,22 +646,22 @@ func (a *App) loadGroups() {
 					})
 				})
 			}
-			a.showMain("Groups", list, list, "Groups loaded.")
+			a.showMain(translate(a.lang, "menu.groups"), list, list, translate(a.lang, "status.logged_in"))
 		})
 	}()
 }
 
 func (a *App) loadPublicGroups() {
-	a.showMain("Public Groups", a.textPanel("Public Groups", "Loading public groups..."), nil, "Loading public groups...")
+	a.showMain(translate(a.lang, "menu.public_groups"), a.textPanel(translate(a.lang, "menu.public_groups"), translate(a.lang, "loading.public_groups")), nil, translate(a.lang, "loading.public_groups"))
 	go func() {
 		groups, err := a.client.PublicGroups()
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
-				a.showError("Load public groups failed", err)
+				a.showError(translate(a.lang, "error.load_public_groups_failed"), err)
 				return
 			}
 			list := tview.NewList()
-			list.SetBorder(true).SetTitle(" Public Groups ")
+			list.SetBorder(true).SetTitle(" " + translate(a.lang, "menu.public_groups") + " ")
 			list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 				switch event.Key() {
 				case tcell.KeyEsc:
@@ -539,7 +674,7 @@ func (a *App) loadPublicGroups() {
 				return event
 			})
 			if len(groups) == 0 {
-				list.AddItem("No public groups", "", 0, nil)
+				list.AddItem(translate(a.lang, "list.no_public_groups"), "", 0, nil)
 			}
 			for _, group := range groups {
 				group := group
@@ -548,7 +683,7 @@ func (a *App) loadPublicGroups() {
 					a.showJoinGroupForm(group)
 				})
 			}
-			a.showMain("Public Groups", list, list, "Public groups loaded.")
+			a.showMain(translate(a.lang, "menu.public_groups"), list, list, translate(a.lang, "status.logged_in"))
 		})
 	}()
 }
@@ -559,7 +694,7 @@ func (a *App) openChat(conv Conversation) {
 		Conv: conv,
 		Stop: make(chan struct{}),
 	}
-	a.showChat(session, "Loading messages...")
+	a.showChat(session, translate(a.lang, "loading.messages"))
 	go func() {
 		messages, err := a.loadMessages(conv)
 		a.ui.QueueUpdateDraw(func() {
@@ -567,19 +702,20 @@ func (a *App) openChat(conv Conversation) {
 				return
 			}
 			if err != nil {
-				a.showError("Load messages failed", err)
+				a.showError(translate(a.lang, "error.load_messages_failed"), err)
 				return
 			}
 			session.Messages = mergeMessages(nil, messages)
 			session.LastID = maxMessageID(session.Messages)
 			a.renderChatMessages(session)
-			a.setStatus("Messages loaded. Auto refresh every 4s.")
+			a.setStatus(translate(a.lang, "status.messages_loaded_auto_refresh"))
 			go a.pollChat(session)
 		})
 	}()
 }
 
 func (a *App) showChat(session *ChatSession, message string) {
+	a.screen = "chat"
 	if message != "" {
 		a.statusText = message
 	}
@@ -588,13 +724,13 @@ func (a *App) showChat(session *ChatSession, message string) {
 	header := tview.NewTextView()
 	header.SetDynamicColors(true)
 	header.SetTextAlign(tview.AlignCenter)
-	header.SetText(fmt.Sprintf("[::b]%s[::-]  [gray]%s | Esc back | F5 refresh | Enter send | /img list[-]", tview.Escape(conv.Name), conv.Type))
+	header.SetText(fmt.Sprintf("[::b]%s[::-]  [gray]%s | %s[-]", tview.Escape(conv.Name), a.conversationTypeLabel(conv.Type), translate(a.lang, "chat.shortcuts")))
 
 	view := tview.NewTextView()
 	view.SetDynamicColors(true)
 	view.SetScrollable(true)
 	view.SetWrap(true)
-	view.SetBorder(true).SetTitle(" Messages ")
+	view.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.messages") + " ")
 	session.View = view
 	a.renderChatMessages(session)
 	view.ScrollToEnd()
@@ -623,12 +759,12 @@ func (a *App) showChat(session *ChatSession, message string) {
 			session.Messages = nil
 			session.LastID = 0
 			a.renderChatMessages(session)
-			a.setStatus("Local message view cleared.")
+			a.setStatus(translate(a.lang, "status.local_message_view_cleared"))
 		case "/img":
 			a.showImageLinks(session)
 		default:
 			if strings.HasPrefix(text, "/") {
-				a.setStatus("Unknown chat command.")
+				a.setStatus(translate(a.lang, "status.unknown_chat_command"))
 				return
 			}
 			a.sendChatMessage(conv, text)
@@ -654,19 +790,17 @@ func (a *App) showChat(session *ChatSession, message string) {
 	})
 
 	a.setActiveChat(session)
-	a.pages.RemovePage("chat")
-	a.pages.AddPage("chat", root, true, true)
-	a.pages.SwitchToPage("chat")
+	a.replacePage("chat", root)
 	a.ui.SetFocus(input)
 }
 
 func (a *App) sendChatMessage(conv Conversation, content string) {
-	a.setStatus("Sending message...")
+	a.setStatus(translate(a.lang, "action.sending_message"))
 	go func() {
 		err := a.sendMessage(conv, content)
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
-				a.showError("Send failed", err)
+				a.showError(translate(a.lang, "error.send_failed"), err)
 				return
 			}
 			a.chatMu.Lock()
@@ -676,99 +810,99 @@ func (a *App) sendChatMessage(conv Conversation, content string) {
 				a.refreshChat(session, true)
 				return
 			}
-			a.setStatus("Message sent.")
+			a.setStatus(translate(a.lang, "action.message_sent"))
 		})
 	}()
 }
 
 func (a *App) showFriendRequestForm() {
-	uid := tview.NewInputField().SetLabel("Target UID: ").SetFieldWidth(18)
-	msg := tview.NewInputField().SetLabel("Message:    ").SetFieldWidth(40)
+	uid := tview.NewInputField().SetLabel(translate(a.lang, "form.target_uid") + ": ").SetFieldWidth(18)
+	msg := tview.NewInputField().SetLabel(translate(a.lang, "form.message") + ":    ").SetFieldWidth(40)
 	form := tview.NewForm()
 	form.AddFormItem(uid)
 	form.AddFormItem(msg)
-	form.AddButton("Send", func() {
+	form.AddButton(translate(a.lang, "ui.send"), func() {
 		target, err := strconv.Atoi(strings.TrimSpace(uid.GetText()))
 		if err != nil || target <= 0 {
-			a.setStatus("Invalid UID.")
+			a.setStatus(translate(a.lang, "status.invalid_uid"))
 			return
 		}
 		message := msg.GetText()
 		a.closeModal()
-		a.setStatus("Sending friend request...")
+		a.setStatus(translate(a.lang, "action.send_request"))
 		go func() {
 			err := a.client.SendFriendRequest(target, message)
 			a.ui.QueueUpdateDraw(func() {
 				if err != nil {
-					a.showError("Send friend request failed", err)
+					a.showError(translate(a.lang, "error.send_friend_request_failed"), err)
 					return
 				}
-				a.setStatus("Friend request sent.")
+				a.setStatus(translate(a.lang, "status.friend_request_sent"))
 			})
 		}()
 	})
-	form.AddButton("Cancel", func() { a.closeModal() })
+	form.AddButton(translate(a.lang, "ui.cancel"), func() { a.closeModal() })
 	form.SetButtonsAlign(tview.AlignRight)
-	form.SetBorder(true).SetTitle(" Add Friend ").SetTitleAlign(tview.AlignLeft)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "menu.add_friend") + " ").SetTitleAlign(tview.AlignLeft)
 	a.showModal(form, 64, 11)
 }
 
 func (a *App) showCreateGroupForm() {
-	name := tview.NewInputField().SetLabel("Room name: ").SetFieldWidth(40)
+	name := tview.NewInputField().SetLabel(translate(a.lang, "form.room_name") + ": ").SetFieldWidth(40)
 	form := tview.NewForm()
 	form.AddFormItem(name)
-	form.AddButton("Create", func() {
+	form.AddButton(translate(a.lang, "ui.create"), func() {
 		roomName := strings.TrimSpace(name.GetText())
 		if roomName == "" {
-			a.setStatus("Room name is required.")
+			a.setStatus(translate(a.lang, "status.room_name_required"))
 			return
 		}
 		a.closeModal()
-		a.setStatus("Creating group...")
+		a.setStatus(translate(a.lang, "action.create_group"))
 		go func() {
 			group, err := a.client.CreateGroup(roomName)
 			a.ui.QueueUpdateDraw(func() {
 				if err != nil {
-					a.showError("Create group failed", err)
+					a.showError(translate(a.lang, "error.create_group_failed"), err)
 					return
 				}
-				message := fmt.Sprintf("Group created. Room ID: %d", group.Room())
+				message := translate(a.lang, "status.group_created", group.Room())
 				if group.InviteCode != "" {
-					message += ", invite code: " + group.InviteCode
+					message += translate(a.lang, "status.invite_code_suffix", group.InviteCode)
 				}
 				a.setStatus(message)
 			})
 		}()
 	})
-	form.AddButton("Cancel", func() { a.closeModal() })
+	form.AddButton(translate(a.lang, "ui.cancel"), func() { a.closeModal() })
 	form.SetButtonsAlign(tview.AlignRight)
-	form.SetBorder(true).SetTitle(" Create Group ").SetTitleAlign(tview.AlignLeft)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "menu.create_group") + " ").SetTitleAlign(tview.AlignLeft)
 	a.showModal(form, 64, 10)
 }
 
 func (a *App) showJoinGroupForm(group Group) {
-	code := tview.NewInputField().SetLabel("Invite code: ").SetFieldWidth(32)
-	answer := tview.NewInputField().SetLabel("Answer:      ").SetFieldWidth(40)
+	code := tview.NewInputField().SetLabel(translate(a.lang, "form.invite_code") + ": ").SetFieldWidth(32)
+	answer := tview.NewInputField().SetLabel(translate(a.lang, "form.answer") + ":      ").SetFieldWidth(40)
 	form := tview.NewForm()
 	form.AddFormItem(code)
 	form.AddFormItem(answer)
-	form.AddButton("Join/Apply", func() {
+	form.AddButton(translate(a.lang, "ui.join_apply"), func() {
 		a.closeModal()
-		a.setStatus("Sending group request...")
+		a.setStatus(translate(a.lang, "action.send_group_request"))
 		go func() {
 			err := a.client.ApplyJoinGroup(group.Room(), strings.TrimSpace(code.GetText()), strings.TrimSpace(answer.GetText()))
 			a.ui.QueueUpdateDraw(func() {
 				if err != nil {
-					a.showError("Join/apply failed", err)
+					a.showError(translate(a.lang, "error.join_apply_failed"), err)
 					return
 				}
-				a.setStatus("Join/apply request sent.")
+				a.setStatus(translate(a.lang, "status.join_apply_sent"))
 			})
 		}()
 	})
-	form.AddButton("Cancel", func() { a.closeModal() })
+	form.AddButton(translate(a.lang, "ui.cancel"), func() { a.closeModal() })
 	form.SetButtonsAlign(tview.AlignRight)
-	form.SetBorder(true).SetTitle(" Join " + group.DisplayName() + " ").SetTitleAlign(tview.AlignLeft)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.join") + " " + group.DisplayName() + " ").SetTitleAlign(tview.AlignLeft)
 	a.showModal(form, 68, 11)
 }
 
@@ -778,95 +912,170 @@ func (a *App) showFriendRequestDetail(req FriendRequest) {
 	details.SetDynamicColors(true)
 	details.SetWrap(true)
 	details.SetText(fmt.Sprintf(
-		"[::b]From[::-] %s\n[::b]UID[::-] %d\n[::b]Request ID[::-] %d\n[::b]Type[::-] %s\n[::b]Status[::-] %s\n[::b]Message[::-] %s\n[::b]Time[::-] %s",
+		"[::b]%s[::-] %s\n[::b]UID[::-] %d\n[::b]%s[::-] %d\n[::b]%s[::-] %s\n[::b]%s[::-] %s\n[::b]%s[::-] %s\n[::b]%s[::-] %s",
+		translate(a.lang, "field.from"),
 		tview.Escape(req.DisplayName()),
 		req.FromUID,
+		translate(a.lang, "field.request_id"),
 		req.RID(),
+		translate(a.lang, "field.type"),
 		req.KindLabel(),
+		translate(a.lang, "field.status"),
 		req.StatusLabel(),
+		translate(a.lang, "field.message"),
 		tview.Escape(req.Text()),
+		translate(a.lang, "field.time"),
 		tview.Escape(req.Timestamp()),
 	))
 	form.AddFormItem(details)
-	form.AddButton("Agree", func() {
+	form.AddButton(translate(a.lang, "ui.agree"), func() {
 		a.closeModal()
-		a.setStatus("Accepting friend request...")
+		a.setStatus(translate(a.lang, "action.accepting_friend_request"))
 		go func() {
 			err := a.client.HandleFriendRequest(req.RID(), "agree")
 			a.ui.QueueUpdateDraw(func() {
 				if err != nil {
-					a.showError("Accept friend request failed", err)
+					a.showError(translate(a.lang, "error.accept_friend_request_failed"), err)
 					return
 				}
-				a.setStatus("Friend request accepted.")
+				a.setStatus(translate(a.lang, "status.friend_request_accepted"))
 				a.loadFriendRequests()
 			})
 		}()
 	})
-	form.AddButton("Refuse", func() {
+	form.AddButton(translate(a.lang, "ui.refuse"), func() {
 		a.closeModal()
-		a.setStatus("Refusing friend request...")
+		a.setStatus(translate(a.lang, "action.refusing_friend_request"))
 		go func() {
 			err := a.client.HandleFriendRequest(req.RID(), "refuse")
 			a.ui.QueueUpdateDraw(func() {
 				if err != nil {
-					a.showError("Refuse friend request failed", err)
+					a.showError(translate(a.lang, "error.refuse_friend_request_failed"), err)
 					return
 				}
-				a.setStatus("Friend request refused.")
+				a.setStatus(translate(a.lang, "status.friend_request_refused"))
 				a.loadFriendRequests()
 			})
 		}()
 	})
-	form.AddButton("Copy", func() {
-		text := fmt.Sprintf("From: %s\nUID: %d\nRequest ID: %d\nMessage: %s\nTime: %s",
-			req.DisplayName(), req.FromUID, req.RID(), req.Text(), req.Timestamp())
+	form.AddButton(translate(a.lang, "ui.copy"), func() {
+		text := fmt.Sprintf("%s: %s\nUID: %d\n%s: %d\n%s: %s\n%s: %s",
+			translate(a.lang, "field.from"), req.DisplayName(),
+			req.FromUID,
+			translate(a.lang, "field.request_id"), req.RID(),
+			translate(a.lang, "field.message"), req.Text(),
+			translate(a.lang, "field.time"), req.Timestamp())
 		if err := copyToClipboard(text); err != nil {
-			a.setStatus("Copy failed: " + err.Error())
+			a.setStatus(translate(a.lang, "error.copy_failed") + ": " + err.Error())
 			return
 		}
-		a.setStatus("Copied request details.")
+		a.setStatus(translate(a.lang, "status.copied_request_details"))
 	})
-	form.AddButton("Back", func() { a.closeModal() })
+	form.AddButton(translate(a.lang, "ui.back"), func() { a.closeModal() })
 	form.SetButtonsAlign(tview.AlignRight)
-	form.SetBorder(true).SetTitle(" Friend Request ").SetTitleAlign(tview.AlignLeft)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.friend_request") + " ").SetTitleAlign(tview.AlignLeft)
 	a.showModal(form, 90, 16)
 }
 
+func (a *App) showNoticeDetail(notice Notice) {
+	form := tview.NewForm()
+	details := tview.NewTextView()
+	details.SetDynamicColors(true)
+	details.SetWrap(true)
+	details.SetText(fmt.Sprintf(
+		"[::b]%s[::-] %s\n[::b]%s[::-] %s\n[::b]%s[::-] %s\n[::b]%s[::-] %s\n[::b]%s[::-] %s\n\n%s",
+		translate(a.lang, "field.title"),
+		tview.Escape(notice.Title),
+		translate(a.lang, "field.status"),
+		notice.StatusLabel(),
+		translate(a.lang, "field.time"),
+		tview.Escape(notice.Timestamp()),
+		translate(a.lang, "field.route"),
+		tview.Escape(notice.Route),
+		translate(a.lang, "field.link"),
+		tview.Escape(notice.Link),
+		tview.Escape(notice.Content),
+	))
+	form.AddFormItem(details)
+	form.AddButton(translate(a.lang, "ui.copy"), func() {
+		text := fmt.Sprintf("%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n\n%s",
+			translate(a.lang, "field.title"), notice.Title,
+			translate(a.lang, "field.time"), notice.Timestamp(),
+			translate(a.lang, "field.status"), notice.StatusLabel(),
+			translate(a.lang, "field.route"), notice.Route,
+			translate(a.lang, "field.link"), notice.Link,
+			notice.Content)
+		if err := copyToClipboard(text); err != nil {
+			a.setStatus(translate(a.lang, "error.copy_failed") + ": " + err.Error())
+			return
+		}
+		a.setStatus(translate(a.lang, "status.copied_notice_text"))
+	})
+	form.AddButton(translate(a.lang, "ui.open_link"), func() {
+		if notice.Link == "" {
+			a.setStatus(translate(a.lang, "status.notice_no_link"))
+			return
+		}
+		if err := openExternalURL(notice.Link); err != nil {
+			a.setStatus(translate(a.lang, "error.open_link_failed") + ": " + err.Error())
+			return
+		}
+		a.setStatus(translate(a.lang, "status.opened_notice_link"))
+	})
+	form.AddButton(translate(a.lang, "ui.mark_read"), func() {
+		a.closeModal()
+		go func() {
+			err := a.client.MarkNoticeRead(notice.NoticeID(), false)
+			a.ui.QueueUpdateDraw(func() {
+				if err != nil {
+					a.showError(translate(a.lang, "error.mark_notice_read_failed"), err)
+					return
+				}
+				a.setStatus(translate(a.lang, "status.notice_marked_read"))
+				a.loadNotices()
+			})
+		}()
+	})
+	form.AddButton(translate(a.lang, "ui.back"), func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.notice") + " ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 96, 18)
+}
+
 func (a *App) refreshUser() {
-	a.setStatus("Refreshing user...")
+	a.setStatus(translate(a.lang, "action.refreshing_user"))
 	go func() {
 		user, err := a.client.CurrentUser()
 		a.ui.QueueUpdateDraw(func() {
 			if err != nil {
-				a.showError("Refresh user failed", err)
+				a.showError(translate(a.lang, "error.refresh_user_failed"), err)
 				return
 			}
 			a.user = user
-			a.showHome("User refreshed.")
+			a.showHome(translate(a.lang, "status.user_refreshed"))
 		})
 	}()
 }
 
 func (a *App) logout() {
-	a.setStatus("Logging out...")
+	a.setStatus(translate(a.lang, "action.logging_out"))
 	go func() {
 		err := a.client.Logout()
 		clearErr := a.clearSession()
 		a.ui.QueueUpdateDraw(func() {
 			if clearErr != nil {
-				a.showError("Clear saved session failed", clearErr)
+				a.showError(translate(a.lang, "error.clear_saved_session_failed"), clearErr)
 				return
 			}
 			if err != nil {
-				a.showError("Logout failed", err)
+				a.showError(translate(a.lang, "error.logout_failed"), err)
 				a.user = nil
-				a.statusText = "Local session cleared. Server logout failed."
+				a.statusText = translate(a.lang, "status.local_session_cleared_server_logout_failed")
 				a.showAuth("")
 				return
 			}
 			a.user = nil
-			a.statusText = "Logged out."
+			a.statusText = translate(a.lang, "status.logged_out")
 			a.showAuth("")
 		})
 	}()
@@ -917,13 +1126,13 @@ func (a *App) sendMessage(conv Conversation, content string) error {
 
 func (a *App) writeMessages(view *tview.TextView, messages []Message) {
 	if len(messages) == 0 {
-		fmt.Fprintln(view, "[gray]No messages.[-]")
+		fmt.Fprintf(view, "[gray]%s[-]\n", tview.Escape(translate(a.lang, "chat.no_messages")))
 		return
 	}
 	start := 0
 	if len(messages) > 120 {
 		start = len(messages) - 120
-		fmt.Fprintf(view, "[gray]... %d earlier messages hidden ...[-]\n\n", start)
+		fmt.Fprintf(view, "[gray]%s[-]\n\n", tview.Escape(translate(a.lang, "chat.earlier_messages_hidden", start)))
 	}
 	for _, msg := range messages[start:] {
 		ts := msg.Timestamp()
@@ -932,7 +1141,7 @@ func (a *App) writeMessages(view *tview.TextView, messages []Message) {
 		}
 		sender := msg.Sender()
 		if a.user != nil && msg.SenderID() == a.user.UID {
-			sender = "me"
+			sender = translate(a.lang, "chat.me")
 		}
 		flags := ""
 		if msg.IsMentioned {
@@ -952,13 +1161,13 @@ func (a *App) renderChatMessages(session *ChatSession) {
 	session.View.Clear()
 	session.ImageLinks = nil
 	if len(session.Messages) == 0 {
-		fmt.Fprintln(session.View, "[gray]No messages.[-]")
+		fmt.Fprintf(session.View, "[gray]%s[-]\n", tview.Escape(translate(a.lang, "chat.no_messages")))
 		return
 	}
 	start := 0
 	if len(session.Messages) > 120 {
 		start = len(session.Messages) - 120
-		fmt.Fprintf(session.View, "[gray]... %d earlier messages hidden ...[-]\n\n", start)
+		fmt.Fprintf(session.View, "[gray]%s[-]\n\n", tview.Escape(translate(a.lang, "chat.earlier_messages_hidden", start)))
 	}
 	for _, msg := range session.Messages[start:] {
 		ts := msg.Timestamp()
@@ -967,7 +1176,7 @@ func (a *App) renderChatMessages(session *ChatSession) {
 		}
 		sender := msg.Sender()
 		if a.user != nil && msg.SenderID() == a.user.UID {
-			sender = "me"
+			sender = translate(a.lang, "chat.me")
 		}
 		flags := ""
 		if msg.IsMentioned {
@@ -979,7 +1188,7 @@ func (a *App) renderChatMessages(session *ChatSession) {
 		body := msg.Body()
 		if img := msg.ImageLink(); img != "" {
 			session.ImageLinks = append(session.ImageLinks, normalizeAPIURL(img))
-			body = body + fmt.Sprintf(" [image #%d]", len(session.ImageLinks))
+			body = body + " " + translate(a.lang, "chat.image_ref", len(session.ImageLinks))
 		}
 		fmt.Fprintf(session.View, "[green]%s%s[-]: %s\n", tview.Escape(sender), flags, tview.Escape(body))
 	}
@@ -1004,7 +1213,7 @@ func (a *App) refreshChat(session *ChatSession, manual bool) {
 		return
 	}
 	if manual {
-		a.setStatus("Refreshing messages...")
+		a.setStatus(translate(a.lang, "action.refreshing_messages"))
 	}
 	go func() {
 		messages, err := a.loadMessagesAfter(session.Conv, session.LastID)
@@ -1014,9 +1223,9 @@ func (a *App) refreshChat(session *ChatSession, manual bool) {
 			}
 			if err != nil {
 				if manual {
-					a.showError("Refresh messages failed", err)
+					a.showError(translate(a.lang, "error.refresh_messages_failed"), err)
 				} else {
-					a.setStatus("Auto refresh failed: " + err.Error())
+					a.setStatus(translate(a.lang, "error.auto_refresh_failed") + ": " + err.Error())
 				}
 				return
 			}
@@ -1027,10 +1236,10 @@ func (a *App) refreshChat(session *ChatSession, manual bool) {
 			a.renderChatMessages(session)
 			if after > before {
 				count := after - before
-				a.setStatus(fmt.Sprintf("New messages: %d in %s", count, session.Conv.Name))
+				a.setStatus(translate(a.lang, "status.new_messages", count, session.Conv.Name))
 				_ = a.client.MarkRead(session.Conv, session.LastID)
 			} else if manual {
-				a.setStatus("No new messages.")
+				a.setStatus(translate(a.lang, "action.no_new_messages"))
 			}
 		})
 	}()
@@ -1057,18 +1266,18 @@ func (a *App) loadMessagesAfter(conv Conversation, lastID int) ([]Message, error
 
 func (a *App) showImageLinks(session *ChatSession) {
 	if session == nil || len(session.ImageLinks) == 0 {
-		a.setStatus("No image links in current chat view.")
+		a.setStatus(translate(a.lang, "status.no_image_links"))
 		return
 	}
 	list := tview.NewList()
-	list.SetBorder(true).SetTitle(" Images ")
+	list.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.images") + " ")
 	for i, link := range session.ImageLinks {
 		link := link
 		list.AddItem(fmt.Sprintf("#%d", i+1), link, 0, func() {
 			a.showImageAction(link)
 		})
 	}
-	list.AddItem("Close", "", 'q', func() { a.closeModal() })
+	list.AddItem(translate(a.lang, "ui.close"), "", 'q', func() { a.closeModal() })
 	list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEsc {
 			a.closeModal()
@@ -1086,21 +1295,21 @@ func (a *App) showImageAction(link string) {
 	text.SetWrap(true)
 	text.SetText(tview.Escape(link))
 	form.AddFormItem(text)
-	form.AddButton("Copy", func() {
+	form.AddButton(translate(a.lang, "ui.copy"), func() {
 		if err := copyToClipboard(link); err != nil {
-			a.setStatus("Copy image link failed: " + err.Error())
+			a.setStatus(translate(a.lang, "error.copy_image_failed") + ": " + err.Error())
 			return
 		}
-		a.setStatus("Copied image link.")
+		a.setStatus(translate(a.lang, "status.copied_image_link"))
 	})
-	form.AddButton("Open", func() {
+	form.AddButton(translate(a.lang, "ui.open"), func() {
 		if err := openExternalURL(link); err != nil {
-			a.setStatus("Open image link failed: " + err.Error())
+			a.setStatus(translate(a.lang, "error.open_image_failed") + ": " + err.Error())
 			return
 		}
-		a.setStatus("Opened image link.")
+		a.setStatus(translate(a.lang, "status.opened_image_link"))
 	})
-	form.AddButton("Back", func() {
+	form.AddButton(translate(a.lang, "ui.back"), func() {
 		a.closeModal()
 		a.chatMu.Lock()
 		session := a.activeChat
@@ -1109,9 +1318,9 @@ func (a *App) showImageAction(link string) {
 			a.showImageLinks(session)
 		}
 	})
-	form.AddButton("Close", func() { a.closeModal() })
+	form.AddButton(translate(a.lang, "ui.close"), func() { a.closeModal() })
 	form.SetButtonsAlign(tview.AlignRight)
-	form.SetBorder(true).SetTitle(" Image Link ").SetTitleAlign(tview.AlignLeft)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.image_link") + " ").SetTitleAlign(tview.AlignLeft)
 	a.showModal(form, 96, 11)
 }
 
@@ -1197,6 +1406,17 @@ func (a *App) conversations() ([]Conversation, error) {
 	return conversations, nil
 }
 
+func (a *App) conversationTypeLabel(convType ConversationType) string {
+	switch convType {
+	case ConversationGroup:
+		return translate(a.lang, "conversation.group")
+	case ConversationFriend:
+		return translate(a.lang, "conversation.private")
+	default:
+		return string(convType)
+	}
+}
+
 func maxMessageID(messages []Message) int {
 	maxID := 0
 	for _, msg := range messages {
@@ -1247,16 +1467,16 @@ func (a *App) showError(title string, err error) {
 
 	form := tview.NewForm()
 	form.AddFormItem(body)
-	form.AddButton("Copy", func() {
+	form.AddButton(translate(a.lang, "ui.copy"), func() {
 		if err := copyToClipboard(message); err != nil {
-			a.setStatus("Copy failed: " + err.Error())
+			a.setStatus(translate(a.lang, "error.copy_failed") + ": " + err.Error())
 			return
 		}
-		a.setStatus("Copied error message.")
+		a.setStatus(translate(a.lang, "status.copied_error_message"))
 	})
-	form.AddButton("Close", func() { a.closeModal() })
+	form.AddButton(translate(a.lang, "ui.close"), func() { a.closeModal() })
 	form.SetButtonsAlign(tview.AlignRight)
-	form.SetBorder(true).SetTitle(" Error ").SetTitleAlign(tview.AlignLeft)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.error") + " ").SetTitleAlign(tview.AlignLeft)
 	form.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEsc {
 			a.closeModal()

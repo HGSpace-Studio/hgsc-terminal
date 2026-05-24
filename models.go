@@ -16,6 +16,7 @@ type APIResponse struct {
 	User     *User                      `json:"user,omitempty"`
 	Friends  []Friend                   `json:"friends,omitempty"`
 	Requests []FriendRequest            `json:"requests,omitempty"`
+	Notices  []Notice                   `json:"notices,omitempty"`
 	Groups   []Group                    `json:"groups,omitempty"`
 	Room     *Group                     `json:"room,omitempty"`
 	Messages []Message                  `json:"messages,omitempty"`
@@ -61,6 +62,39 @@ type FriendRequest struct {
 	HandleTime FlexibleString `json:"handle_time"`
 	CreatedAt  FlexibleString `json:"created_at"`
 	AddTime    FlexibleString `json:"add_time"`
+}
+
+type Notice struct {
+	ID      int            `json:"id"`
+	Title   string         `json:"title"`
+	Content string         `json:"content"`
+	AddTime FlexibleString `json:"add_time"`
+	IsRead  int            `json:"is_read"`
+	Link    string         `json:"link"`
+	Route   string         `json:"route"`
+}
+
+func (n Notice) NoticeID() int {
+	return n.ID
+}
+
+func (n Notice) StatusLabel() string {
+	if n.IsRead == 0 {
+		return "unread"
+	}
+	return "read"
+}
+
+func (n Notice) Timestamp() string {
+	return strings.TrimSpace(string(n.AddTime))
+}
+
+func (n Notice) Summary() string {
+	text := strings.TrimSpace(n.Content)
+	if text == "" {
+		text = strings.TrimSpace(n.Title)
+	}
+	return compactText(text, 80)
 }
 
 func (r FriendRequest) RID() int {

@@ -223,6 +223,37 @@ func (c *UniCsACClient) FriendRequests() ([]FriendRequest, error) {
 	return nil, nil
 }
 
+func (c *UniCsACClient) Notices() ([]Notice, error) {
+	var out APIResponse
+	if err := c.Get("user/get_notice_list", nil, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Notices) > 0 {
+		return out.Notices, nil
+	}
+	for _, key := range []string{"notices", "list", "data"} {
+		if raw, ok := out.Raw[key]; ok {
+			var notices []Notice
+			if json.Unmarshal(raw, &notices) == nil && len(notices) > 0 {
+				return notices, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+func (c *UniCsACClient) MarkNoticeRead(noticeID int, readAll bool) error {
+	values := url.Values{}
+	if readAll {
+		values.Set("read_all", "1")
+	}
+	if noticeID > 0 {
+		values.Set("notice_id", fmt.Sprint(noticeID))
+	}
+	var out APIResponse
+	return c.PostForm("user/mark_notice_read", values, &out)
+}
+
 func (c *UniCsACClient) HandleFriendRequest(requestID int, action string) error {
 	values := url.Values{
 		"request_id": {fmt.Sprint(requestID)},

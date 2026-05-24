@@ -19,6 +19,8 @@ https://cschat.ccccocccc.cc/rpc/UniCsAC.php
 - Refresh conversations and mark messages as read.
 - Send friend requests.
 - View and handle incoming friend requests.
+- Browse notices, mark them read, copy text, and open links.
+- Switch between English and Chinese UI language.
 - Create groups and apply to public groups.
 - Built on tview/tcell for forms, lists, layouts, input handling, and shortcuts.
 
@@ -54,6 +56,7 @@ go telemetry off
 - `Enter`: send message in chat
 - Error dialogs include a `Copy` button for the full error text.
 - Main menu includes a friend requests page with agree/refuse actions.
+- Main menu includes a notices page for `user/get_notice_list`.
 
 ## Session
 
@@ -66,6 +69,16 @@ directory, usually:
 
 On startup it loads that file and validates it with `user/get_info`. Logging out
 removes the saved session file.
+
+## Language
+
+The default UI language is English. Use the `Language` button on the login page
+or the `Language` item in the main menu to switch to Chinese. The choice is saved
+to:
+
+```text
+%APPDATA%\CsAC-Terminal\config.json
+```
 
 ## Notes
 
