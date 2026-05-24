@@ -1001,6 +1001,17 @@ func (a *App) recallMessage(conv Conversation, msgID int) {
 			session := a.activeChat
 			a.chatMu.Unlock()
 			if session != nil && session.Conv.Type == conv.Type && session.Conv.ID == conv.ID {
+				for i, msg := range session.Messages {
+					if msg.MessageID() == msgID {
+						session.Messages[i].IsRecalled = FlexibleBool(true)
+						session.Messages[i].CanRecall = FlexibleBool(false)
+						if a.cache != nil {
+							_ = a.cache.SaveMessages(conv, []Message{session.Messages[i]})
+						}
+						break
+					}
+				}
+				a.renderChatMessages(session)
 				a.refreshChat(session, true)
 			}
 		})
@@ -1025,6 +1036,16 @@ func (a *App) toggleEssence(conv Conversation, msgID int) {
 			session := a.activeChat
 			a.chatMu.Unlock()
 			if session != nil && session.Conv.Type == conv.Type && session.Conv.ID == conv.ID {
+				for i, msg := range session.Messages {
+					if msg.MessageID() == msgID {
+						session.Messages[i].IsEssence = FlexibleBool(!session.Messages[i].IsEssence.Bool())
+						if a.cache != nil {
+							_ = a.cache.SaveMessages(conv, []Message{session.Messages[i]})
+						}
+						break
+					}
+				}
+				a.renderChatMessages(session)
 				a.refreshChat(session, true)
 			}
 		})

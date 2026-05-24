@@ -19,7 +19,7 @@ func TestCacheStoreSavesLoadsAndSearchesMessages(t *testing.T) {
 		Subtitle: "lab notes",
 	}
 	messages := []Message{
-		{ID: 2, UID: 7, Nickname: "Alice", Content: "second zinc message", AddTime: "2026-05-24 10:00:02", IsEssence: true},
+		{ID: 2, UID: 7, Nickname: "Alice", Content: "second zinc message", AddTime: "2026-05-24 10:00:02", IsEssence: FlexibleBool(true)},
 		{ID: 1, UID: 8, Nickname: "Bob", Content: "first cached message", AddTime: "2026-05-24 10:00:01", ImageURL: "upload/a.png"},
 	}
 	if err := store.SaveMessages(conv, messages); err != nil {

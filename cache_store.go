@@ -83,6 +83,7 @@ func (s *CacheStore) init() error {
 			voice_url TEXT NOT NULL,
 			timestamp TEXT NOT NULL,
 			can_recall INTEGER NOT NULL DEFAULT 0,
+			is_recalled INTEGER NOT NULL DEFAULT 0,
 			is_essence INTEGER NOT NULL DEFAULT 0,
 			is_mentioned INTEGER NOT NULL DEFAULT 0,
 			reply_to INTEGER NOT NULL DEFAULT 0,
@@ -96,6 +97,9 @@ func (s *CacheStore) init() error {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return err
 		}
+	}
+	if err := s.addColumnIfMissing("messages", "is_recalled", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
 	}
 	return nil
 }
@@ -112,6 +116,35 @@ func (s *CacheStore) Path() string {
 		return ""
 	}
 	return s.path
+}
+
+func (s *CacheStore) addColumnIfMissing(table, column, definition string) error {
+	rows, err := s.db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			columnType string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return rows.Err()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = s.db.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition)
+	return err
 }
 
 func (s *CacheStore) SaveConversation(conv Conversation) error {
@@ -209,8 +242,8 @@ func (s *CacheStore) SaveMessages(conv Conversation, messages []Message) error {
 	}
 	stmt, err := tx.Prepare(
 		`INSERT INTO messages
-			(conv_type, conv_id, msg_id, sender_id, sender, content, image_url, voice_url, timestamp, can_recall, is_essence, is_mentioned, reply_to, raw_json, cached_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			(conv_type, conv_id, msg_id, sender_id, sender, content, image_url, voice_url, timestamp, can_recall, is_recalled, is_essence, is_mentioned, reply_to, raw_json, cached_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(conv_type, conv_id, msg_id) DO UPDATE SET
 			sender_id=excluded.sender_id,
 			sender=excluded.sender,
@@ -219,6 +252,7 @@ func (s *CacheStore) SaveMessages(conv Conversation, messages []Message) error {
 			voice_url=excluded.voice_url,
 			timestamp=excluded.timestamp,
 			can_recall=excluded.can_recall,
+			is_recalled=excluded.is_recalled,
 			is_essence=excluded.is_essence,
 			is_mentioned=excluded.is_mentioned,
 			reply_to=excluded.reply_to,
@@ -244,7 +278,7 @@ func (s *CacheStore) SaveMessages(conv Conversation, messages []Message) error {
 		}
 		if _, err := stmt.Exec(
 			string(conv.Type), conv.ID, msgID, msg.SenderID(), msg.Sender(), msg.Body(), msg.ImageLink(), msg.VoiceLink(), msg.Timestamp(),
-			boolToInt(msg.CanRecall), boolToInt(msg.IsEssence), boolToInt(msg.IsMentioned), msg.ReplyTo, string(raw), now,
+			boolToInt(msg.CanRecall.Bool()), boolToInt(msg.IsRecalled.Bool()), boolToInt(msg.IsEssence.Bool()), boolToInt(msg.IsMentioned.Bool()), msg.ReplyTo, string(raw), now,
 		); err != nil {
 			_ = tx.Rollback()
 			return err
@@ -257,7 +291,7 @@ func (s *CacheStore) LoadMessages(conv Conversation, limit int) ([]Message, erro
 	if s == nil || s.db == nil || conv.ID <= 0 {
 		return nil, nil
 	}
-	query := `SELECT raw_json, msg_id, sender_id, sender, content, image_url, voice_url, timestamp, can_recall, is_essence, is_mentioned, reply_to
+	query := `SELECT raw_json, msg_id, sender_id, sender, content, image_url, voice_url, timestamp, can_recall, is_recalled, is_essence, is_mentioned, reply_to
 		FROM messages
 		WHERE conv_type = ? AND conv_id = ?
 		ORDER BY msg_id DESC`
@@ -334,7 +368,7 @@ func (s *CacheStore) Search(query string, limit int) ([]SearchResult, error) {
 	rows, err := s.db.Query(
 		`SELECT c.conv_type, c.conv_id, c.peer_uid, c.name, c.subtitle, c.unread_count,
 				m.raw_json, m.msg_id, m.sender_id, m.sender, m.content, m.image_url, m.voice_url, m.timestamp,
-				m.can_recall, m.is_essence, m.is_mentioned, m.reply_to
+				m.can_recall, m.is_recalled, m.is_essence, m.is_mentioned, m.reply_to
 		 FROM messages m
 		 LEFT JOIN conversations c ON c.conv_type = m.conv_type AND c.conv_id = m.conv_id
 		 WHERE m.content LIKE ? OR m.sender LIKE ?
@@ -348,24 +382,24 @@ func (s *CacheStore) Search(query string, limit int) ([]SearchResult, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var (
-			conv                          Conversation
-			typ                           sql.NullString
-			id                            sql.NullInt64
-			peerUID                       sql.NullInt64
-			name                          sql.NullString
-			subtitle                      sql.NullString
-			unread                        sql.NullInt64
-			rawJSON                       string
-			msgID, senderID, replyTo      int
-			sender, content               string
-			imageURL, voiceURL            string
-			timestamp                     string
-			canRecall, essence, mentioned int
+			conv                                    Conversation
+			typ                                     sql.NullString
+			id                                      sql.NullInt64
+			peerUID                                 sql.NullInt64
+			name                                    sql.NullString
+			subtitle                                sql.NullString
+			unread                                  sql.NullInt64
+			rawJSON                                 string
+			msgID, senderID, replyTo                int
+			sender, content                         string
+			imageURL, voiceURL                      string
+			timestamp                               string
+			canRecall, recalled, essence, mentioned int
 		)
-		if err := rows.Scan(&typ, &id, &peerUID, &name, &subtitle, &unread, &rawJSON, &msgID, &senderID, &sender, &content, &imageURL, &voiceURL, &timestamp, &canRecall, &essence, &mentioned, &replyTo); err != nil {
+		if err := rows.Scan(&typ, &id, &peerUID, &name, &subtitle, &unread, &rawJSON, &msgID, &senderID, &sender, &content, &imageURL, &voiceURL, &timestamp, &canRecall, &recalled, &essence, &mentioned, &replyTo); err != nil {
 			return nil, err
 		}
-		msg := assembleCachedMessage(rawJSON, msgID, senderID, sender, content, imageURL, voiceURL, timestamp, canRecall, essence, mentioned, replyTo)
+		msg := assembleCachedMessage(rawJSON, msgID, senderID, sender, content, imageURL, voiceURL, timestamp, canRecall, recalled, essence, mentioned, replyTo)
 		conv.Type = ConversationType(typ.String)
 		if conv.Type == "" {
 			conv.Type = ConversationFriend
@@ -395,7 +429,7 @@ func (s *CacheStore) SearchMessages(conv Conversation, query string, limit int) 
 		limit = 80
 	}
 	rows, err := s.db.Query(
-		`SELECT raw_json, msg_id, sender_id, sender, content, image_url, voice_url, timestamp, can_recall, is_essence, is_mentioned, reply_to
+		`SELECT raw_json, msg_id, sender_id, sender, content, image_url, voice_url, timestamp, can_recall, is_recalled, is_essence, is_mentioned, reply_to
 		 FROM messages
 		 WHERE conv_type = ? AND conv_id = ? AND (content LIKE ? OR sender LIKE ?)
 		 ORDER BY msg_id DESC
@@ -428,16 +462,17 @@ func scanCachedMessage(scanner cachedMessageScanner) (Message, error) {
 		sender, content          string
 		imageURL, voiceURL       string
 		timestamp                string
-		canRecall, essence       int
+		canRecall, recalled      int
+		essence                  int
 		mentioned                int
 	)
-	if err := scanner.Scan(&rawJSON, &msgID, &senderID, &sender, &content, &imageURL, &voiceURL, &timestamp, &canRecall, &essence, &mentioned, &replyTo); err != nil {
+	if err := scanner.Scan(&rawJSON, &msgID, &senderID, &sender, &content, &imageURL, &voiceURL, &timestamp, &canRecall, &recalled, &essence, &mentioned, &replyTo); err != nil {
 		return Message{}, err
 	}
-	return assembleCachedMessage(rawJSON, msgID, senderID, sender, content, imageURL, voiceURL, timestamp, canRecall, essence, mentioned, replyTo), nil
+	return assembleCachedMessage(rawJSON, msgID, senderID, sender, content, imageURL, voiceURL, timestamp, canRecall, recalled, essence, mentioned, replyTo), nil
 }
 
-func assembleCachedMessage(rawJSON string, msgID, senderID int, sender, content, imageURL, voiceURL, timestamp string, canRecall, essence, mentioned, replyTo int) Message {
+func assembleCachedMessage(rawJSON string, msgID, senderID int, sender, content, imageURL, voiceURL, timestamp string, canRecall, recalled, essence, mentioned, replyTo int) Message {
 	var msg Message
 	if strings.TrimSpace(rawJSON) != "" {
 		_ = json.Unmarshal([]byte(rawJSON), &msg)
@@ -463,9 +498,10 @@ func assembleCachedMessage(rawJSON string, msgID, senderID int, sender, content,
 	if msg.Timestamp() == "" {
 		msg.AddTime = FlexibleString(timestamp)
 	}
-	msg.CanRecall = msg.CanRecall || canRecall != 0
-	msg.IsEssence = msg.IsEssence || essence != 0
-	msg.IsMentioned = msg.IsMentioned || mentioned != 0
+	msg.CanRecall = FlexibleBool(msg.CanRecall.Bool() || canRecall != 0)
+	msg.IsRecalled = FlexibleBool(msg.IsRecalled.Bool() || recalled != 0)
+	msg.IsEssence = FlexibleBool(msg.IsEssence.Bool() || essence != 0)
+	msg.IsMentioned = FlexibleBool(msg.IsMentioned.Bool() || mentioned != 0)
 	if msg.ReplyTo == 0 {
 		msg.ReplyTo = replyTo
 	}

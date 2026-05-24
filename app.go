@@ -38,6 +38,7 @@ type ChatSession struct {
 	Input      *tview.InputField
 	Messages   []Message
 	LastID     int
+	PollTicks  int
 	ReplyTo    int
 	Mentions   []int
 	Stop       chan struct{}
@@ -1281,10 +1282,10 @@ func (a *App) writeMessages(view *tview.TextView, messages []Message) {
 			sender = translate(a.lang, "chat.me")
 		}
 		flags := ""
-		if msg.IsMentioned {
+		if msg.IsMentioned.Bool() {
 			flags += " @"
 		}
-		if msg.IsEssence {
+		if msg.IsEssence.Bool() {
 			flags += " *"
 		}
 		fmt.Fprintf(view, "[green]%s%s[-]: %s\n", tview.Escape(sender), flags, tview.Escape(msg.Body()))
@@ -1316,10 +1317,10 @@ func (a *App) renderChatMessages(session *ChatSession) {
 			sender = translate(a.lang, "chat.me")
 		}
 		flags := ""
-		if msg.IsMentioned {
+		if msg.IsMentioned.Bool() {
 			flags += " @"
 		}
-		if msg.IsEssence {
+		if msg.IsEssence.Bool() {
 			flags += " *"
 		}
 		body := msg.Body()
@@ -1353,7 +1354,20 @@ func (a *App) refreshChat(session *ChatSession, manual bool) {
 		a.setStatus(translate(a.lang, "action.refreshing_messages"))
 	}
 	go func() {
-		messages, err := a.loadMessagesAfter(session.Conv, session.LastID)
+		fullReload := manual
+		if !fullReload {
+			session.PollTicks++
+			fullReload = session.PollTicks%8 == 0
+		}
+		var (
+			messages []Message
+			err      error
+		)
+		if fullReload {
+			messages, err = a.loadMessages(session.Conv)
+		} else {
+			messages, err = a.loadMessagesAfter(session.Conv, session.LastID)
+		}
 		a.ui.QueueUpdateDraw(func() {
 			if !a.isActiveChat(session) {
 				return
@@ -1367,7 +1381,11 @@ func (a *App) refreshChat(session *ChatSession, manual bool) {
 				return
 			}
 			before := len(session.Messages)
-			session.Messages = mergeMessages(session.Messages, messages)
+			if fullReload {
+				session.Messages = mergeMessages(nil, messages)
+			} else {
+				session.Messages = mergeMessages(session.Messages, messages)
+			}
 			session.LastID = maxMessageID(session.Messages)
 			after := len(session.Messages)
 			if a.cache != nil && len(messages) > 0 {
@@ -1454,22 +1472,23 @@ func mergeMessages(existing, incoming []Message) []Message {
 	if len(incoming) == 0 {
 		return existing
 	}
-	seen := make(map[int]struct{}, len(existing)+len(incoming))
+	byID := make(map[int]int, len(existing)+len(incoming))
 	merged := make([]Message, 0, len(existing)+len(incoming))
 	for _, msg := range existing {
 		id := msg.MessageID()
 		if id != 0 {
-			seen[id] = struct{}{}
+			byID[id] = len(merged)
 		}
 		merged = append(merged, msg)
 	}
 	for _, msg := range incoming {
 		id := msg.MessageID()
 		if id != 0 {
-			if _, ok := seen[id]; ok {
+			if index, ok := byID[id]; ok {
+				merged[index] = msg
 				continue
 			}
-			seen[id] = struct{}{}
+			byID[id] = len(merged)
 		}
 		merged = append(merged, msg)
 	}

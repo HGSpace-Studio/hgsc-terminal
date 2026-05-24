@@ -23,7 +23,6 @@ coverage.html
 
 # Editor folders
 .vscode/
-.idea/
 
 # OS files
 Thumbs.db

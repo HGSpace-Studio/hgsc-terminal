@@ -37,6 +37,9 @@ func TestMessageDecodesMixedTimeFields(t *testing.T) {
 	if got := out.Messages[0].Body(); got != "可爱万盛" {
 		t.Fatalf("Body() = %q", got)
 	}
+	if out.Messages[0].IsRecalled.Bool() {
+		t.Fatal("IsRecalled = true")
+	}
 }
 
 func TestMessageImageLink(t *testing.T) {

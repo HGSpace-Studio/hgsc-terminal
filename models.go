@@ -471,9 +471,10 @@ type Message struct {
 	CreatedAt     FlexibleString `json:"created_at"`
 	CreateTime    FlexibleString `json:"create_time"`
 	Time          FlexibleString `json:"time"`
-	CanRecall     bool           `json:"can_recall"`
-	IsEssence     bool           `json:"is_essence"`
-	IsMentioned   bool           `json:"is_mentioned"`
+	CanRecall     FlexibleBool   `json:"can_recall"`
+	IsRecalled    FlexibleBool   `json:"is_recalled"`
+	IsEssence     FlexibleBool   `json:"is_essence"`
+	IsMentioned   FlexibleBool   `json:"is_mentioned"`
 	ReplyTo       int            `json:"reply_to"`
 }
 
@@ -519,6 +520,9 @@ func (m Message) Timestamp() string {
 }
 
 func (m Message) Body() string {
+	if m.IsRecalled.Bool() {
+		return "[recalled]"
+	}
 	body := strings.TrimSpace(m.Content)
 	if body == "" && m.Img != "" {
 		body = "[image] " + m.Img
@@ -597,6 +601,40 @@ type Conversation struct {
 }
 
 type FlexibleString string
+
+type FlexibleBool bool
+
+func (b *FlexibleBool) UnmarshalJSON(data []byte) error {
+	var boolean bool
+	if err := json.Unmarshal(data, &boolean); err == nil {
+		*b = FlexibleBool(boolean)
+		return nil
+	}
+	var number float64
+	if err := json.Unmarshal(data, &number); err == nil {
+		*b = FlexibleBool(number != 0)
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		switch strings.ToLower(strings.TrimSpace(text)) {
+		case "1", "true", "yes", "y", "on":
+			*b = true
+		default:
+			*b = false
+		}
+		return nil
+	}
+	if string(data) == "null" {
+		*b = false
+		return nil
+	}
+	return fmt.Errorf("unsupported flexible bool value: %s", compactText(string(data), 80))
+}
+
+func (b FlexibleBool) Bool() bool {
+	return bool(b)
+}
 
 func (s *FlexibleString) UnmarshalJSON(data []byte) error {
 	data = bytes.TrimSpace(data)
