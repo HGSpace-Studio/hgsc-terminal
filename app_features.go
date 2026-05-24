@@ -352,6 +352,30 @@ func (a *App) showUserInfo(conv Conversation, user *User) {
 		a.closeModal()
 		a.openChat(conv)
 	})
+	form.AddButton(translate(a.lang, "ui.remark"), func() {
+		a.showFriendRemarkForm(conv, user)
+	})
+	form.AddButton(translate(a.lang, "ui.delete_friend"), func() {
+		a.showConfirmAction(
+			translate(a.lang, "ui.delete_friend"),
+			translate(a.lang, "confirm.delete_friend", user.Nickname),
+			func() {
+				a.runFriendAction(conv, translate(a.lang, "action.deleting_friend"), translate(a.lang, "status.friend_deleted"), func() error { return a.client.DeleteFriend(conv.ID) })
+			},
+		)
+	})
+	form.AddButton(translate(a.lang, "ui.block_friend"), func() {
+		a.showConfirmAction(
+			translate(a.lang, "ui.block_friend"),
+			translate(a.lang, "confirm.block_friend", user.Nickname),
+			func() {
+				a.runFriendAction(conv, translate(a.lang, "action.blocking_friend"), translate(a.lang, "status.friend_blocked"), func() error { return a.client.BlockFriend(conv.ID) })
+			},
+		)
+	})
+	form.AddButton(translate(a.lang, "ui.recover_friend"), func() {
+		a.showRecoverFriendForm(conv)
+	})
 	form.AddButton(translate(a.lang, "ui.copy"), func() {
 		body := fmt.Sprintf("UID: %d\nUsername: %s\nNickname: %s\nStatus: %s\nAvatar: %s\nSignature: %s", user.UID, user.Username, user.Nickname, user.OnlineStatus, user.Avatar, user.Signature)
 		if err := copyToClipboard(body); err != nil {
@@ -391,6 +415,16 @@ func (a *App) showGroupInfo(conv Conversation, group *Group) {
 	form.AddButton(translate(a.lang, "ui.members"), func() {
 		a.closeModal()
 		a.showGroupMembers(conv)
+	})
+	form.AddButton(translate(a.lang, "ui.applications"), func() {
+		a.closeModal()
+		a.showGroupApplications(conv)
+	})
+	form.AddButton(translate(a.lang, "ui.edit"), func() {
+		a.showGroupEditForm(conv, group)
+	})
+	form.AddButton(translate(a.lang, "ui.settings"), func() {
+		a.showGroupSettingsForm(conv, group)
 	})
 	form.AddButton(translate(a.lang, "ui.essence"), func() {
 		a.closeModal()
@@ -483,6 +517,45 @@ func (a *App) showMemberActions(conv Conversation, member GroupMember) {
 		a.closeModal()
 		a.showChat(session, "")
 	})
+	form.AddButton(translate(a.lang, "ui.mute"), func() {
+		a.showMuteMemberForm(conv, member)
+	})
+	form.AddButton(translate(a.lang, "ui.unmute"), func() {
+		a.showConfirmAction(
+			translate(a.lang, "ui.unmute"),
+			translate(a.lang, "confirm.unmute_member", member.DisplayName()),
+			func() {
+				a.runGroupMemberAction(conv, translate(a.lang, "action.unmuting_member"), translate(a.lang, "status.member_unmuted"), func() error { return a.client.MuteGroupMember(conv.ID, member.ID(), 0) })
+			},
+		)
+	})
+	form.AddButton(translate(a.lang, "ui.kick"), func() {
+		a.showConfirmAction(
+			translate(a.lang, "ui.kick"),
+			translate(a.lang, "confirm.kick_member", member.DisplayName()),
+			func() {
+				a.runGroupMemberAction(conv, translate(a.lang, "action.kicking_member"), translate(a.lang, "status.member_kicked"), func() error { return a.client.KickGroupMember(conv.ID, member.ID()) })
+			},
+		)
+	})
+	form.AddButton(translate(a.lang, "ui.set_admin"), func() {
+		a.showConfirmAction(
+			translate(a.lang, "ui.set_admin"),
+			translate(a.lang, "confirm.set_admin", member.DisplayName()),
+			func() {
+				a.runGroupMemberAction(conv, translate(a.lang, "action.setting_admin"), translate(a.lang, "status.admin_set"), func() error { return a.client.SetGroupAdmin(conv.ID, member.ID(), true) })
+			},
+		)
+	})
+	form.AddButton(translate(a.lang, "ui.remove_admin"), func() {
+		a.showConfirmAction(
+			translate(a.lang, "ui.remove_admin"),
+			translate(a.lang, "confirm.remove_admin", member.DisplayName()),
+			func() {
+				a.runGroupMemberAction(conv, translate(a.lang, "action.removing_admin"), translate(a.lang, "status.admin_removed"), func() error { return a.client.SetGroupAdmin(conv.ID, member.ID(), false) })
+			},
+		)
+	})
 	form.AddButton(translate(a.lang, "ui.chat"), func() {
 		a.closeModal()
 		a.openChat(conv)
@@ -572,6 +645,306 @@ func (a *App) showJoinGroupEntryForm() {
 	form.SetButtonsAlign(tview.AlignRight)
 	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.join_group") + " ").SetTitleAlign(tview.AlignLeft)
 	a.showModal(form, 72, 12)
+}
+
+func (a *App) showFriendRemarkForm(conv Conversation, user *User) {
+	remark := tview.NewInputField().SetLabel(translate(a.lang, "form.remark") + ": ").SetFieldWidth(36)
+	if user != nil && strings.TrimSpace(user.Remark) != "" {
+		remark.SetText(user.Remark)
+	}
+	form := tview.NewForm()
+	form.AddFormItem(remark)
+	form.AddButton(translate(a.lang, "ui.save"), func() {
+		value := strings.TrimSpace(remark.GetText())
+		a.closeModal()
+		a.runFriendAction(conv, translate(a.lang, "action.updating_remark"), translate(a.lang, "status.remark_updated"), func() error {
+			return a.client.UpdateFriendRemark(conv.ID, value)
+		})
+	})
+	form.AddButton(translate(a.lang, "ui.cancel"), func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.remark") + " ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 72, 10)
+}
+
+func (a *App) showRecoverFriendForm(conv Conversation) {
+	message := tview.NewInputField().SetLabel(translate(a.lang, "form.message") + ": ").SetFieldWidth(42)
+	direct := tview.NewCheckbox().SetLabel(translate(a.lang, "form.direct_recover") + ": ").SetChecked(true)
+	form := tview.NewForm()
+	form.AddFormItem(message)
+	form.AddFormItem(direct)
+	form.AddButton(translate(a.lang, "ui.recover_friend"), func() {
+		msg := strings.TrimSpace(message.GetText())
+		useDirect := direct.IsChecked()
+		a.closeModal()
+		a.runFriendAction(conv, translate(a.lang, "action.recovering_friend"), translate(a.lang, "status.friend_recovered"), func() error {
+			return a.client.RecoverFriend(conv.ID, useDirect, msg)
+		})
+	})
+	form.AddButton(translate(a.lang, "ui.cancel"), func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.recover_friend") + " ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 76, 11)
+}
+
+func (a *App) showMuteMemberForm(conv Conversation, member GroupMember) {
+	minutes := tview.NewInputField().SetLabel(translate(a.lang, "form.minutes") + ": ").SetFieldWidth(12).SetText("10")
+	form := tview.NewForm()
+	form.AddFormItem(minutes)
+	form.AddButton(translate(a.lang, "ui.mute"), func() {
+		value, err := strconv.Atoi(strings.TrimSpace(minutes.GetText()))
+		if err != nil || value <= 0 {
+			a.setStatus(translate(a.lang, "status.invalid_minutes"))
+			return
+		}
+		a.closeModal()
+		a.runGroupMemberAction(conv, translate(a.lang, "action.muting_member"), translate(a.lang, "status.member_muted"), func() error {
+			return a.client.MuteGroupMember(conv.ID, member.ID(), value)
+		})
+	})
+	form.AddButton(translate(a.lang, "ui.cancel"), func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.mute") + " " + member.DisplayName() + " ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 72, 10)
+}
+
+func (a *App) showGroupEditForm(conv Conversation, group *Group) {
+	name := tview.NewInputField().SetLabel(translate(a.lang, "field.room_name") + ": ").SetFieldWidth(42)
+	desc := tview.NewInputField().SetLabel(translate(a.lang, "field.description") + ": ").SetFieldWidth(42)
+	notice := tview.NewInputField().SetLabel(translate(a.lang, "field.notice") + ": ").SetFieldWidth(42)
+	if group != nil {
+		name.SetText(group.DisplayName())
+		desc.SetText(group.Description)
+		notice.SetText(group.Notice)
+	}
+	form := tview.NewForm()
+	form.AddFormItem(name)
+	form.AddFormItem(desc)
+	form.AddFormItem(notice)
+	form.AddButton(translate(a.lang, "ui.save"), func() {
+		roomName := strings.TrimSpace(name.GetText())
+		if roomName == "" {
+			a.setStatus(translate(a.lang, "status.room_name_required"))
+			return
+		}
+		info := GroupEditInfo{
+			RoomName:    roomName,
+			Description: desc.GetText(),
+			Notice:      notice.GetText(),
+		}
+		a.closeModal()
+		a.setStatus(translate(a.lang, "action.updating_group"))
+		go func() {
+			err := a.client.EditGroupInfo(conv.ID, info)
+			a.ui.QueueUpdateDraw(func() {
+				if err != nil {
+					a.showError(translate(a.lang, "error.update_group_failed"), err)
+					return
+				}
+				a.setStatus(translate(a.lang, "status.group_updated"))
+				a.showConversationInfo(conv)
+			})
+		}()
+	})
+	form.AddButton(translate(a.lang, "ui.cancel"), func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.edit_group") + " ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 86, 13)
+}
+
+func (a *App) showGroupSettingsForm(conv Conversation, group *Group) {
+	joinType := tview.NewInputField().SetLabel(translate(a.lang, "field.join_type") + ": ").SetFieldWidth(24)
+	code := tview.NewInputField().SetLabel(translate(a.lang, "form.fixed_code") + ": ").SetFieldWidth(34)
+	question := tview.NewInputField().SetLabel(translate(a.lang, "form.review_question") + ": ").SetFieldWidth(42)
+	answer := tview.NewInputField().SetLabel(translate(a.lang, "form.review_answer") + ": ").SetFieldWidth(42)
+	showPublic := tview.NewCheckbox().SetLabel(translate(a.lang, "form.show_public") + ": ")
+	if group != nil {
+		joinType.SetText(group.JoinTypeValue())
+		code.SetText(group.FixedCodeValue())
+		question.SetText(group.QuestionValue())
+		answer.SetText(group.Answer)
+		showPublic.SetChecked(group.ShowPublicEnabled())
+	}
+	form := tview.NewForm()
+	form.AddFormItem(joinType)
+	form.AddFormItem(code)
+	form.AddFormItem(question)
+	form.AddFormItem(answer)
+	form.AddFormItem(showPublic)
+	form.AddButton(translate(a.lang, "ui.save"), func() {
+		settings := GroupSettings{
+			JoinType:   strings.TrimSpace(joinType.GetText()),
+			Code:       strings.TrimSpace(code.GetText()),
+			Question:   strings.TrimSpace(question.GetText()),
+			Answer:     strings.TrimSpace(answer.GetText()),
+			ShowPublic: showPublic.IsChecked(),
+		}
+		a.closeModal()
+		a.setStatus(translate(a.lang, "action.updating_group_settings"))
+		go func() {
+			err := a.client.UpdateGroupSettings(conv.ID, settings)
+			a.ui.QueueUpdateDraw(func() {
+				if err != nil {
+					a.showError(translate(a.lang, "error.update_group_settings_failed"), err)
+					return
+				}
+				a.setStatus(translate(a.lang, "status.group_settings_updated"))
+				a.showConversationInfo(conv)
+			})
+		}()
+	})
+	form.AddButton(translate(a.lang, "ui.cancel"), func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.group_settings") + " ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 90, 16)
+}
+
+func (a *App) showGroupApplications(conv Conversation) {
+	if conv.Type != ConversationGroup {
+		a.setStatus(translate(a.lang, "status.group_applications_only"))
+		return
+	}
+	a.showMain(translate(a.lang, "ui.applications"), a.textPanel(translate(a.lang, "ui.applications"), translate(a.lang, "loading.applications")), nil, translate(a.lang, "loading.applications"))
+	go func() {
+		applications, err := a.client.GroupApplications(conv.ID)
+		a.ui.QueueUpdateDraw(func() {
+			if err != nil {
+				a.showError(translate(a.lang, "error.load_group_applications_failed"), err)
+				return
+			}
+			list := tview.NewList()
+			list.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.applications") + " ")
+			list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+				switch event.Key() {
+				case tcell.KeyEsc:
+					a.showConversationInfo(conv)
+					return nil
+				case tcell.KeyF5:
+					a.showGroupApplications(conv)
+					return nil
+				}
+				return event
+			})
+			if len(applications) == 0 {
+				list.AddItem(translate(a.lang, "list.no_applications"), "", 0, nil)
+			}
+			for _, item := range applications {
+				item := item
+				label := item.DisplayName()
+				if id := item.IDValue(); id != 0 {
+					label += fmt.Sprintf(" [#%d]", id)
+				}
+				list.AddItem(label, item.Summary(), 0, func() {
+					a.showGroupApplicationDetail(conv, item)
+				})
+			}
+			a.showMain(translate(a.lang, "ui.applications"), list, list, translate(a.lang, "status.applications_loaded", len(applications)))
+		})
+	}()
+}
+
+func (a *App) showGroupApplicationDetail(conv Conversation, item GroupApplication) {
+	form := tview.NewForm()
+	text := tview.NewTextView()
+	text.SetDynamicColors(true)
+	text.SetWrap(true)
+	text.SetText(fmt.Sprintf(
+		"[::b]%s[::-] %d\n[::b]%s[::-] %d\n[::b]%s[::-] %s\n[::b]%s[::-] %s\n[::b]%s[::-] %s",
+		translate(a.lang, "field.apply_id"), item.IDValue(),
+		translate(a.lang, "field.uid"), item.UserIDValue(),
+		translate(a.lang, "field.nickname"), tview.Escape(item.DisplayName()),
+		translate(a.lang, "field.message"), tview.Escape(item.Text()),
+		translate(a.lang, "field.time"), tview.Escape(item.Timestamp()),
+	))
+	form.AddFormItem(text)
+	form.AddButton(translate(a.lang, "ui.pass"), func() {
+		a.closeModal()
+		a.handleGroupApplication(conv, item.IDValue(), "pass")
+	})
+	form.AddButton(translate(a.lang, "ui.refuse"), func() {
+		a.closeModal()
+		a.handleGroupApplication(conv, item.IDValue(), "refuse")
+	})
+	form.AddButton(translate(a.lang, "ui.copy"), func() {
+		body := fmt.Sprintf("Apply ID: %d\nUID: %d\nName: %s\nMessage: %s\nTime: %s", item.IDValue(), item.UserIDValue(), item.DisplayName(), item.Text(), item.Timestamp())
+		if err := copyToClipboard(body); err != nil {
+			a.setStatus(translate(a.lang, "error.copy_failed") + ": " + err.Error())
+			return
+		}
+		a.setStatus(translate(a.lang, "status.copied_application"))
+	})
+	form.AddButton(translate(a.lang, "ui.back"), func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" " + translate(a.lang, "ui.application") + " ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 92, 18)
+}
+
+func (a *App) handleGroupApplication(conv Conversation, applyID int, action string) {
+	if applyID <= 0 {
+		a.setStatus(translate(a.lang, "status.invalid_apply_id"))
+		return
+	}
+	a.setStatus(translate(a.lang, "action.handling_application"))
+	go func() {
+		err := a.client.HandleGroupApplication(applyID, action)
+		a.ui.QueueUpdateDraw(func() {
+			if err != nil {
+				a.showError(translate(a.lang, "error.handle_application_failed"), err)
+				return
+			}
+			a.setStatus(translate(a.lang, "status.application_handled"))
+			a.showGroupApplications(conv)
+		})
+	}()
+}
+
+func (a *App) showConfirmAction(title, message string, action func()) {
+	form := tview.NewForm()
+	text := tview.NewTextView()
+	text.SetDynamicColors(true)
+	text.SetWrap(true)
+	text.SetText(tview.Escape(message))
+	form.AddFormItem(text)
+	form.AddButton(translate(a.lang, "ui.confirm"), func() {
+		a.closeModal()
+		if action != nil {
+			action()
+		}
+	})
+	form.AddButton(translate(a.lang, "ui.cancel"), func() { a.closeModal() })
+	form.SetButtonsAlign(tview.AlignRight)
+	form.SetBorder(true).SetTitle(" " + title + " ").SetTitleAlign(tview.AlignLeft)
+	a.showModal(form, 82, 12)
+}
+
+func (a *App) runFriendAction(conv Conversation, working, done string, action func() error) {
+	a.setStatus(working)
+	go func() {
+		err := action()
+		a.ui.QueueUpdateDraw(func() {
+			if err != nil {
+				a.showError(translate(a.lang, "error.friend_action_failed"), err)
+				return
+			}
+			a.setStatus(done)
+			a.loadFriends()
+		})
+	}()
+}
+
+func (a *App) runGroupMemberAction(conv Conversation, working, done string, action func() error) {
+	a.setStatus(working)
+	go func() {
+		err := action()
+		a.ui.QueueUpdateDraw(func() {
+			if err != nil {
+				a.showError(translate(a.lang, "error.group_member_action_failed"), err)
+				return
+			}
+			a.setStatus(done)
+			a.showGroupMembers(conv)
+		})
+	}()
 }
 
 func (a *App) sendChatImageMessage(session *ChatSession, path, caption string) {

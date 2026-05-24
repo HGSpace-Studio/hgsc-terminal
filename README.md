@@ -27,6 +27,9 @@ https://cschat.ccccocccc.cc/rpc/UniCsAC.php
 - Create groups, apply to public groups, or join by room ID/invite code.
 - View user/group info, group members, and essence messages.
 - Reply to messages, recall messages, set group essence, and mention group members.
+- Manage friends from user info: edit remark, delete, block, recover.
+- Manage groups from group info: edit name/description/notice, edit join/public settings, and handle join applications.
+- Manage group members from the members page: mute/unmute, kick, set/remove admin.
 - Built on tview/tcell for forms, lists, layouts, input handling, and shortcuts.
 
 ## Build
@@ -72,6 +75,9 @@ go telemetry off
   - `/mention <uid,uid>`: mention users in the next group message; `/mentions` clears it
   - `/recall <msg_id>`: recall a message
   - `/essence <msg_id>`: toggle essence for a group message
+- In user info, use `Remark`, `Delete Friend`, `Block Friend`, or `Recover Friend`.
+- In group info, use `Edit`, `Settings`, `Applications`, `Members`, or `Essence`.
+- In member detail, use `Mute`, `Unmute`, `Kick`, `Set Admin`, or `Remove Admin`.
 - Error dialogs include a `Copy` button for the full error text.
 - Main menu includes a friend requests page with agree/refuse actions.
 - Main menu includes a notices page for `user/get_notice_list`.

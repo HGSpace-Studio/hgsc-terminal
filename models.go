@@ -20,6 +20,7 @@ type APIResponse struct {
 	Groups   []Group                    `json:"groups,omitempty"`
 	Room     *Group                     `json:"room,omitempty"`
 	Members  []GroupMember              `json:"members,omitempty"`
+	Applies  []GroupApplication         `json:"applications,omitempty"`
 	Messages []Message                  `json:"messages,omitempty"`
 	Essences []Message                  `json:"essence_list,omitempty"`
 	Data     json.RawMessage            `json:"data,omitempty"`
@@ -68,6 +69,76 @@ type FriendRequest struct {
 	HandleTime FlexibleString `json:"handle_time"`
 	CreatedAt  FlexibleString `json:"created_at"`
 	AddTime    FlexibleString `json:"add_time"`
+}
+
+type GroupApplication struct {
+	ApplyID    int            `json:"apply_id"`
+	ID         int            `json:"id"`
+	RoomID     int            `json:"room_id"`
+	UID        int            `json:"uid"`
+	UserID     int            `json:"user_id"`
+	Nickname   string         `json:"nickname"`
+	Username   string         `json:"username"`
+	Avatar     string         `json:"avatar"`
+	Content    string         `json:"content"`
+	Message    string         `json:"message"`
+	Answer     string         `json:"answer"`
+	Status     int            `json:"status"`
+	CreateTime FlexibleString `json:"create_time"`
+	AddTime    FlexibleString `json:"add_time"`
+	HandleTime FlexibleString `json:"handle_time"`
+}
+
+func (a GroupApplication) IDValue() int {
+	if a.ApplyID != 0 {
+		return a.ApplyID
+	}
+	return a.ID
+}
+
+func (a GroupApplication) UserIDValue() int {
+	if a.UID != 0 {
+		return a.UID
+	}
+	return a.UserID
+}
+
+func (a GroupApplication) DisplayName() string {
+	name := strings.TrimSpace(a.Nickname)
+	if name == "" {
+		name = strings.TrimSpace(a.Username)
+	}
+	if name == "" {
+		name = fmt.Sprintf("UID %d", a.UserIDValue())
+	}
+	return name
+}
+
+func (a GroupApplication) Text() string {
+	for _, value := range []string{a.Content, a.Message, a.Answer} {
+		if text := strings.TrimSpace(value); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func (a GroupApplication) Timestamp() string {
+	for _, value := range []FlexibleString{a.CreateTime, a.AddTime, a.HandleTime} {
+		text := strings.TrimSpace(string(value))
+		if text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func (a GroupApplication) Summary() string {
+	return strings.Join(nonEmptyStrings([]string{
+		fmt.Sprintf("UID %d", a.UserIDValue()),
+		compactText(a.Text(), 50),
+		a.Timestamp(),
+	}), " | ")
 }
 
 type Notice struct {
@@ -209,18 +280,30 @@ func (f Friend) Subtitle() string {
 }
 
 type Group struct {
-	RoomID      int    `json:"room_id"`
-	ID          int    `json:"id"`
-	RoomName    string `json:"room_name"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Notice      string `json:"notice"`
-	InviteCode  string `json:"invite_code"`
-	UnreadCount int    `json:"unread_count"`
-	MemberCount int    `json:"member_count"`
-	IsInGroup   bool   `json:"is_in_group"`
-	IsAdmin     bool   `json:"is_admin"`
-	IsOwner     bool   `json:"is_owner"`
+	RoomID        int            `json:"room_id"`
+	ID            int            `json:"id"`
+	RoomName      string         `json:"room_name"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	Notice        string         `json:"notice"`
+	InviteCode    string         `json:"invite_code"`
+	Code          string         `json:"code"`
+	FixedCode     string         `json:"fixed_code"`
+	JoinCode      string         `json:"join_code"`
+	Question      string         `json:"question"`
+	ApplyQuestion string         `json:"apply_question"`
+	AuditQuestion string         `json:"audit_question"`
+	Answer        string         `json:"answer"`
+	JoinType      FlexibleString `json:"join_type"`
+	JoinMode      FlexibleString `json:"join_mode"`
+	JoinMethod    FlexibleString `json:"join_method"`
+	ShowPublic    FlexibleString `json:"show_public"`
+	IsPublic      FlexibleString `json:"is_public"`
+	UnreadCount   int            `json:"unread_count"`
+	MemberCount   int            `json:"member_count"`
+	IsInGroup     bool           `json:"is_in_group"`
+	IsAdmin       bool           `json:"is_admin"`
+	IsOwner       bool           `json:"is_owner"`
 }
 
 func (g Group) Room() int {
@@ -253,6 +336,49 @@ func (g Group) Subtitle() string {
 		parts = append(parts, compactText(g.Notice, 42))
 	}
 	return strings.Join(parts, " | ")
+}
+
+func (g Group) JoinTypeValue() string {
+	for _, value := range []FlexibleString{g.JoinType, g.JoinMode, g.JoinMethod} {
+		text := strings.TrimSpace(string(value))
+		if text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func (g Group) FixedCodeValue() string {
+	for _, value := range []string{g.Code, g.FixedCode, g.JoinCode} {
+		text := strings.TrimSpace(value)
+		if text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func (g Group) QuestionValue() string {
+	for _, value := range []string{g.Question, g.ApplyQuestion, g.AuditQuestion} {
+		text := strings.TrimSpace(value)
+		if text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func (g Group) ShowPublicEnabled() bool {
+	for _, value := range []FlexibleString{g.ShowPublic, g.IsPublic} {
+		text := strings.ToLower(strings.TrimSpace(string(value)))
+		switch text {
+		case "1", "true", "yes", "on":
+			return true
+		case "0", "false", "no", "off":
+			return false
+		}
+	}
+	return false
 }
 
 type GroupMember struct {
@@ -492,6 +618,15 @@ func (s *FlexibleString) UnmarshalJSON(data []byte) error {
 		}
 		return nil
 	}
+	var boolean bool
+	if err := json.Unmarshal(data, &boolean); err == nil {
+		if boolean {
+			*s = "1"
+		} else {
+			*s = "0"
+		}
+		return nil
+	}
 	return fmt.Errorf("unsupported flexible string value: %s", compactText(string(data), 80))
 }
 
@@ -505,4 +640,15 @@ func compactText(s string, max int) string {
 		return string(r[:max])
 	}
 	return string(r[:max-1]) + "..."
+}
+
+func nonEmptyStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }

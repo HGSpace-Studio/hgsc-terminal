@@ -7,5 +7,7 @@ $env:GOCACHE = Join-Path $root ".gocache"
 
 New-Item -ItemType Directory -Force -Path (Join-Path $root "bin") | Out-Null
 go build -o (Join-Path $root "bin\CsAC-Terminal.exe") .
+Copy-Item -Force (Join-Path $root "bin\CsAC-Terminal.exe") (Join-Path $root "csac-terminal.exe")
 
 Write-Host "Built bin\CsAC-Terminal.exe"
+Write-Host "Updated csac-terminal.exe"

@@ -39,6 +39,20 @@ type SendMessageOptions struct {
 	MentionUIDs []int
 }
 
+type GroupEditInfo struct {
+	RoomName    string
+	Description string
+	Notice      string
+}
+
+type GroupSettings struct {
+	JoinType   string
+	Code       string
+	Question   string
+	Answer     string
+	ShowPublic bool
+}
+
 func NewUniCsACClient(baseURL string) *UniCsACClient {
 	jar, _ := cookiejar.New(nil)
 	return &UniCsACClient{
@@ -46,6 +60,9 @@ func NewUniCsACClient(baseURL string) *UniCsACClient {
 		http: &http.Client{
 			Timeout: 20 * time.Second,
 			Jar:     jar,
+			Transport: &http.Transport{
+				DisableKeepAlives: true,
+			},
 		},
 	}
 }
@@ -297,6 +314,36 @@ func (c *UniCsACClient) SendFriendRequest(uid int, message string) error {
 	return c.PostForm("friend/send_request", values, &out)
 }
 
+func (c *UniCsACClient) UpdateFriendRemark(friendID int, remark string) error {
+	var out APIResponse
+	return c.PostForm("friend/update_remark", url.Values{
+		"friend_id": {fmt.Sprint(friendID)},
+		"remark":    {remark},
+	}, &out)
+}
+
+func (c *UniCsACClient) DeleteFriend(friendID int) error {
+	var out APIResponse
+	return c.PostForm("friend/delete_friend", url.Values{"friend_id": {fmt.Sprint(friendID)}}, &out)
+}
+
+func (c *UniCsACClient) BlockFriend(friendID int) error {
+	var out APIResponse
+	return c.PostForm("friend/block_friend", url.Values{"friend_id": {fmt.Sprint(friendID)}}, &out)
+}
+
+func (c *UniCsACClient) RecoverFriend(friendID int, direct bool, message string) error {
+	values := url.Values{"friend_id": {fmt.Sprint(friendID)}}
+	if direct {
+		values.Set("direct", "1")
+	}
+	if strings.TrimSpace(message) != "" {
+		values.Set("message", message)
+	}
+	var out APIResponse
+	return c.PostForm("friend/recover_friend", values, &out)
+}
+
 func (c *UniCsACClient) FriendRequests() ([]FriendRequest, error) {
 	var out APIResponse
 	if err := c.Get("friend/get_friend_requests", nil, &out); err != nil {
@@ -349,6 +396,117 @@ func (c *UniCsACClient) HandleFriendRequest(requestID int, action string) error 
 	}
 	var out APIResponse
 	return c.PostForm("friend/handle_request", values, &out)
+}
+
+func (c *UniCsACClient) GroupApplications(roomID int) ([]GroupApplication, error) {
+	var out APIResponse
+	values := url.Values{}
+	if roomID > 0 {
+		values.Set("room_id", fmt.Sprint(roomID))
+	}
+	if err := c.Get("group/get_applications", values, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Applies) > 0 {
+		return out.Applies, nil
+	}
+	for _, key := range []string{"applications", "applies", "list", "data"} {
+		raw, ok := out.Raw[key]
+		if !ok {
+			continue
+		}
+		var applies []GroupApplication
+		if json.Unmarshal(raw, &applies) == nil {
+			return applies, nil
+		}
+		var wrapped struct {
+			Applications []GroupApplication `json:"applications"`
+			Applies      []GroupApplication `json:"applies"`
+			List         []GroupApplication `json:"list"`
+		}
+		if json.Unmarshal(raw, &wrapped) == nil {
+			if len(wrapped.Applications) > 0 {
+				return wrapped.Applications, nil
+			}
+			if len(wrapped.Applies) > 0 {
+				return wrapped.Applies, nil
+			}
+			if len(wrapped.List) > 0 {
+				return wrapped.List, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+func (c *UniCsACClient) HandleGroupApplication(applyID int, action string) error {
+	var out APIResponse
+	return c.PostForm("group/handle_apply", url.Values{
+		"apply_id": {fmt.Sprint(applyID)},
+		"action":   {action},
+	}, &out)
+}
+
+func (c *UniCsACClient) MuteGroupMember(roomID, targetUID, minutes int) error {
+	values := url.Values{
+		"room_id":    {fmt.Sprint(roomID)},
+		"target_uid": {fmt.Sprint(targetUID)},
+	}
+	if minutes > 0 {
+		values.Set("action", "mute")
+		values.Set("minutes", fmt.Sprint(minutes))
+	} else {
+		values.Set("action", "unmute")
+	}
+	var out APIResponse
+	return c.PostForm("group/mute_member", values, &out)
+}
+
+func (c *UniCsACClient) KickGroupMember(roomID, targetUID int) error {
+	var out APIResponse
+	return c.PostForm("group/kick_member", url.Values{
+		"room_id":    {fmt.Sprint(roomID)},
+		"target_uid": {fmt.Sprint(targetUID)},
+	}, &out)
+}
+
+func (c *UniCsACClient) SetGroupAdmin(roomID, targetUID int, set bool) error {
+	action := "remove"
+	if set {
+		action = "set"
+	}
+	var out APIResponse
+	return c.PostForm("group/set_admin", url.Values{
+		"room_id":    {fmt.Sprint(roomID)},
+		"target_uid": {fmt.Sprint(targetUID)},
+		"action":     {action},
+	}, &out)
+}
+
+func (c *UniCsACClient) EditGroupInfo(roomID int, info GroupEditInfo) error {
+	values := url.Values{"room_id": {fmt.Sprint(roomID)}}
+	if strings.TrimSpace(info.RoomName) != "" {
+		values.Set("room_name", info.RoomName)
+	}
+	values.Set("description", info.Description)
+	values.Set("notice", info.Notice)
+	var out APIResponse
+	return c.PostForm("group/edit_info", values, &out)
+}
+
+func (c *UniCsACClient) UpdateGroupSettings(roomID int, settings GroupSettings) error {
+	values := url.Values{
+		"room_id":     {fmt.Sprint(roomID)},
+		"show_public": {boolFormValue(settings.ShowPublic)},
+	}
+	if strings.TrimSpace(settings.JoinType) != "" {
+		values.Set("join_type", settings.JoinType)
+	}
+	values.Set("code", settings.Code)
+	values.Set("question", settings.Question)
+	values.Set("answer", settings.Answer)
+	var out APIResponse
+	return c.PostForm("group/update_settings", values, &out)
 }
 
 func (c *UniCsACClient) GroupMessages(roomID, afterID, beforeID, limit int) ([]Message, error) {
@@ -661,7 +819,12 @@ func (c *UniCsACClient) do(req *http.Request, out *APIResponse) error {
 	if err != nil {
 		return err
 	}
-	if isChallengePage(body) {
+	const maxChallengeRetries = 3
+	for attempt := 1; isChallengePage(body); attempt++ {
+		if attempt > maxChallengeRetries {
+			cookies := c.challengeCookieSummary(req.URL)
+			return fmt.Errorf("server returned the JavaScript challenge again after %d attempt(s); cookies=%s; retry_url=%s", maxChallengeRetries, cookies, req.URL.String())
+		}
 		retryURL, err := c.solveChallenge(req.URL, body)
 		if err != nil {
 			return err
@@ -677,9 +840,7 @@ func (c *UniCsACClient) do(req *http.Request, out *APIResponse) error {
 		if err != nil {
 			return err
 		}
-		if isChallengePage(body) {
-			return errors.New("server returned the JavaScript challenge again after setting __test cookie")
-		}
+		req = retry
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
@@ -822,6 +983,25 @@ func (c *UniCsACClient) solveChallenge(requestURL *url.URL, body []byte) (*url.U
 	return &retryURL, nil
 }
 
+func (c *UniCsACClient) challengeCookieSummary(requestURL *url.URL) string {
+	if c.http == nil || c.http.Jar == nil || requestURL == nil {
+		return "none"
+	}
+	root := &url.URL{Scheme: requestURL.Scheme, Host: requestURL.Host, Path: "/"}
+	names := make([]string, 0, 4)
+	for _, cookie := range c.http.Jar.Cookies(root) {
+		value := cookie.Value
+		if len(value) > 12 {
+			value = value[:12] + "..."
+		}
+		names = append(names, cookie.Name+"="+value)
+	}
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ",")
+}
+
 func defaultMessage(out *APIResponse, fallback string) string {
 	if strings.TrimSpace(out.Message) != "" {
 		return out.Message
@@ -931,4 +1111,11 @@ func valuesToMap(values url.Values) map[string]string {
 		}
 	}
 	return fields
+}
+
+func boolFormValue(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
 }

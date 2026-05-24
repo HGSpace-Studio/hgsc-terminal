@@ -76,3 +76,31 @@ func TestFriendRequestsDecodeRealShape(t *testing.T) {
 		t.Fatalf("Timestamp() = %q", got)
 	}
 }
+
+func TestGroupApplicationRealisticShape(t *testing.T) {
+	payload := []byte(`{"success":true,"applications":[{"id":23,"room_id":5,"uid":9,"nickname":"Applicant","username":"applicant","answer":"let me in","create_time":"2026-05-24 12:00:00","status":0}]}`)
+
+	var out APIResponse
+	if err := json.Unmarshal(payload, &out); err != nil {
+		t.Fatalf("unmarshal API response: %v", err)
+	}
+	if len(out.Applies) != 1 {
+		t.Fatalf("len(Applies) = %d", len(out.Applies))
+	}
+	app := out.Applies[0]
+	if app.IDValue() != 23 {
+		t.Fatalf("IDValue() = %d", app.IDValue())
+	}
+	if app.UserIDValue() != 9 {
+		t.Fatalf("UserIDValue() = %d", app.UserIDValue())
+	}
+	if got := app.DisplayName(); got != "Applicant" {
+		t.Fatalf("DisplayName() = %q", got)
+	}
+	if got := app.Text(); got != "let me in" {
+		t.Fatalf("Text() = %q", got)
+	}
+	if got := app.Timestamp(); got != "2026-05-24 12:00:00" {
+		t.Fatalf("Timestamp() = %q", got)
+	}
+}
