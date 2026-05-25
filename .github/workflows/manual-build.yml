@@ -47,17 +47,22 @@ jobs:
         run: |
           $downloadDir = Join-Path $env:RUNNER_TEMP "downloads"
           $sdkDir = Join-Path $env:RUNNER_TEMP "flutter-sdk"
+
           New-Item -ItemType Directory -Force -Path $downloadDir, $sdkDir | Out-Null
+
           aria2c -s16 -x16 -k1M `
             --dir="$downloadDir" `
             --out="flutter-windows.zip" `
             "${env:FLUTTER_WINDOWS_URL}"
+
           Expand-Archive `
             -Path (Join-Path $downloadDir "flutter-windows.zip") `
             -DestinationPath $sdkDir `
             -Force
+
           $flutterBin = Join-Path $sdkDir "flutter\bin"
           $flutterRoot = Join-Path $sdkDir "flutter"
+
           $flutterBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "FLUTTER_ROOT=$flutterRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -78,6 +83,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build/artifacts | Out-Null
+
           Compress-Archive `
             -Path build/windows/x64/runner/Release/* `
             -DestinationPath build/artifacts/${{ env.APP_NAME }}-windows-x64.zip `
@@ -100,8 +106,10 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build/installer | Out-Null
+
           $buildDir = Join-Path $PWD "build\windows\x64\runner\Release"
           $outputDir = Join-Path $PWD "build\installer"
+
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
             "/DBuildDir=$buildDir" `
             "/DOutputDir=$outputDir" `
@@ -131,6 +139,7 @@ jobs:
       - name: Install Linux desktop dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             aria2 \
             clang \
@@ -144,11 +153,15 @@ jobs:
       - name: Download Flutter SDK
         run: |
           mkdir -p "$RUNNER_TEMP/downloads" "$RUNNER_TEMP/flutter-sdk"
+
           aria2c -s16 -x16 -k1M \
             --dir="$RUNNER_TEMP/downloads" \
             --out="flutter-linux.tar.xz" \
             "$FLUTTER_LINUX_URL"
-          tar -xf "$RUNNER_TEMP/downloads/flutter-linux.tar.xz" -C "$RUNNER_TEMP/flutter-sdk"
+
+          tar -xf "$RUNNER_TEMP/downloads/flutter-linux.tar.xz" \
+            -C "$RUNNER_TEMP/flutter-sdk"
+
           echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> "$GITHUB_PATH"
           echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> "$GITHUB_ENV"
 
@@ -168,6 +181,7 @@ jobs:
         if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'linux-executable' }}
         run: |
           chmod +x ../../.github/scripts/make-linux-executable.sh
+
           ../../.github/scripts/make-linux-executable.sh \
             build/linux/x64/release/bundle \
             build/artifacts/${APP_NAME}-linux-x64
@@ -184,24 +198,43 @@ jobs:
         if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'linux-appimage' }}
         run: |
           mkdir -p "$RUNNER_TEMP/downloads" "$RUNNER_TEMP/tools"
+
           aria2c -s16 -x16 -k1M \
             --dir="$RUNNER_TEMP/downloads" \
             --out="appimagetool-x86_64.AppImage" \
             "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
-          install -m 0755 "$RUNNER_TEMP/downloads/appimagetool-x86_64.AppImage" "$RUNNER_TEMP/tools/appimagetool"
+
+          install -m 0755 \
+            "$RUNNER_TEMP/downloads/appimagetool-x86_64.AppImage" \
+            "$RUNNER_TEMP/tools/appimagetool"
+
           cd "$RUNNER_TEMP/tools"
+
           ./appimagetool --appimage-extract
-          ln -sf "$RUNNER_TEMP/tools/squashfs-root/AppRun" "$RUNNER_TEMP/tools/appimagetool-extracted"
+
+          ln -sf \
+            "$RUNNER_TEMP/tools/squashfs-root/AppRun" \
+            "$RUNNER_TEMP/tools/appimagetool-extracted"
+
           echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
 
       - name: Package Linux AppImage
         if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'linux-appimage' }}
         run: |
           mkdir -p build/artifacts
+
           appdir="build/appimage/${APP_NAME}.AppDir"
+
           rm -rf "$appdir"
-          mkdir -p "$appdir/usr/bin" "$appdir/usr/share/applications" "$appdir/usr/share/icons/hicolor/256x256/apps" "$appdir/usr/share/icons/hicolor/scalable/apps"
+
+          mkdir -p \
+            "$appdir/usr/bin" \
+            "$appdir/usr/share/applications" \
+            "$appdir/usr/share/icons/hicolor/256x256/apps" \
+            "$appdir/usr/share/icons/hicolor/scalable/apps"
+
           cp -a build/linux/x64/release/bundle/. "$appdir/usr/bin/"
+
           printf '%s\n' \
             '#!/usr/bin/env bash' \
             'set -e' \
@@ -209,7 +242,9 @@ jobs:
             'export LD_LIBRARY_PATH="$this_dir/usr/bin/lib:${LD_LIBRARY_PATH:-}"' \
             "exec \"\$this_dir/usr/bin/${APP_NAME}\" \"\$@\"" \
             > "$appdir/AppRun"
+
           chmod +x "$appdir/AppRun"
+
           printf '%s\n' \
             '[Desktop Entry]' \
             'Type=Application' \
@@ -218,11 +253,19 @@ jobs:
             "Icon=${APP_NAME}" \
             'Categories=Network;Chat;' \
             > "$appdir/${APP_NAME}.desktop"
-          cp "$appdir/${APP_NAME}.desktop" "$appdir/usr/share/applications/${APP_NAME}.desktop"
+
+          cp \
+            "$appdir/${APP_NAME}.desktop" \
+            "$appdir/usr/share/applications/${APP_NAME}.desktop"
 
           if [[ -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png ]]; then
-            cp android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png "$appdir/${APP_NAME}.png"
-            cp "$appdir/${APP_NAME}.png" "$appdir/usr/share/icons/hicolor/256x256/apps/${APP_NAME}.png"
+            cp \
+              android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png \
+              "$appdir/${APP_NAME}.png"
+
+            cp \
+              "$appdir/${APP_NAME}.png" \
+              "$appdir/usr/share/icons/hicolor/256x256/apps/${APP_NAME}.png"
           else
             printf '%s\n' \
               '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">' \
@@ -230,10 +273,16 @@ jobs:
               '<text x="128" y="148" text-anchor="middle" font-size="74" font-family="sans-serif" fill="#ffffff">Cs</text>' \
               '</svg>' \
               > "$appdir/${APP_NAME}.svg"
-            cp "$appdir/${APP_NAME}.svg" "$appdir/usr/share/icons/hicolor/scalable/apps/${APP_NAME}.svg"
+
+            cp \
+              "$appdir/${APP_NAME}.svg" \
+              "$appdir/usr/share/icons/hicolor/scalable/apps/${APP_NAME}.svg"
           fi
 
-          ARCH=x86_64 appimagetool-extracted "$appdir" "build/artifacts/${APP_NAME}-linux-x64.AppImage"
+          ARCH=x86_64 \
+            appimagetool-extracted \
+            "$appdir" \
+            "build/artifacts/${APP_NAME}-linux-x64.AppImage"
 
       - name: Upload Linux AppImage
         if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'linux-appimage' }}
@@ -247,6 +296,9 @@ jobs:
     name: Android
     if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'android-apk' }}
     runs-on: ubuntu-latest
+
+    env:
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     defaults:
       run:
@@ -262,6 +314,21 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Setup Android SDK environment
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Install Android NDK
+        run: |
+          yes | sdkmanager --licenses
+
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+          sdkmanager "ndk;27.0.12077973"
+
       - name: Install aria2
         run: |
           sudo apt-get update
@@ -270,16 +337,23 @@ jobs:
       - name: Download Flutter SDK
         run: |
           mkdir -p "$RUNNER_TEMP/downloads" "$RUNNER_TEMP/flutter-sdk"
+
           aria2c -s16 -x16 -k1M \
             --dir="$RUNNER_TEMP/downloads" \
             --out="flutter-linux.tar.xz" \
             "$FLUTTER_LINUX_URL"
-          tar -xf "$RUNNER_TEMP/downloads/flutter-linux.tar.xz" -C "$RUNNER_TEMP/flutter-sdk"
+
+          tar -xf "$RUNNER_TEMP/downloads/flutter-linux.tar.xz" \
+            -C "$RUNNER_TEMP/flutter-sdk"
+
           echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> "$GITHUB_PATH"
           echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> "$GITHUB_ENV"
 
       - name: Check Flutter
         run: flutter --version
+
+      - name: Flutter doctor
+        run: flutter doctor -v
 
       - name: Get dependencies
         run: flutter pub get
