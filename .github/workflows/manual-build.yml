@@ -15,6 +15,7 @@ on:
           - linux-executable
           - linux-appimage
           - android-apk
+          - ios
           - ios-unsigned-ipa
 
 permissions:
@@ -406,7 +407,7 @@ jobs:
 
   ios:
     name: iOS unsigned IPA
-    if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'ios-unsigned-ipa' }}
+    if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'ios' || github.event.inputs.artifact == 'ios-unsigned-ipa' }}
     runs-on: macos-latest
 
     defaults:
