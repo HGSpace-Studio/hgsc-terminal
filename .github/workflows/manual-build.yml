@@ -394,12 +394,12 @@ jobs:
             exit 1
           fi
 
-          cat > android/key.properties <<EOF
-storeFile=app/signing/release.jks
-storePassword=$ANDROID_STORE_PASSWORD
-keyAlias=$ANDROID_KEY_ALIAS
-keyPassword=$ANDROID_KEY_PASSWORD
-EOF
+          {
+            printf 'storeFile=app/signing/release.jks\n'
+            printf 'storePassword=%s\n' "$ANDROID_STORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+          } > android/key.properties
 
           keytool \
             -list \
@@ -431,38 +431,38 @@ EOF
       run:
         working-directory: flutter/csac
 
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-        - name: Validate iOS app icon
-          run: |
-            icon_path="ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png"
-            default_flutter_hash="7770183009e914112de7d8ef1d235a6a30c5834424858e0d2f8253f6b8d31926"
+      - name: Validate iOS app icon
+        run: |
+          icon_path="ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png"
+          default_flutter_hash="7770183009e914112de7d8ef1d235a6a30c5834424858e0d2f8253f6b8d31926"
 
-            if [[ ! -f "$icon_path" ]]; then
-              echo "::error::Missing iOS app icon: $icon_path"
-              exit 1
-            fi
+          if [[ ! -f "$icon_path" ]]; then
+            echo "::error::Missing iOS app icon: $icon_path"
+            exit 1
+          fi
 
-            actual_hash="$(shasum -a 256 "$icon_path" | cut -d ' ' -f 1)"
-            if [[ "$actual_hash" == "$default_flutter_hash" ]]; then
-              echo "::error::iOS app icon is still the default Flutter logo."
-              exit 1
-            fi
+          actual_hash="$(shasum -a 256 "$icon_path" | cut -d ' ' -f 1)"
+          if [[ "$actual_hash" == "$default_flutter_hash" ]]; then
+            echo "::error::iOS app icon is still the default Flutter logo."
+            exit 1
+          fi
 
-            width="$(sips -g pixelWidth "$icon_path" | awk '/pixelWidth/ { print $2 }')"
-            height="$(sips -g pixelHeight "$icon_path" | awk '/pixelHeight/ { print $2 }')"
-            if [[ "$width" != "1024" || "$height" != "1024" ]]; then
-              echo "::error::iOS marketing icon must be 1024x1024, got ${width}x${height}."
-              exit 1
-            fi
+          width="$(sips -g pixelWidth "$icon_path" | awk '/pixelWidth/ { print $2 }')"
+          height="$(sips -g pixelHeight "$icon_path" | awk '/pixelHeight/ { print $2 }')"
+          if [[ "$width" != "1024" || "$height" != "1024" ]]; then
+            echo "::error::iOS marketing icon must be 1024x1024, got ${width}x${height}."
+            exit 1
+          fi
 
-        - name: Setup Flutter
-          uses: subosito/flutter-action@v2
-          with:
-            flutter-version: ${{ env.FLUTTER_VERSION }}
-            channel: stable
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
           cache: true
 
       - name: Check Flutter
