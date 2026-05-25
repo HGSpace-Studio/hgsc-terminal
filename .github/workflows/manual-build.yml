@@ -28,6 +28,7 @@ env:
   FLUTTER_WINDOWS_URL: https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.44.0-stable.zip
 
 jobs:
+
   windows:
     name: Windows
     if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'windows-exe' || github.event.inputs.artifact == 'windows-installer' }}
@@ -38,8 +39,7 @@ jobs:
         working-directory: flutter/csac
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install aria2
         run: choco install aria2 --no-progress -y
@@ -54,54 +54,43 @@ jobs:
 
           aria2c -s16 -x16 -k1M `
             --dir="$downloadDir" `
-            --out="flutter-windows.zip" `
+            --out="flutter.zip" `
             "${env:FLUTTER_WINDOWS_URL}"
 
           Expand-Archive `
-            -Path (Join-Path $downloadDir "flutter-windows.zip") `
-            -DestinationPath $sdkDir `
-            -Force
+            -Path (Join-Path $downloadDir "flutter.zip") `
+            -DestinationPath $sdkDir -Force
 
           $flutterBin = Join-Path $sdkDir "flutter\bin"
           $flutterRoot = Join-Path $sdkDir "flutter"
 
-          $flutterBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          "FLUTTER_ROOT=$flutterRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $flutterBin | Out-File $env:GITHUB_PATH -Append
+          "FLUTTER_ROOT=$flutterRoot" | Out-File $env:GITHUB_ENV -Append
 
-      - name: Check Flutter
-        run: flutter --version
+      - run: flutter --version
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+      - run: flutter build windows --release
 
-      - name: Enable Windows desktop
-        run: flutter config --enable-windows-desktop
-
-      - name: Get dependencies
-        run: flutter pub get
-
-      - name: Build Windows release
-        run: flutter build windows --release
-
-      - name: Package Windows portable bundle
-        if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'windows-exe' }}
+      - name: Package
+        if: ${{ contains(github.event.inputs.artifact, 'windows') }}
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path build/artifacts | Out-Null
-
+          New-Item -ItemType Directory -Force build/artifacts | Out-Null
           Compress-Archive `
             -Path build/windows/x64/runner/Release/* `
-            -DestinationPath build/artifacts/${{ env.APP_NAME }}-windows-x64.zip `
-            -Force
+            -DestinationPath build/artifacts/${{ env.APP_NAME }}-windows.zip
 
-      - name: Upload Windows portable bundle
-        if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'windows-exe' }}
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: ${{ contains(github.event.inputs.artifact, 'windows') }}
         with:
-          name: ${{ env.APP_NAME }}-windows-x64
-          path: flutter/csac/build/artifacts/${{ env.APP_NAME }}-windows-x64.zip
-          if-no-files-found: error
+          name: ${{ env.APP_NAME }}-windows
+          path: flutter/csac/build/artifacts/*.zip
+
 
   linux:
     name: Linux
-    if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'linux-executable' || github.event.inputs.artifact == 'linux-appimage' }}
+    if: ${{ contains(github.event.inputs.artifact, 'linux') || github.event.inputs.artifact == 'all' }}
     runs-on: ubuntu-latest
 
     defaults:
@@ -109,99 +98,45 @@ jobs:
         working-directory: flutter/csac
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Linux desktop dependencies
+      - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            aria2 clang cmake libfuse2 libgtk-3-dev liblzma-dev ninja-build pkg-config
+          sudo apt-get install -y aria2 clang cmake libgtk-3-dev ninja-build pkg-config
 
-      - name: Download Flutter SDK
+      - name: Download Flutter
         run: |
-          mkdir -p "$RUNNER_TEMP/downloads" "$RUNNER_TEMP/flutter-sdk"
+          mkdir -p $RUNNER_TEMP/flutter-sdk
+          aria2c -x16 "$FLUTTER_LINUX_URL" -o flutter.tar.xz
+          tar -xf flutter.tar.xz -C $RUNNER_TEMP/flutter-sdk
 
-          aria2c -s16 -x16 -k1M \
-            --dir="$RUNNER_TEMP/downloads" \
-            --out="flutter-linux.tar.xz" \
-            "$FLUTTER_LINUX_URL"
+          echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> $GITHUB_PATH
+          echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> $GITHUB_ENV
 
-          tar -xf "$RUNNER_TEMP/downloads/flutter-linux.tar.xz" \
-            -C "$RUNNER_TEMP/flutter-sdk"
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter build linux --release
 
-          echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> "$GITHUB_PATH"
-          echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> "$GITHUB_ENV"
-
-      - name: Check Flutter
-        run: flutter --version
-
-      - name: Enable Linux desktop
-        run: flutter config --enable-linux-desktop
-
-      - name: Get dependencies
-        run: flutter pub get
-
-      - name: Build Linux release
-        run: flutter build linux --release
 
   android:
     name: Android
-    if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'android-apk' }}
+    if: ${{ contains(github.event.inputs.artifact, 'android') || github.event.inputs.artifact == 'all' }}
     runs-on: ubuntu-latest
-
-    env:
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     defaults:
       run:
         working-directory: flutter/csac
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Android SDK environment
-        run: |
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
-
-      - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973"
-
-      - name: Install Flutter SDK
-        run: |
-          mkdir -p "$RUNNER_TEMP/downloads" "$RUNNER_TEMP/flutter-sdk"
-
-          aria2c -s16 -x16 -k1M \
-            --dir="$RUNNER_TEMP/downloads" \
-            --out="flutter-linux.tar.xz" \
-            "$FLUTTER_LINUX_URL"
-
-          tar -xf "$RUNNER_TEMP/downloads/flutter-linux.tar.xz" \
-            -C "$RUNNER_TEMP/flutter-sdk"
-
-          echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> "$GITHUB_PATH"
-          echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> "$GITHUB_ENV"
-
-      - name: Check Flutter
-        run: flutter --version
-
-      - name: Flutter doctor
-        run: flutter doctor -v
-
-      - name: Get dependencies
-        run: flutter pub get
-
-      - name: Configure Android signing
+      - name: Setup signing
         shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -209,40 +144,64 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
-          missing=0
-
-          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_STORE_PASSWORD; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::$name secret is required"
-              missing=1
-            fi
-          done
-
-          if [[ "$missing" -ne 0 ]]; then
-            exit 1
-          fi
+          set -e
 
           mkdir -p android/app/signing
 
-          clean_keystore_base64="$(printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '\r\n\t ' | sed 's/^"//;s/"$//')"
+          clean=$(echo "$ANDROID_KEYSTORE_BASE64" | tr -d '\n\r\t ')
 
-          if [[ -z "$clean_keystore_base64" ]]; then
-            echo "::error::keystore empty"
-            exit 1
-          fi
+          echo "$clean" | base64 -d > android/app/signing/release.jks
 
-          printf '%s' "$clean_keystore_base64" | base64 --decode > android/app/signing/release.jks
+          cat > android/key.properties <<EOF
+storeFile=app/signing/release.jks
+storePassword=$ANDROID_STORE_PASSWORD
+keyAlias=$ANDROID_KEY_ALIAS
+keyPassword=$ANDROID_KEY_PASSWORD
+EOF
 
-          if [[ ! -s android/app/signing/release.jks ]]; then
-            echo "::error::decoded keystore empty"
-            exit 1
-          fi
-
-      - name: Build Android APK
+      - name: Build APK
         run: flutter build apk --release
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APP_NAME }}-android-apk
+          name: ${{ env.APP_NAME }}-android
           path: flutter/csac/build/app/outputs/flutter-apk/app-release.apk
+
+
+  ios:
+    name: iOS unsigned IPA
+    if: ${{ contains(github.event.inputs.artifact, 'ios') || github.event.inputs.artifact == 'all' }}
+    runs-on: macos-latest
+
+    defaults:
+      run:
+        working-directory: flutter/csac
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+
+      - name: Package IPA
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p build/ios/ipa/Payload
+          mkdir -p build/artifacts
+
+          ditto build/ios/iphoneos/Runner.app build/ios/ipa/Payload/Runner.app
+
+          cd build/ios/ipa
+          zip -r ../artifacts/${APP_NAME}-ios.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-ios
+          path: flutter/csac/build/artifacts/*.ipa
