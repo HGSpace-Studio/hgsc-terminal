@@ -382,10 +382,25 @@ jobs:
 
           mkdir -p android/app/signing
 
-          clean_keystore_base64="$(printf '%s' "$ANDROID_KEYSTORE_BASE64" | sed 's/^ANDROID_KEYSTORE_BASE64=//' | tr -d '\r\n\t ')"
+          raw_keystore_base64="$ANDROID_KEYSTORE_BASE64"
+
+          if printf '%s\n' "$raw_keystore_base64" | grep -q '^ANDROID_KEYSTORE_BASE64='; then
+            raw_keystore_base64="$(printf '%s\n' "$raw_keystore_base64" | sed -n 's/^ANDROID_KEYSTORE_BASE64=//p' | head -n 1)"
+          else
+            raw_keystore_base64="${raw_keystore_base64#ANDROID_KEYSTORE_BASE64=}"
+          fi
+
+          clean_keystore_base64="$(printf '%s' "$raw_keystore_base64" | tr -d '\r\n\t ' | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+
+          if [[ -z "$clean_keystore_base64" ]]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is empty after cleanup."
+            exit 1
+          fi
+
+          echo "ANDROID_KEYSTORE_BASE64 sanitized length: ${#clean_keystore_base64}"
 
           if ! printf '%s' "$clean_keystore_base64" | base64 --decode > android/app/signing/release.jks; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64. Set the secret value to the raw base64 text only, without ANDROID_KEYSTORE_BASE64=."
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64. Set the secret value to the raw base64 text only. If you pasted signing-secrets.env, recreate the four GitHub secrets from each line separately."
             exit 1
           fi
 
