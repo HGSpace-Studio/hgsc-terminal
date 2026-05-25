@@ -47,6 +47,9 @@ app.*.map.json
 /android/.kotlin/
 /android/.cxx/
 /android/local.properties
+/android/key.properties
+/android/signing-secrets.env
+/android/app/signing/
 /android/app/debug
 /android/app/profile
 /android/app/release
