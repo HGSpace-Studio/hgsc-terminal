@@ -17,6 +17,7 @@ on:
           - android-apk
           - ios
           - ios-unsigned-ipa
+
       upload_release:
         description: Upload built artifacts to GitHub Release
         required: true
@@ -39,8 +40,13 @@ jobs:
     if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'windows-exe' || github.event.inputs.artifact == 'windows-installer' }}
     runs-on: windows-latest
 
+    defaults:
+      run:
+        working-directory: flutter/csac
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install aria2
         run: choco install aria2 --no-progress -y
@@ -50,6 +56,7 @@ jobs:
         run: |
           $downloadDir = Join-Path $env:RUNNER_TEMP "downloads"
           $sdkDir = Join-Path $env:RUNNER_TEMP "flutter-sdk"
+
           New-Item -ItemType Directory -Force -Path $downloadDir, $sdkDir | Out-Null
 
           aria2c -s16 -x16 -k1M `
@@ -59,85 +66,164 @@ jobs:
 
           Expand-Archive `
             -Path (Join-Path $downloadDir "flutter-windows.zip") `
-            -DestinationPath $sdkDir -Force
+            -DestinationPath $sdkDir `
+            -Force
 
           $flutterBin = Join-Path $sdkDir "flutter\bin"
           $flutterRoot = Join-Path $sdkDir "flutter"
 
-          $flutterBin | Out-File -FilePath $env:GITHUB_PATH -Append
-          "FLUTTER_ROOT=$flutterRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $flutterBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "FLUTTER_ROOT=$flutterRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - run: flutter --version
-      - run: flutter config --enable-windows-desktop
-      - run: flutter pub get
-      - run: flutter build windows --release
+      - name: Check Flutter
+        run: flutter --version
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Windows release
+        run: flutter build windows --release
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-windows
-          path: build/windows/x64/runner/Release
+          path: flutter/csac/build/windows/x64/runner/Release
 
   linux:
     name: Linux
     if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'linux-executable' || github.event.inputs.artifact == 'linux-appimage' }}
     runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+    defaults:
+      run:
+        working-directory: flutter/csac
 
-      - name: Install deps
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y aria2 clang cmake libgtk-3-dev ninja-build pkg-config liblzma-dev libfuse2
 
-      - name: Flutter SDK
+          sudo apt-get install -y \
+            aria2 \
+            clang \
+            cmake \
+            libgtk-3-dev \
+            ninja-build \
+            pkg-config \
+            liblzma-dev \
+            libfuse2
+
+      - name: Download Flutter SDK
         run: |
-          mkdir -p $RUNNER_TEMP/flutter-sdk
-          aria2c -x16 -s16 "$FLUTTER_LINUX_URL" -o flutter.tar.xz
-          tar -xf flutter.tar.xz -C $RUNNER_TEMP/flutter-sdk
-          echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> $GITHUB_PATH
-          echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> $GITHUB_ENV
+          mkdir -p "$RUNNER_TEMP/flutter-sdk"
 
-      - run: flutter --version
-      - run: flutter config --enable-linux-desktop
-      - run: flutter pub get
-      - run: flutter build linux --release
+          aria2c -x16 -s16 \
+            "$FLUTTER_LINUX_URL" \
+            -o flutter.tar.xz
 
-      - uses: actions/upload-artifact@v4
+          tar -xf flutter.tar.xz \
+            -C "$RUNNER_TEMP/flutter-sdk"
+
+          echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> "$GITHUB_PATH"
+          echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> "$GITHUB_ENV"
+
+      - name: Check Flutter
+        run: flutter --version
+
+      - name: Enable Linux desktop
+        run: flutter config --enable-linux-desktop
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Linux release
+        run: flutter build linux --release
+
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-linux
-          path: build/linux/x64/release/bundle
+          path: flutter/csac/build/linux/x64/release/bundle
 
   android:
     name: Android
     if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'android-apk' }}
     runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+    defaults:
+      run:
+        working-directory: flutter/csac
 
-      - uses: actions/setup-java@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Flutter SDK
+      - name: Install aria2
         run: |
-          mkdir -p $RUNNER_TEMP/flutter-sdk
-          aria2c -x16 -s16 "$FLUTTER_LINUX_URL" -o flutter.tar.xz
-          tar -xf flutter.tar.xz -C $RUNNER_TEMP/flutter-sdk
-          echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> $GITHUB_PATH
-          echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> $GITHUB_ENV
+          sudo apt-get update
+          sudo apt-get install -y aria2
 
-      - run: flutter --version
-      - run: flutter pub get
-      - run: flutter build apk --release
+      - name: Download Flutter SDK
+        run: |
+          mkdir -p "$RUNNER_TEMP/flutter-sdk"
 
-      - uses: actions/upload-artifact@v4
+          aria2c -x16 -s16 \
+            "$FLUTTER_LINUX_URL" \
+            -o flutter.tar.xz
+
+          tar -xf flutter.tar.xz \
+            -C "$RUNNER_TEMP/flutter-sdk"
+
+          echo "$RUNNER_TEMP/flutter-sdk/flutter/bin" >> "$GITHUB_PATH"
+          echo "FLUTTER_ROOT=$RUNNER_TEMP/flutter-sdk/flutter" >> "$GITHUB_ENV"
+
+      - name: Check Flutter
+        run: flutter --version
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Configure Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          mkdir -p android/app/signing
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | base64 --decode \
+            > android/app/signing/release.jks
+
+          {
+            echo "storeFile=app/signing/release.jks"
+            echo "storePassword=$ANDROID_STORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > android/key.properties
+
+      - name: Build Android APK
+        run: flutter build apk --release
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-android
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: flutter/csac/build/app/outputs/flutter-apk/app-release.apk
 
   ios:
     name: iOS unsigned IPA
@@ -145,55 +231,87 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
 
-      - run: flutter --version
-      - run: flutter pub get
-
-      - name: Build iOS (no code signing)
-        run: flutter build ios --release --no-codesign
-
-      - name: Package IPA
+      - name: Check Flutter
         run: |
+          cd flutter/csac
+          flutter --version
+
+      - name: Get dependencies
+        run: |
+          cd flutter/csac
+          flutter pub get
+
+      - name: Build iOS without code signing
+        run: |
+          cd flutter/csac
+          flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        run: |
+          cd flutter/csac
+
           mkdir -p build/ios/ipa/Payload
-          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+
+          cp -R \
+            build/ios/iphoneos/Runner.app \
+            build/ios/ipa/Payload
 
           cd build/ios/ipa
-          zip -r ${{ env.APP_NAME }}-ios-unsigned.ipa Payload
 
-      - uses: actions/upload-artifact@v4
+          zip -r \
+            ${APP_NAME}-ios-unsigned.ipa \
+            Payload
+
+      - name: Upload iOS IPA
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-ios
-          path: build/ios/ipa/${{ env.APP_NAME }}-ios-unsigned.ipa
+          path: flutter/csac/build/ios/ipa/${{ env.APP_NAME }}-ios-unsigned.ipa
 
   release:
     name: Release
-    if: ${{ always() && inputs.upload_release && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
-    needs: [windows, linux, android, ios]
+    if: ${{ always() && github.event.inputs.upload_release == 'true' }}
+    needs:
+      - windows
+      - linux
+      - android
+      - ios
+
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Get version
-        id: v
+      - name: Read version
+        id: version
         run: |
-          v=$(grep '^version:' pubspec.yaml | awk '{print $2}')
-          echo "tag=v${v/+/-}" >> $GITHUB_OUTPUT
+          version=$(grep '^version:' flutter/csac/pubspec.yaml | awk '{print $2}')
+          version=${version/+/-}
 
-      - uses: actions/download-artifact@v4
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
         with:
-          path: release
+          path: release-assets
 
-      - run: |
-          mkdir -p out
-          cp -r release/* out/
+      - name: Prepare release files
+        run: |
+          mkdir -p release-upload
 
-      - uses: softprops/action-gh-release@v2
+          cp -R release-assets/* release-upload/
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.v.outputs.tag }}
-          files: out/**/*
+          tag_name: ${{ steps.version.outputs.tag }}
+          files: release-upload/**/*
