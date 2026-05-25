@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
+import 'l10n.dart';
 import 'local_cache.dart';
 import 'models.dart';
 import 'preferences.dart';
@@ -21,19 +22,26 @@ class CsacAppState extends ChangeNotifier {
   bool loading = false;
   bool offlineMode = false;
   bool sessionExpired = false;
-  String restoreStatus = 'Restoring session...';
+  String restoreStatus = const CsacStrings(
+    Locale('zh', 'CN'),
+  ).text('Restoring session...');
   String? error;
 
   Future<void> initialize() async {
     bootstrapping = true;
-    restoreStatus = 'Restoring session...';
+    restoreStatus = CsacStrings(
+      localeForLanguage(preferences.language),
+    ).text('Restoring session...');
     error = null;
     notifyListeners();
     try {
       await cache.open();
       preferences = await CsacPreferences.load();
+      _applyPreferredServer();
       await client.loadSession();
-      restoreStatus = 'Checking saved session...';
+      restoreStatus = CsacStrings(
+        localeForLanguage(preferences.language),
+      ).text('Checking saved session...');
       notifyListeners();
       user = await client.currentUser();
       await cache.saveUser(user!);
@@ -50,13 +58,19 @@ class CsacAppState extends ChangeNotifier {
       offlineMode = user != null;
       error = user == null
           ? err.toString()
-          : 'Session expired. Cached history is available offline.';
+          : CsacStrings(
+              localeForLanguage(preferences.language),
+            ).text('Session expired. Cached history is available offline.');
     } catch (_) {
       user = await cache.loadUser();
       conversations = await cache.loadConversations();
       offlineMode = user != null;
       sessionExpired = false;
-      error = user == null ? 'Unable to restore session.' : null;
+      error = user == null
+          ? CsacStrings(
+              localeForLanguage(preferences.language),
+            ).text('Unable to restore session.')
+          : null;
     } finally {
       bootstrapping = false;
       notifyListeners();
@@ -94,6 +108,36 @@ class CsacAppState extends ChangeNotifier {
     preferences = preferences.copyWith(language: language);
     await preferences.save();
     notifyListeners();
+  }
+
+  Future<bool> updateServerUrl(String value) async {
+    final normalizedUrl = value.trim().isEmpty
+        ? ''
+        : CsacApiClient.normalizeServerUrl(value);
+    final normalized = normalizedUrl == CsacApiClient.defaultBaseUrl
+        ? ''
+        : normalizedUrl;
+    if (normalized == preferences.serverUrl.trim()) {
+      _applyPreferredServer();
+      return false;
+    }
+    preferences = preferences.copyWith(serverUrl: normalized);
+    await preferences.save();
+    _applyPreferredServer();
+    await client.clearSession();
+    await cache.clear();
+    user = null;
+    conversations = const <Conversation>[];
+    notificationCounts = const NotificationCounts();
+    offlineMode = false;
+    sessionExpired = false;
+    error = null;
+    notifyListeners();
+    return true;
+  }
+
+  void _applyPreferredServer() {
+    client.setBaseUrl(preferences.serverUrl);
   }
 
   Future<void> loadConversations() async {

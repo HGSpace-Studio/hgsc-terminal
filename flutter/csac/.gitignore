@@ -11,6 +11,8 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+.agents/
+.codex/
 
 # IntelliJ related
 *.iml
@@ -27,6 +29,7 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
@@ -40,6 +43,10 @@ app.*.symbols
 app.*.map.json
 
 # Android Studio will place build artifacts here
+/android/.gradle/
+/android/.kotlin/
+/android/.cxx/
+/android/local.properties
 /android/app/debug
 /android/app/profile
 /android/app/release

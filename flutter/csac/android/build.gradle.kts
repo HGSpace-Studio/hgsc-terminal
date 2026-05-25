@@ -1,5 +1,11 @@
 allprojects {
     repositories {
+        val disableAliyunMaven =
+            providers.gradleProperty("csacDisableAliyunMaven").orNull == "true"
+        if (!disableAliyunMaven) {
+            maven("https://maven.aliyun.com/repository/google")
+            maven("https://maven.aliyun.com/repository/public")
+        }
         google()
         mavenCentral()
     }
