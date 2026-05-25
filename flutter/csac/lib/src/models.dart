@@ -142,6 +142,24 @@ class Conversation {
   final String subtitle;
   final int unreadCount;
   final String searchText;
+
+  Conversation copyWith({
+    ConversationType? type,
+    int? id,
+    String? name,
+    String? subtitle,
+    int? unreadCount,
+    String? searchText,
+  }) {
+    return Conversation(
+      type: type ?? this.type,
+      id: id ?? this.id,
+      name: name ?? this.name,
+      subtitle: subtitle ?? this.subtitle,
+      unreadCount: unreadCount ?? this.unreadCount,
+      searchText: searchText ?? this.searchText,
+    );
+  }
 }
 
 class UserProfile {

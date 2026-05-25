@@ -1,13 +1,12 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_state.dart';
@@ -53,21 +52,8 @@ class _CsacMobileAppState extends State<CsacMobileApp> {
             GlobalCupertinoLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
           ],
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xff1f8a70),
-              brightness: Brightness.light,
-            ),
-            useMaterial3: true,
-            scaffoldBackgroundColor: const Color(0xfff7f8fa),
-          ),
-          darkTheme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xff55c7ad),
-              brightness: Brightness.dark,
-            ),
-            useMaterial3: true,
-          ),
+          theme: buildCsacTheme(Brightness.light),
+          darkTheme: buildCsacTheme(Brightness.dark),
           themeMode: state.preferences.themeMode,
           home: state.bootstrapping
               ? SplashScreen(status: state.restoreStatus)
@@ -78,6 +64,79 @@ class _CsacMobileAppState extends State<CsacMobileApp> {
       },
     );
   }
+}
+
+ThemeData buildCsacTheme(Brightness brightness) {
+  final isDark = brightness == Brightness.dark;
+  final scheme = ColorScheme.fromSeed(
+    seedColor: isDark ? const Color(0xff55c7ad) : const Color(0xff1f8a70),
+    brightness: brightness,
+  );
+  final base = ThemeData(colorScheme: scheme, useMaterial3: true);
+  return base.copyWith(
+    scaffoldBackgroundColor: scheme.surface,
+    canvasColor: scheme.surface,
+    cardColor: scheme.surfaceContainerLow,
+    appBarTheme: AppBarTheme(
+      backgroundColor: scheme.surface,
+      foregroundColor: scheme.onSurface,
+      surfaceTintColor: scheme.surfaceTint,
+      elevation: 0,
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: scheme.surface,
+      modalBackgroundColor: scheme.surface,
+      surfaceTintColor: scheme.surfaceTint,
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: scheme.surfaceContainer,
+      indicatorColor: scheme.secondaryContainer,
+      labelTextStyle: WidgetStatePropertyAll(
+        base.textTheme.labelMedium?.copyWith(color: scheme.onSurface),
+      ),
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        return IconThemeData(
+          color: states.contains(WidgetState.selected)
+              ? scheme.onSecondaryContainer
+              : scheme.onSurfaceVariant,
+        );
+      }),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: false,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: scheme.outline),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: scheme.primary, width: 1.6),
+      ),
+    ),
+    chipTheme: base.chipTheme.copyWith(
+      backgroundColor: scheme.surfaceContainerHighest,
+      selectedColor: scheme.secondaryContainer,
+      labelStyle: TextStyle(color: scheme.onSurface),
+      secondaryLabelStyle: TextStyle(color: scheme.onSecondaryContainer),
+      iconTheme: IconThemeData(color: scheme.onSurfaceVariant),
+      side: BorderSide(color: scheme.outlineVariant),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: scheme.inverseSurface,
+      contentTextStyle: TextStyle(color: scheme.onInverseSurface),
+      actionTextColor: scheme.inversePrimary,
+      behavior: SnackBarBehavior.floating,
+    ),
+    dividerTheme: DividerThemeData(color: scheme.outlineVariant),
+    listTileTheme: ListTileThemeData(
+      iconColor: scheme.onSurfaceVariant,
+      textColor: scheme.onSurface,
+      subtitleTextStyle: base.textTheme.bodyMedium?.copyWith(
+        color: scheme.onSurfaceVariant,
+      ),
+    ),
+  );
 }
 
 class SplashScreen extends StatelessWidget {
@@ -92,7 +151,11 @@ class SplashScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.forum_rounded, size: 54, color: Color(0xff1f8a70)),
+            Icon(
+              Icons.forum_rounded,
+              size: 54,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             const SizedBox(height: 18),
             Text(
               context.strings.text('CsAC Mobile'),
@@ -176,10 +239,10 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.forum_rounded,
                     size: 64,
-                    color: Color(0xff1f8a70),
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -267,6 +330,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int index = 0;
   int lastUnreadChats = 0;
+  Conversation? selectedConversation;
   Timer? timer;
 
   @override
@@ -287,26 +351,43 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<void> refreshHomeWithHint() async {
-    final before = totalUnreadChats();
+    final strings = context.strings;
+    final messenger = ScaffoldMessenger.of(context);
     try {
       await widget.state.refreshHome();
     } catch (_) {
       return;
     }
-    final after = totalUnreadChats();
     if (!mounted) {
       return;
     }
-    if (after > before && after > lastUnreadChats) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            context.strings.format('New messages: {count}', {
-              'count': after - before,
-            }),
-          ),
-        ),
-      );
+    final currentConversation =
+        selectedConversation ?? widget.state.activeConversation;
+    if (currentConversation != null) {
+      final selected = currentConversation;
+      final latestSelected = widget.state.conversations
+          .where(
+            (conversation) =>
+                conversation.type == selected.type &&
+                conversation.id == selected.id,
+          )
+          .firstOrNull;
+      if (latestSelected != null) {
+        if (selectedConversation != null) {
+          selectedConversation = latestSelected.copyWith(unreadCount: 0);
+        }
+        await widget.state.markConversationRead(
+          latestSelected,
+          syncServer: false,
+        );
+      }
+    }
+    final after = totalUnreadChats();
+    if (after > lastUnreadChats) {
+      final message = strings.format('New messages: {count}', {
+        'count': after - lastUnreadChats,
+      });
+      messenger.showSnackBar(SnackBar(content: Text(message)));
     }
     lastUnreadChats = after;
   }
@@ -321,12 +402,103 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final unreadChats = totalUnreadChats();
     final noticeCount = widget.state.notificationCounts.total;
+    final wide = MediaQuery.sizeOf(context).width >= 900;
     final pages = <Widget>[
-      ConversationScreen(state: widget.state, embedded: true),
+      ConversationScreen(
+        state: widget.state,
+        embedded: true,
+        selectedConversation: selectedConversation,
+        onConversationSelected: wide
+            ? (conversation) {
+                widget.state.markConversationRead(conversation);
+                widget.state.setActiveConversation(conversation);
+                setState(
+                  () => selectedConversation = conversation.copyWith(
+                    unreadCount: 0,
+                  ),
+                );
+                lastUnreadChats = totalUnreadChats();
+              }
+            : null,
+      ),
       MessageSearchScreen(state: widget.state, embedded: true),
       NoticeCenterScreen(state: widget.state),
       ProfileScreen(state: widget.state),
     ];
+    if (wide) {
+      return Scaffold(
+        body: SafeArea(
+          child: Row(
+            children: [
+              NavigationRail(
+                selectedIndex: index,
+                onDestinationSelected: (value) {
+                  setState(() => index = value);
+                  if (value == 0) {
+                    widget.state.loadConversations();
+                  }
+                  if (value == 2) {
+                    widget.state.refreshNotificationCounts();
+                  }
+                },
+                labelType: NavigationRailLabelType.all,
+                leading: Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 18),
+                  child: Icon(
+                    Icons.forum_rounded,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                destinations: [
+                  NavigationRailDestination(
+                    icon: _BadgeIcon(
+                      icon: Icons.chat_bubble_outline,
+                      count: unreadChats,
+                    ),
+                    selectedIcon: _BadgeIcon(
+                      icon: Icons.chat_bubble,
+                      count: unreadChats,
+                    ),
+                    label: Text(context.strings.text('Chats')),
+                  ),
+                  NavigationRailDestination(
+                    icon: const Icon(Icons.manage_search_outlined),
+                    selectedIcon: const Icon(Icons.manage_search),
+                    label: Text(context.strings.text('Search')),
+                  ),
+                  NavigationRailDestination(
+                    icon: _BadgeIcon(
+                      icon: Icons.notifications_none,
+                      count: noticeCount,
+                    ),
+                    selectedIcon: _BadgeIcon(
+                      icon: Icons.notifications,
+                      count: noticeCount,
+                    ),
+                    label: Text(context.strings.text('Notices')),
+                  ),
+                  NavigationRailDestination(
+                    icon: const Icon(Icons.person_outline),
+                    selectedIcon: const Icon(Icons.person),
+                    label: Text(context.strings.text('Me')),
+                  ),
+                ],
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: index == 0
+                    ? _WideChatLayout(
+                        state: widget.state,
+                        conversations: pages[0],
+                        selectedConversation: selectedConversation,
+                      )
+                    : pages[index],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       body: IndexedStack(index: index, children: pages),
       bottomNavigationBar: NavigationBar(
@@ -379,6 +551,70 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
+class _WideChatLayout extends StatelessWidget {
+  const _WideChatLayout({
+    required this.state,
+    required this.conversations,
+    required this.selectedConversation,
+  });
+
+  final CsacAppState state;
+  final Widget conversations;
+  final Conversation? selectedConversation;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = selectedConversation;
+    return Row(
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 320, maxWidth: 430),
+          child: conversations,
+        ),
+        const VerticalDivider(width: 1),
+        Expanded(
+          child: selected == null
+              ? const _WideEmptyChatPlaceholder()
+              : ChatScreen(
+                  key: ValueKey('${selected.type.name}:${selected.id}'),
+                  state: state,
+                  conversation: selected,
+                  embedded: true,
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WideEmptyChatPlaceholder extends StatelessWidget {
+  const _WideEmptyChatPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.chat_bubble_outline,
+              size: 56,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              context.strings.text('Select a conversation'),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _BadgeIcon extends StatelessWidget {
   const _BadgeIcon({required this.icon, required this.count});
 
@@ -400,10 +636,14 @@ class ConversationScreen extends StatefulWidget {
     super.key,
     required this.state,
     this.embedded = false,
+    this.selectedConversation,
+    this.onConversationSelected,
   });
 
   final CsacAppState state;
   final bool embedded;
+  final Conversation? selectedConversation;
+  final ValueChanged<Conversation>? onConversationSelected;
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
@@ -523,7 +763,14 @@ class _ConversationScreenState extends State<ConversationScreen> {
             for (final conversation in conversations)
               _ConversationTile(
                 conversation: conversation,
+                selected:
+                    widget.selectedConversation?.type == conversation.type &&
+                    widget.selectedConversation?.id == conversation.id,
                 onTap: () async {
+                  if (widget.onConversationSelected != null) {
+                    widget.onConversationSelected!(conversation);
+                    return;
+                  }
                   await Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => ChatScreen(
@@ -576,26 +823,40 @@ class _ConversationScreenState extends State<ConversationScreen> {
 }
 
 class _ConversationTile extends StatelessWidget {
-  const _ConversationTile({required this.conversation, required this.onTap});
+  const _ConversationTile({
+    required this.conversation,
+    required this.onTap,
+    this.selected = false,
+  });
 
   final Conversation conversation;
   final VoidCallback onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final isGroup = conversation.type == ConversationType.group;
+    final colors = Theme.of(context).colorScheme;
     return Card(
       elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 5),
+      color: selected ? colors.secondaryContainer : null,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
+        selected: selected,
+        selectedColor: colors.onSecondaryContainer,
+        selectedTileColor: colors.secondaryContainer,
         onTap: onTap,
         leading: CircleAvatar(
           backgroundColor: isGroup
-              ? const Color(0xff3a6ea5)
-              : const Color(0xff1f8a70),
+              ? colors.secondaryContainer
+              : colors.primaryContainer,
           child: Icon(
             isGroup ? Icons.groups_rounded : Icons.person_rounded,
-            color: Colors.white,
+            color: isGroup
+                ? colors.onSecondaryContainer
+                : colors.onPrimaryContainer,
           ),
         ),
         title: Text(
@@ -1008,9 +1269,16 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
                     elevation: 0,
                     margin: const EdgeInsets.symmetric(vertical: 5),
                     child: ListTile(
-                      leading: const CircleAvatar(
-                        backgroundColor: Color(0xff3a6ea5),
-                        child: Icon(Icons.groups_rounded, color: Colors.white),
+                      leading: CircleAvatar(
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.secondaryContainer,
+                        child: Icon(
+                          Icons.groups_rounded,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSecondaryContainer,
+                        ),
                       ),
                       title: Text(group.name),
                       subtitle: Text(
@@ -1275,6 +1543,7 @@ class _SearchResultTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isGroup = result.conversation.type == ConversationType.group;
     final message = result.message;
+    final colors = Theme.of(context).colorScheme;
     return Card(
       elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 5),
@@ -1282,11 +1551,13 @@ class _SearchResultTile extends StatelessWidget {
         onTap: onTap,
         leading: CircleAvatar(
           backgroundColor: isGroup
-              ? const Color(0xff3a6ea5)
-              : const Color(0xff1f8a70),
+              ? colors.secondaryContainer
+              : colors.primaryContainer,
           child: Icon(
             isGroup ? Icons.groups_rounded : Icons.person_rounded,
-            color: Colors.white,
+            color: isGroup
+                ? colors.onSecondaryContainer
+                : colors.onPrimaryContainer,
           ),
         ),
         title: Text(
@@ -1981,9 +2252,12 @@ class ProfileScreen extends StatelessWidget {
               ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const CircleAvatar(
-                backgroundColor: Color(0xff1f8a70),
-                child: Icon(Icons.person, color: Colors.white),
+              leading: CircleAvatar(
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                child: Icon(
+                  Icons.person,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
               ),
               title: Text(user?.nickname ?? strings.text('Not logged in')),
               subtitle: Text(
@@ -2185,6 +2459,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() => clearing = false);
       }
     }
+  }
+
+  Future<void> logoutToLogin() async {
+    await widget.state.logout();
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   Future<void> saveServerUrl() async {
@@ -2475,7 +2757,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: Text(
                   strings.text('Clear session and return to login'),
                 ),
-                onTap: widget.state.logout,
+                onTap: logoutToLogin,
               ),
             ),
           ],
@@ -3173,9 +3455,12 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const CircleAvatar(
-              backgroundColor: Color(0xff3a6ea5),
-              child: Icon(Icons.groups_rounded, color: Colors.white),
+            leading: CircleAvatar(
+              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+              child: Icon(
+                Icons.groups_rounded,
+                color: Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
             ),
             title: Text(profile.name),
             subtitle: Text(
@@ -3332,11 +3617,13 @@ class ChatScreen extends StatefulWidget {
     required this.state,
     required this.conversation,
     this.focusMessageId,
+    this.embedded = false,
   });
 
   final CsacAppState state;
   final Conversation conversation;
   final int? focusMessageId;
+  final bool embedded;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -3361,6 +3648,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    widget.state.setActiveConversation(widget.conversation);
+    widget.state.markConversationRead(widget.conversation);
     loadInitial();
     timer = Timer.periodic(
       const Duration(seconds: 4),
@@ -3371,9 +3660,20 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     timer?.cancel();
+    if (widget.state.isActiveConversation(widget.conversation)) {
+      widget.state.setActiveConversation(null);
+    }
     input.dispose();
     scroll.dispose();
     super.dispose();
+  }
+
+  Future<void> markCurrentConversationRead() async {
+    final lastMsgId = messages.isEmpty ? 0 : messages.last.id;
+    await widget.state.markConversationRead(
+      widget.conversation,
+      lastMsgId: lastMsgId,
+    );
   }
 
   Future<void> loadInitial() async {
@@ -3417,6 +3717,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ..addAll(mergeChatMessages(cached, loaded));
         offline = false;
       });
+      await markCurrentConversationRead();
       scrollAfterLoad();
     } catch (err) {
       if (!mounted) {
@@ -3458,6 +3759,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ..addAll(loaded);
         offline = false;
       });
+      await markCurrentConversationRead();
       scrollAfterLoad();
     } catch (err) {
       if (mounted) {
@@ -3493,6 +3795,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ..addAll(loaded);
           offline = false;
         });
+        await markCurrentConversationRead();
         return;
       }
       final afterId = messages.isEmpty ? 0 : messages.last.id;
@@ -3513,6 +3816,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ..addAll(merged);
         offline = false;
       });
+      await markCurrentConversationRead();
       if (widget.focusMessageId == null) {
         scrollToEnd();
       }
@@ -3546,6 +3850,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       input.clear();
       clearComposeTargets();
+      await widget.state.markConversationRead(widget.conversation);
       await refresh(silent: true);
     } catch (err) {
       if (mounted) {
@@ -3592,6 +3897,7 @@ class _ChatScreenState extends State<ChatScreen> {
         mentionUids: mentionTargets.map((member) => member.uid).toList(),
       );
       clearComposeTargets();
+      await widget.state.markConversationRead(widget.conversation);
       await refresh(silent: true);
     } catch (err) {
       if (mounted) {
@@ -3817,6 +4123,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !widget.embedded,
         title: Text(
           widget.conversation.name,
           maxLines: 1,
@@ -3994,9 +4301,18 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final color = mine
-        ? Theme.of(context).colorScheme.primaryContainer
-        : Colors.white;
+        ? colors.primaryContainer
+        : colors.surfaceContainerHighest;
+    final textColor = mine ? colors.onPrimaryContainer : colors.onSurface;
+    final secondaryTextColor = mine
+        ? colors.onPrimaryContainer.withValues(alpha: 0.72)
+        : colors.onSurfaceVariant;
+    final replyColor = mine
+        ? colors.primary.withValues(alpha: 0.12)
+        : colors.surfaceContainerHigh;
     final align = mine ? CrossAxisAlignment.end : CrossAxisAlignment.start;
     final strings = context.strings;
     return Padding(
@@ -4008,9 +4324,9 @@ class _MessageBubble extends StatelessWidget {
           children: [
             Text(
               '${message.sender}${message.time.isEmpty ? '' : ' · ${message.time}'}',
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(color: Colors.black54),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 3),
             Container(
@@ -4021,10 +4337,10 @@ class _MessageBubble extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: focused
-                      ? Theme.of(context).colorScheme.primary
+                      ? colors.primary
                       : mine
-                      ? Colors.transparent
-                      : const Color(0xffe2e6ea),
+                      ? colors.primaryContainer
+                      : colors.outlineVariant,
                   width: focused ? 2 : 1,
                 ),
               ),
@@ -4043,9 +4359,7 @@ class _MessageBubble extends StatelessWidget {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
+                          color: replyColor,
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -4059,11 +4373,10 @@ class _MessageBubble extends StatelessWidget {
                                 }),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: secondaryTextColor,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ),
@@ -4098,7 +4411,7 @@ class _MessageBubble extends StatelessWidget {
                   ],
                   if (message.body.isNotEmpty &&
                       !message.body.startsWith('[image]'))
-                    Text(message.body),
+                    Text(message.body, style: TextStyle(color: textColor)),
                 ],
               ),
             ),
@@ -4484,6 +4797,7 @@ class _MessageImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -4498,9 +4812,13 @@ class _MessageImage extends StatelessWidget {
             return Container(
               width: 260,
               height: 120,
-              color: const Color(0xffedf0f2),
+              color: colors.surfaceContainerHighest,
               alignment: Alignment.center,
-              child: const Icon(Icons.broken_image_outlined, size: 42),
+              child: Icon(
+                Icons.broken_image_outlined,
+                size: 42,
+                color: colors.onSurfaceVariant,
+              ),
             );
           },
           loadingBuilder: (context, child, progress) {
@@ -4542,6 +4860,7 @@ class _ImageCaptionDialogState extends State<_ImageCaptionDialog> {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
     return AlertDialog(
       title: Text(
         strings.format('Send image: {fileName}', {'fileName': widget.fileName}),
@@ -4554,14 +4873,17 @@ class _ImageCaptionDialogState extends State<_ImageCaptionDialog> {
             height: 180,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
-              color: const Color(0xffedf0f2),
+              color: colors.surfaceContainerHighest,
             ),
             clipBehavior: Clip.antiAlias,
             child: Image.memory(
               widget.bytes,
               fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  const Icon(Icons.image_outlined, size: 48),
+              errorBuilder: (_, _, _) => Icon(
+                Icons.image_outlined,
+                size: 48,
+                color: colors.onSurfaceVariant,
+              ),
             ),
           ),
           const SizedBox(height: 14),
@@ -4673,26 +4995,35 @@ Future<void> downloadImage(BuildContext context, String url) async {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('HTTP ${response.statusCode}');
     }
-    final directory = await getApplicationDocumentsDirectory();
-    final downloads = Directory(p.join(directory.path, 'csac_images'));
-    if (!downloads.existsSync()) {
-      downloads.createSync(recursive: true);
-    }
     final uri = Uri.parse(url);
-    final ext = p.extension(uri.path).isEmpty ? '.jpg' : p.extension(uri.path);
-    final file = File(
-      p.join(
-        downloads.path,
-        'csac_${DateTime.now().millisecondsSinceEpoch}$ext',
-      ),
+    final ext = normalizedImageExtension(uri.path);
+    final fileName = 'csac_${DateTime.now().millisecondsSinceEpoch}$ext';
+    final location = await getSaveLocation(
+      suggestedName: fileName,
+      acceptedTypeGroups: <XTypeGroup>[
+        XTypeGroup(label: strings.text('Images'), extensions: imageExtensions),
+      ],
     );
-    await file.writeAsBytes(response.bodyBytes);
+    if (location == null) {
+      return;
+    }
+    var path = location.path;
+    if (p.extension(path).isEmpty) {
+      final activeExt = location.activeFilter?.extensions?.firstOrNull;
+      path = '$path.${activeExt ?? ext.replaceFirst('.', '')}';
+    }
+    final imageFile = XFile.fromData(
+      response.bodyBytes,
+      name: p.basename(path),
+      mimeType: mimeTypeForExtension(p.extension(path)),
+    );
+    await imageFile.saveTo(path);
     if (!context.mounted) {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(strings.format('Saved to {path}', {'path': file.path})),
+        content: Text(strings.format('Saved to {path}', {'path': path})),
       ),
     );
   } catch (err) {
@@ -4706,6 +5037,37 @@ Future<void> downloadImage(BuildContext context, String url) async {
         ),
       ),
     );
+  }
+}
+
+const imageExtensions = <String>['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+
+String normalizedImageExtension(String path) {
+  final ext = p.extension(path).toLowerCase();
+  if (ext.isEmpty) {
+    return '.jpg';
+  }
+  final bare = ext.replaceFirst('.', '');
+  if (imageExtensions.contains(bare)) {
+    return ext;
+  }
+  return '.jpg';
+}
+
+String mimeTypeForExtension(String extension) {
+  switch (extension.toLowerCase().replaceFirst('.', '')) {
+    case 'png':
+      return 'image/png';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    case 'bmp':
+      return 'image/bmp';
+    case 'jpg':
+    case 'jpeg':
+    default:
+      return 'image/jpeg';
   }
 }
 

@@ -15,6 +15,7 @@ on:
           - linux-executable
           - linux-appimage
           - android-apk
+          - ios-unsigned-ipa
 
 permissions:
   contents: read
@@ -401,4 +402,63 @@ jobs:
           path: |
             flutter/csac/build/app/outputs/flutter-apk/app-release.apk
             flutter/csac/build/app/outputs/flutter-apk/app-release.apk.sha1
+          if-no-files-found: error
+
+  ios:
+    name: iOS unsigned IPA
+    if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'ios-unsigned-ipa' }}
+    runs-on: macos-latest
+
+    defaults:
+      run:
+        working-directory: flutter/csac
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Check Flutter
+        run: flutter --version
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build iOS app without code signing
+        run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/ios/ipa/Payload build/artifacts
+
+          rm -rf build/ios/ipa/Payload/Runner.app
+
+          ditto \
+            build/ios/iphoneos/Runner.app \
+            build/ios/ipa/Payload/Runner.app
+
+          cd build/ios/ipa
+
+          ditto \
+            -c \
+            -k \
+            --sequesterRsrc \
+            --keepParent \
+            Payload \
+            "../artifacts/${APP_NAME}-ios-unsigned.ipa"
+
+      - name: Upload iOS unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-ios-unsigned-ipa
+          path: flutter/csac/build/ios/artifacts/${{ env.APP_NAME }}-ios-unsigned.ipa
           if-no-files-found: error

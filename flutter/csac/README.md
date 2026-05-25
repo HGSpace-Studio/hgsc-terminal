@@ -31,7 +31,7 @@ Flutter mobile client for the UniCsAC HTTP API.
 - Reply to text and image messages with quoted sender/snippet and tap-to-jump.
 - Mention selected group members when sending text or image messages.
 - Open the group essence message list and jump back to the original chat message.
-- Show image messages with preview, copy-link, open, and app-document download actions.
+- Show image messages with preview, copy-link, open, and user-selected download locations.
 - Send local images from the gallery with an optional caption.
 - Handles the server-side `__test` JavaScript challenge used by the CsAC API.
 
@@ -49,3 +49,23 @@ Android release APK:
 ```powershell
 & D:\flutter\bin\flutter.bat build apk --release
 ```
+
+### Android release signing
+
+Release APKs must use the same release keystore every time. Create one once,
+keep it private, and reuse it locally and in GitHub Actions:
+
+```bash
+mkdir -p android/app/signing
+keytool -genkeypair -v -keystore android/app/signing/release.jks -alias csac -keyalg RSA -keysize 2048 -validity 10000
+cp android/key.properties.example android/key.properties
+```
+
+Edit `android/key.properties` with the keystore passwords and alias.
+
+For GitHub Actions, add these repository secrets from the same keystore:
+
+- `ANDROID_KEYSTORE_BASE64`: `base64 -w0 android/app/signing/release.jks`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+- `ANDROID_STORE_PASSWORD`
