@@ -203,18 +203,61 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
+          missing=0
+
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_STORE_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::$name secret is required for Android release signing."
+              missing=1
+            fi
+          done
+
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
           mkdir -p android/app/signing
 
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
-            | base64 --decode \
-            > android/app/signing/release.jks
+          sanitize_secret() {
+            printf '%s' "$1" \
+              | sed '1s/^\xEF\xBB\xBF//' \
+              | tr -d '\r\n\t ' \
+              | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+          }
+
+          raw_keystore_base64="$ANDROID_KEYSTORE_BASE64"
+          raw_keystore_base64="${raw_keystore_base64#ANDROID_KEYSTORE_BASE64=}"
+          clean_keystore_base64="$(sanitize_secret "$raw_keystore_base64")"
+          clean_key_alias="$(sanitize_secret "$ANDROID_KEY_ALIAS")"
+          clean_key_password="$(sanitize_secret "$ANDROID_KEY_PASSWORD")"
+          clean_store_password="$(sanitize_secret "$ANDROID_STORE_PASSWORD")"
+
+          echo "ANDROID_KEYSTORE_BASE64 sanitized length: ${#clean_keystore_base64}"
+          echo "ANDROID_KEY_ALIAS sanitized length: ${#clean_key_alias}"
+
+          if ! printf '%s' "$clean_keystore_base64" | base64 --decode > android/app/signing/release.jks; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64."
+            exit 1
+          fi
+
+          if [[ ! -s android/app/signing/release.jks ]]; then
+            echo "::error::Decoded release keystore is empty."
+            exit 1
+          fi
 
           {
             echo "storeFile=app/signing/release.jks"
-            echo "storePassword=$ANDROID_STORE_PASSWORD"
-            echo "keyAlias=$ANDROID_KEY_ALIAS"
-            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+            echo "storePassword=$clean_store_password"
+            echo "keyAlias=$clean_key_alias"
+            echo "keyPassword=$clean_key_password"
           } > android/key.properties
+
+          keytool \
+            -list \
+            -keystore android/app/signing/release.jks \
+            -storepass "$clean_store_password" \
+            -alias "$clean_key_alias" \
+            >/dev/null
 
       - name: Build Android APK
         run: flutter build apk --release
@@ -306,12 +349,48 @@ jobs:
 
       - name: Prepare release files
         run: |
+          set -euo pipefail
+
+          version="${{ steps.version.outputs.tag }}"
+          version="${version#v}"
+
           mkdir -p release-upload
 
-          cp -R release-assets/* release-upload/
+          if [[ -d release-assets/${APP_NAME}-windows ]]; then
+            (
+              cd "release-assets/${APP_NAME}-windows"
+              zip -r "../../release-upload/${APP_NAME}-${version}-windows-x64.zip" .
+            )
+          fi
+
+          if [[ -d release-assets/${APP_NAME}-linux ]]; then
+            (
+              cd "release-assets/${APP_NAME}-linux"
+              tar -czf "../../release-upload/${APP_NAME}-${version}-linux-x64.tar.gz" .
+            )
+          fi
+
+          if [[ -f release-assets/${APP_NAME}-android/app-release.apk ]]; then
+            cp \
+              "release-assets/${APP_NAME}-android/app-release.apk" \
+              "release-upload/${APP_NAME}-${version}-android-release.apk"
+          fi
+
+          if [[ -f release-assets/${APP_NAME}-ios/${APP_NAME}-ios-unsigned.ipa ]]; then
+            cp \
+              "release-assets/${APP_NAME}-ios/${APP_NAME}-ios-unsigned.ipa" \
+              "release-upload/${APP_NAME}-${version}-ios-unsigned.ipa"
+          fi
+
+          if ! compgen -G "release-upload/*" > /dev/null; then
+            echo "::error::No release assets were prepared."
+            exit 1
+          fi
+
+          sha256sum release-upload/* > release-upload/SHA256SUMS.txt
 
       - name: Upload release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          files: release-upload/**/*
+          files: release-upload/*

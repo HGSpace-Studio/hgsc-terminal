@@ -2579,31 +2579,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: widget.state.preferences.themeMode == ThemeMode.system
-                  ? const Icon(Icons.check)
-                  : const SizedBox(width: 24),
-              title: Text(context.strings.text('System')),
-              onTap: () => Navigator.of(context).pop(ThemeMode.system),
-            ),
-            ListTile(
-              leading: widget.state.preferences.themeMode == ThemeMode.light
-                  ? const Icon(Icons.check)
-                  : const SizedBox(width: 24),
-              title: Text(context.strings.text('Light')),
-              onTap: () => Navigator.of(context).pop(ThemeMode.light),
-            ),
-            ListTile(
-              leading: widget.state.preferences.themeMode == ThemeMode.dark
-                  ? const Icon(Icons.check)
-                  : const SizedBox(width: 24),
-              title: Text(context.strings.text('Dark')),
-              onTap: () => Navigator.of(context).pop(ThemeMode.dark),
-            ),
-          ],
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: widget.state.preferences.themeMode == ThemeMode.system
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: Text(context.strings.text('System')),
+                onTap: () => Navigator.of(context).pop(ThemeMode.system),
+              ),
+              ListTile(
+                leading: widget.state.preferences.themeMode == ThemeMode.light
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: Text(context.strings.text('Light')),
+                onTap: () => Navigator.of(context).pop(ThemeMode.light),
+              ),
+              ListTile(
+                leading: widget.state.preferences.themeMode == ThemeMode.dark
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: Text(context.strings.text('Dark')),
+                onTap: () => Navigator.of(context).pop(ThemeMode.dark),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2620,24 +2622,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: widget.state.preferences.language == CsacLanguage.en
-                  ? const Icon(Icons.check)
-                  : const SizedBox(width: 24),
-              title: const Text('English'),
-              onTap: () => Navigator.of(context).pop(CsacLanguage.en),
-            ),
-            ListTile(
-              leading: widget.state.preferences.language == CsacLanguage.zh
-                  ? const Icon(Icons.check)
-                  : const SizedBox(width: 24),
-              title: const Text('中文'),
-              onTap: () => Navigator.of(context).pop(CsacLanguage.zh),
-            ),
-          ],
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: widget.state.preferences.language == CsacLanguage.en
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: const Text('English'),
+                onTap: () => Navigator.of(context).pop(CsacLanguage.en),
+              ),
+              ListTile(
+                leading: widget.state.preferences.language == CsacLanguage.zh
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: const Text('中文'),
+                onTap: () => Navigator.of(context).pop(CsacLanguage.zh),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2661,157 +2665,169 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Card(
               elevation: 0,
-              child: ListTile(
-                leading: const Icon(Icons.account_circle_outlined),
-                title: Text(user?.nickname ?? strings.text('Not logged in')),
-                subtitle: Text(
-                  [
-                    if (user?.username.isNotEmpty == true) '@${user!.username}',
-                    if (user != null) 'UID ${user.uid}',
-                  ].join(' | '),
+              child: _RoundedInkClip(
+                child: ListTile(
+                  leading: const Icon(Icons.account_circle_outlined),
+                  title: Text(user?.nickname ?? strings.text('Not logged in')),
+                  subtitle: Text(
+                    [
+                      if (user?.username.isNotEmpty == true)
+                        '@${user!.username}',
+                      if (user != null) 'UID ${user.uid}',
+                    ].join(' | '),
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 12),
             Card(
               elevation: 0,
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.dark_mode_outlined),
-                    title: Text(strings.text('Theme')),
-                    subtitle: Text(themeLabel),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: chooseTheme,
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.translate),
-                    title: Text(strings.text('Language')),
-                    subtitle: Text(languageLabel),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: chooseLanguage,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 0,
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.sync),
-                    title: Text(strings.text('Refresh app data')),
-                    subtitle: Text(
-                      strings.text('Reload conversations and counters'),
+              child: _RoundedInkClip(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.dark_mode_outlined),
+                      title: Text(strings.text('Theme')),
+                      subtitle: Text(themeLabel),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: chooseTheme,
                     ),
-                    trailing: refreshing
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.chevron_right),
-                    onTap: refreshing ? null : refreshAll,
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.cleaning_services_outlined),
-                    title: Text(strings.text('Clear local cache')),
-                    subtitle: Text(
-                      strings.text(
-                        'Remove cached conversations and message history',
-                      ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.translate),
+                      title: Text(strings.text('Language')),
+                      subtitle: Text(languageLabel),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: chooseLanguage,
                     ),
-                    trailing: clearing
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.chevron_right),
-                    onTap: clearing ? null : clearCache,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 0,
-              child: ExpansionTile(
-                initiallyExpanded: developerOptionsExpanded,
-                onExpansionChanged: (value) {
-                  setState(() => developerOptionsExpanded = value);
-                },
-                leading: const Icon(Icons.developer_mode_outlined),
-                title: Text(strings.text('Developer options')),
-                subtitle: Text(
-                  strings.format('Current server: {server}', {
-                    'server': widget.state.preferences.serverUrl.trim().isEmpty
-                        ? strings.text('Default server')
-                        : widget.state.preferences.serverUrl.trim(),
-                  }),
+                  ],
                 ),
-                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                children: [
-                  TextField(
-                    controller: serverUrl,
-                    keyboardType: TextInputType.url,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) {
-                      if (!savingServer) {
-                        saveServerUrl();
-                      }
-                    },
-                    decoration: InputDecoration(
-                      labelText: strings.text('CsAC server address'),
-                      hintText: '192.168.1.10:8080',
-                      helperText: strings.text(
-                        'Leave empty to use the default server.',
-                      ),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  OverflowBar(
-                    alignment: MainAxisAlignment.end,
-                    spacing: 12,
-                    overflowSpacing: 8,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: savingServer ? null : resetServerUrl,
-                        icon: const Icon(Icons.restart_alt),
-                        label: Text(strings.text('Reset to default')),
-                      ),
-                      FilledButton.icon(
-                        onPressed: savingServer ? null : saveServerUrl,
-                        icon: savingServer
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.save_outlined),
-                        label: Text(strings.text('Apply server')),
-                      ),
-                    ],
-                  ),
-                ],
               ),
             ),
             const SizedBox(height: 12),
             Card(
               elevation: 0,
-              child: ListTile(
-                leading: const Icon(Icons.logout),
-                title: Text(strings.text('Logout')),
-                subtitle: Text(
-                  strings.text('Clear session and return to login'),
+              child: _RoundedInkClip(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.sync),
+                      title: Text(strings.text('Refresh app data')),
+                      subtitle: Text(
+                        strings.text('Reload conversations and counters'),
+                      ),
+                      trailing: refreshing
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.chevron_right),
+                      onTap: refreshing ? null : refreshAll,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.cleaning_services_outlined),
+                      title: Text(strings.text('Clear local cache')),
+                      subtitle: Text(
+                        strings.text(
+                          'Remove cached conversations and message history',
+                        ),
+                      ),
+                      trailing: clearing
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.chevron_right),
+                      onTap: clearing ? null : clearCache,
+                    ),
+                  ],
                 ),
-                onTap: logoutToLogin,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              elevation: 0,
+              child: _RoundedInkClip(
+                child: ExpansionTile(
+                  initiallyExpanded: developerOptionsExpanded,
+                  onExpansionChanged: (value) {
+                    setState(() => developerOptionsExpanded = value);
+                  },
+                  leading: const Icon(Icons.developer_mode_outlined),
+                  title: Text(strings.text('Developer options')),
+                  subtitle: Text(
+                    strings.format('Current server: {server}', {
+                      'server':
+                          widget.state.preferences.serverUrl.trim().isEmpty
+                          ? strings.text('Default server')
+                          : widget.state.preferences.serverUrl.trim(),
+                    }),
+                  ),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: [
+                    TextField(
+                      controller: serverUrl,
+                      keyboardType: TextInputType.url,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) {
+                        if (!savingServer) {
+                          saveServerUrl();
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: strings.text('CsAC server address'),
+                        hintText: '192.168.1.10:8080',
+                        helperText: strings.text(
+                          'Leave empty to use the default server.',
+                        ),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OverflowBar(
+                      alignment: MainAxisAlignment.end,
+                      spacing: 12,
+                      overflowSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: savingServer ? null : resetServerUrl,
+                          icon: const Icon(Icons.restart_alt),
+                          label: Text(strings.text('Reset to default')),
+                        ),
+                        FilledButton.icon(
+                          onPressed: savingServer ? null : saveServerUrl,
+                          icon: savingServer
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.save_outlined),
+                          label: Text(strings.text('Apply server')),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              elevation: 0,
+              child: _RoundedInkClip(
+                child: ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: Text(strings.text('Logout')),
+                  subtitle: Text(
+                    strings.text('Clear session and return to login'),
+                  ),
+                  onTap: logoutToLogin,
+                ),
               ),
             ),
           ],
@@ -2846,6 +2862,20 @@ class _StatusChip extends StatelessWidget {
     return Chip(
       label: Text(context.strings.text(pending ? 'Pending' : 'Handled')),
       visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+class _RoundedInkClip extends StatelessWidget {
+  const _RoundedInkClip({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: child,
     );
   }
 }
@@ -4086,29 +4116,31 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               Card(
                 elevation: 0,
                 margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  leading: _Avatar(
-                    url: member.avatar,
-                    fallback: Icons.person_rounded,
+                child: _RoundedInkClip(
+                  child: ListTile(
+                    leading: _Avatar(
+                      url: member.avatar,
+                      fallback: Icons.person_rounded,
+                    ),
+                    title: Text(member.name),
+                    subtitle: member.subtitle.isEmpty
+                        ? Text('UID ${member.uid}')
+                        : Text(member.subtitle),
+                    onTap: () => openUserProfile(
+                      context,
+                      widget.state,
+                      member.uid,
+                      group: profile,
+                      member: member,
+                    ),
+                    trailing: (profile.isAdmin || profile.isOwner)
+                        ? IconButton(
+                            tooltip: strings.text('Manage'),
+                            onPressed: () => showMemberActions(member),
+                            icon: const Icon(Icons.more_vert),
+                          )
+                        : null,
                   ),
-                  title: Text(member.name),
-                  subtitle: member.subtitle.isEmpty
-                      ? Text('UID ${member.uid}')
-                      : Text(member.subtitle),
-                  onTap: () => openUserProfile(
-                    context,
-                    widget.state,
-                    member.uid,
-                    group: profile,
-                    member: member,
-                  ),
-                  trailing: (profile.isAdmin || profile.isOwner)
-                      ? IconButton(
-                          tooltip: strings.text('Manage'),
-                          onPressed: () => showMemberActions(member),
-                          icon: const Icon(Icons.more_vert),
-                        )
-                      : null,
                 ),
               ),
         ],
@@ -5161,25 +5193,33 @@ class _MentionPickerSheetState extends State<_MentionPickerSheet> {
                       itemBuilder: (context, index) {
                         final member = widget.members[index];
                         final checked = selected.contains(member.uid);
-                        return CheckboxListTile(
-                          value: checked,
-                          onChanged: (_) {
-                            setState(() {
-                              if (checked) {
-                                selected.remove(member.uid);
-                              } else {
-                                selected.add(member.uid);
-                              }
-                            });
-                          },
-                          secondary: _Avatar(
-                            url: member.avatar,
-                            fallback: Icons.person_rounded,
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
                           ),
-                          title: Text(member.name),
-                          subtitle: member.subtitle.isEmpty
-                              ? null
-                              : Text(member.subtitle),
+                          child: _RoundedInkClip(
+                            child: CheckboxListTile(
+                              value: checked,
+                              onChanged: (_) {
+                                setState(() {
+                                  if (checked) {
+                                    selected.remove(member.uid);
+                                  } else {
+                                    selected.add(member.uid);
+                                  }
+                                });
+                              },
+                              secondary: _Avatar(
+                                url: member.avatar,
+                                fallback: Icons.person_rounded,
+                              ),
+                              title: Text(member.name),
+                              subtitle: member.subtitle.isEmpty
+                                  ? null
+                                  : Text(member.subtitle),
+                            ),
+                          ),
                         );
                       },
                     ),
