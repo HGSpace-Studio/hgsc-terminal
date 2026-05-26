@@ -1,6 +1,8 @@
 #define MyAppName "CsAC"
 #define MyAppExeName "csac.exe"
+#ifndef MyAppVersion
 #define MyAppVersion "1.0.0"
+#endif
 
 [Setup]
 AppId={{C50B3E07-1D21-43E9-B94E-9C86E8B19D54}

@@ -480,7 +480,7 @@ class CsacAppState extends ChangeNotifier {
         : await cache.latestMessageId(conversation);
     final loaded = await client.messages(conversation, afterId: baseline);
     await cache.saveMessages(conversation, loaded);
-    return loaded;
+    return cache.filterLocallyDeletedMessages(conversation, loaded);
   }
 
   Future<List<ChatMessage>> loadMessagesFromNetwork(
@@ -488,7 +488,7 @@ class CsacAppState extends ChangeNotifier {
   ) async {
     final loaded = await client.messages(conversation);
     await cache.replaceMessages(conversation, loaded);
-    return loaded;
+    return cache.filterLocallyDeletedMessages(conversation, loaded);
   }
 
   Future<List<ChatMessage>> reloadMessagesFromNetwork(
@@ -499,6 +499,7 @@ class CsacAppState extends ChangeNotifier {
 
   Future<void> clearLocalCache() async {
     await cache.clearCachedData();
+    await ConversationDraftStore.clearAll();
     conversations = const <Conversation>[];
     offlineMode = false;
     notifyListeners();
@@ -514,6 +515,7 @@ class CsacAppState extends ChangeNotifier {
       await client.logout();
     } finally {
       await cache.clear();
+      await ConversationDraftStore.clearAll();
       user = null;
       conversations = const <Conversation>[];
       notificationCounts = const NotificationCounts();

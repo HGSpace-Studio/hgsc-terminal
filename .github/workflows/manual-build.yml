@@ -84,8 +84,16 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Read app version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)' | Select-Object -First 1).Matches[0].Groups[1].Value
+          $parts = $version -split '\+'
+          "APP_BUILD_NAME=$($parts[0])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_BUILD_NUMBER=$($parts[1])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Build Windows release
-        run: flutter build windows --release
+        run: flutter build windows --release --build-name $env:APP_BUILD_NAME --build-number $env:APP_BUILD_NUMBER
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
@@ -143,8 +151,14 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Read app version
+        run: |
+          version=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          echo "APP_BUILD_NAME=${version%%+*}" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=${version##*+}" >> "$GITHUB_ENV"
+
       - name: Build Linux release
-        run: flutter build linux --release
+        run: flutter build linux --release --build-name "$APP_BUILD_NAME" --build-number "$APP_BUILD_NUMBER"
 
       - name: Upload Linux build
         uses: actions/upload-artifact@v4
@@ -195,6 +209,12 @@ jobs:
 
       - name: Get dependencies
         run: flutter pub get
+
+      - name: Read app version
+        run: |
+          version=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          echo "APP_BUILD_NAME=${version%%+*}" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=${version##*+}" >> "$GITHUB_ENV"
 
       - name: Configure Android signing
         env:
@@ -260,7 +280,7 @@ jobs:
             >/dev/null
 
       - name: Build Android APK
-        run: flutter build apk --release
+        run: flutter build apk --release --build-name "$APP_BUILD_NAME" --build-number "$APP_BUILD_NUMBER"
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
@@ -292,10 +312,17 @@ jobs:
           cd flutter/csac
           flutter pub get
 
+      - name: Read app version
+        run: |
+          cd flutter/csac
+          version=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          echo "APP_BUILD_NAME=${version%%+*}" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=${version##*+}" >> "$GITHUB_ENV"
+
       - name: Build iOS without code signing
         run: |
           cd flutter/csac
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign --build-name "$APP_BUILD_NAME" --build-number "$APP_BUILD_NUMBER"
 
       - name: Package unsigned IPA
         run: |

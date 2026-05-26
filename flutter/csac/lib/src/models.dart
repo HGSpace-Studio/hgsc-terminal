@@ -412,17 +412,23 @@ class ChatMessage {
         asBool(json['is_recalled']) ||
         asBool(json['recalled']) ||
         asBool(json['is_revoked']);
+    final rawImage = firstString(json, const ['image_url', 'image', 'img']);
+    final rawContent = asString(json['content']).trim();
+    final contentLooksLikeImage = looksLikeImagePath(rawContent);
     final image = isRecalled
         ? ''
         : normalizeApiUrl(
-            firstString(json, const ['image_url', 'image', 'img']),
+            contentLooksLikeImage && rawImage.isEmpty ? rawContent : rawImage,
           );
     var body = asString(json['content']).trim();
     if (isRecalled) {
       body = '[recalled]';
     } else {
+      if (image.isNotEmpty && contentLooksLikeImage) {
+        body = '';
+      }
       if (body.isEmpty && image.isNotEmpty) {
-        body = '[image] $image';
+        body = '[image]';
       }
       if (body.isEmpty) {
         body = '[empty]';
@@ -856,6 +862,25 @@ String normalizeApiUrl(String raw) {
     return value;
   }
   return '$_apiAssetBaseUrl/${value.replaceFirst(RegExp(r'^/+'), '')}';
+}
+
+bool looksLikeImagePath(String value) {
+  final text = value.trim();
+  if (text.isEmpty || text.contains('\n')) {
+    return false;
+  }
+  final uri = Uri.tryParse(text);
+  final path = uri?.path.isNotEmpty == true ? uri!.path : text;
+  final lower = path.toLowerCase().split('?').first.split('#').first;
+  final hasImageExtension = RegExp(
+    r'\.(jpg|jpeg|png|gif|webp|bmp)$',
+  ).hasMatch(lower);
+  if (!hasImageExtension) {
+    return false;
+  }
+  return lower.startsWith('upload/') ||
+      lower.startsWith('/upload/') ||
+      uri?.hasScheme == true;
 }
 
 List<ChatMessage> mergeChatMessages(

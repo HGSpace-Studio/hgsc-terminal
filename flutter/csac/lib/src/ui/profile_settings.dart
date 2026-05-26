@@ -547,8 +547,6 @@ class _ThemeColorButton extends StatelessWidget {
 
 const _csacAppName = 'CsAC';
 const _csacAppBranch = 'Leon';
-const _csacAppVersion = '1.0.0';
-const _csacAppBuild = '1';
 const _csacSourceUrl =
     'https://github.com/Leonmmcoset/csac-terminal/tree/main/flutter/csac';
 
@@ -595,115 +593,143 @@ class AppInfoScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text(strings.text('App information'))),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          children: [
-            Card(
-              elevation: 0,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.primaryContainer,
-                      child: Icon(
-                        Icons.chat_bubble_outline,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _csacAppName,
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w700),
+        child: FutureBuilder<PackageInfo>(
+          future: PackageInfo.fromPlatform(),
+          builder: (context, snapshot) {
+            final packageInfo = snapshot.data;
+            final version = packageInfo?.version ?? '-';
+            final buildNumber = packageInfo?.buildNumber ?? '-';
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              children: [
+                Card(
+                  elevation: 0,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer,
+                          child: Icon(
+                            Icons.chat_bubble_outline,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onPrimaryContainer,
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            strings.text('Third-party CsAC client'),
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _csacAppName,
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                strings.text('Third-party CsAC client'),
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 0,
-              child: _RoundedInkClip(
-                child: Column(
-                  children: [
-                    infoTile(
-                      context,
-                      icon: Icons.apps_outlined,
-                      title: strings.text('App name'),
-                      value: _csacAppName,
+                const SizedBox(height: 12),
+                Card(
+                  elevation: 0,
+                  child: _RoundedInkClip(
+                    child: Column(
+                      children: [
+                        infoTile(
+                          context,
+                          icon: Icons.apps_outlined,
+                          title: strings.text('App name'),
+                          value: _csacAppName,
+                        ),
+                        const Divider(height: 1),
+                        infoTile(
+                          context,
+                          icon: Icons.account_tree_outlined,
+                          title: strings.text('Branch'),
+                          value: _csacAppBranch,
+                        ),
+                        const Divider(height: 1),
+                        infoTile(
+                          context,
+                          icon: Icons.numbers_outlined,
+                          title: strings.text('Version'),
+                          value: version,
+                        ),
+                        const Divider(height: 1),
+                        infoTile(
+                          context,
+                          icon: Icons.build_outlined,
+                          title: strings.text('Build number'),
+                          value: buildNumber,
+                        ),
+                      ],
                     ),
-                    const Divider(height: 1),
-                    infoTile(
-                      context,
-                      icon: Icons.account_tree_outlined,
-                      title: strings.text('Branch'),
-                      value: _csacAppBranch,
-                    ),
-                    const Divider(height: 1),
-                    infoTile(
-                      context,
-                      icon: Icons.numbers_outlined,
-                      title: strings.text('Version'),
-                      value: _csacAppVersion,
-                    ),
-                    const Divider(height: 1),
-                    infoTile(
-                      context,
-                      icon: Icons.build_outlined,
-                      title: strings.text('Build number'),
-                      value: _csacAppBuild,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 0,
-              child: _RoundedInkClip(
-                child: Column(
-                  children: [
-                    infoTile(
-                      context,
-                      icon: Icons.code,
-                      title: strings.text('Source code'),
-                      value: _csacSourceUrl,
-                      trailing: const Icon(Icons.open_in_new),
-                      onTap: () => openSourceUrl(context),
+                const SizedBox(height: 12),
+                Card(
+                  elevation: 0,
+                  child: _RoundedInkClip(
+                    child: Column(
+                      children: [
+                        infoTile(
+                          context,
+                          icon: Icons.code,
+                          title: strings.text('Source code'),
+                          value: _csacSourceUrl,
+                          trailing: const Icon(Icons.open_in_new),
+                          onTap: () => openSourceUrl(context),
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.copy),
+                          title: Text(strings.text('Copy source link')),
+                          onTap: () => copySourceUrl(context),
+                        ),
+                      ],
                     ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.copy),
-                      title: Text(strings.text('Copy source link')),
-                      onTap: () => copySourceUrl(context),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
+    );
+  }
+}
+
+class _AppInfoSubtitle extends StatelessWidget {
+  const _AppInfoSubtitle();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snapshot) {
+        final packageInfo = snapshot.data;
+        final version = packageInfo == null
+            ? '-'
+            : '${packageInfo.version}+${packageInfo.buildNumber}';
+        return Text('CsAC $version | $_csacAppBranch');
+      },
     );
   }
 }
@@ -1247,7 +1273,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ListTile(
                       leading: const Icon(Icons.info_outline),
                       title: Text(strings.text('App information')),
-                      subtitle: const Text('CsAC 1.0.0+1 | Leon'),
+                      subtitle: const _AppInfoSubtitle(),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () {
                         Navigator.of(context).push(
