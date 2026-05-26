@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
@@ -136,6 +138,32 @@ class CsacAppState extends ChangeNotifier {
     error = null;
     notifyListeners();
     return true;
+  }
+
+  Future<void> refreshCurrentUser() async {
+    user = await client.currentUser();
+    await cache.saveUser(user!);
+    offlineMode = false;
+    sessionExpired = false;
+    notifyListeners();
+  }
+
+  Future<void> updateNickname(String nickname) async {
+    await client.updateNickname(nickname);
+    await refreshCurrentUser();
+  }
+
+  Future<void> updateAvatar(Uint8List avatarBytes, String fileName) async {
+    await client.updateAvatar(avatarBytes, fileName);
+    await refreshCurrentUser();
+  }
+
+  Future<void> updatePassword(
+    String oldPassword,
+    String newPassword,
+    String confirmPassword,
+  ) {
+    return client.updatePassword(oldPassword, newPassword, confirmPassword);
   }
 
   void _applyPreferredServer() {

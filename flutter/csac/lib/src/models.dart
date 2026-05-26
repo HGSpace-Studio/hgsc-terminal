@@ -24,7 +24,7 @@ class CsacUser {
           ? 'UID ${asInt(json['uid'])}'
           : asString(json['nickname']),
       username: asString(json['username']),
-      avatar: asString(json['avatar']),
+      avatar: normalizeApiUrl(asString(json['avatar'])),
       onlineStatus: asString(json['online_status']),
     );
   }
