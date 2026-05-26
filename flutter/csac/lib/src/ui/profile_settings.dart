@@ -720,15 +720,32 @@ class _OpenSourceLicensesScreenState extends State<OpenSourceLicensesScreen> {
   late final Future<List<_LicenseNotice>> licenses = loadLicenses();
 
   Future<List<_LicenseNotice>> loadLicenses() async {
-    final notices = <_LicenseNotice>[];
+    final licensesByPackage = <String, Set<String>>{};
     await for (final entry in LicenseRegistry.licenses) {
-      final packages = entry.packages.toList()..sort();
+      final packages = entry.packages
+          .map((package) => package.trim())
+          .where((package) => package.isNotEmpty)
+          .toSet();
       final body = entry.paragraphs
           .map((paragraph) => paragraph.text.trimRight())
           .where((text) => text.trim().isNotEmpty)
           .join('\n\n');
-      notices.add(_LicenseNotice(packages: packages, body: body));
+      if (body.trim().isEmpty) {
+        continue;
+      }
+      final packageNames = packages.isEmpty
+          ? const <String>{'Unknown package'}
+          : packages;
+      for (final package in packageNames) {
+        licensesByPackage.putIfAbsent(package, () => <String>{}).add(body);
+      }
     }
+    final notices = licensesByPackage.entries.map((entry) {
+      return _LicenseNotice(
+        packages: <String>[entry.key],
+        body: entry.value.join('\n\n----------\n\n'),
+      );
+    }).toList();
     notices.sort((a, b) => a.title.compareTo(b.title));
     return notices;
   }
