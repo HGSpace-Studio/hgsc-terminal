@@ -477,6 +477,369 @@ class _PasswordChange {
   final String confirmPassword;
 }
 
+class _ThemeColorOption {
+  const _ThemeColorOption(this.label, this.color);
+
+  final String label;
+  final Color color;
+}
+
+class _ThemeColorDot extends StatelessWidget {
+  const _ThemeColorDot({required this.color, this.selected = false});
+
+  final Color color;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected ? scheme.primary : scheme.outlineVariant,
+          width: selected ? 3 : 1,
+        ),
+      ),
+      child: selected
+          ? Icon(
+              Icons.check,
+              size: 16,
+              color:
+                  ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+                  ? Colors.white
+                  : Colors.black,
+            )
+          : null,
+    );
+  }
+}
+
+class _ThemeColorButton extends StatelessWidget {
+  const _ThemeColorButton({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _ThemeColorOption option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: context.strings.text(option.label),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: _ThemeColorDot(color: option.color, selected: selected),
+        ),
+      ),
+    );
+  }
+}
+
+const _csacAppName = 'CsAC';
+const _csacAppBranch = 'Leon';
+const _csacAppVersion = '1.0.0';
+const _csacAppBuild = '1';
+const _csacSourceUrl =
+    'https://github.com/Leonmmcoset/csac-terminal/tree/main/flutter/csac';
+
+class AppInfoScreen extends StatelessWidget {
+  const AppInfoScreen({super.key});
+
+  Future<void> copySourceUrl(BuildContext context) async {
+    await Clipboard.setData(const ClipboardData(text: _csacSourceUrl));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('Source link copied.'))),
+      );
+    }
+  }
+
+  Future<void> openSourceUrl(BuildContext context) async {
+    final url = Uri.parse(_csacSourceUrl);
+    final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      await copySourceUrl(context);
+    }
+  }
+
+  Widget infoTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String value,
+    Widget? trailing,
+    VoidCallback? onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: SelectableText(value),
+      trailing: trailing,
+      onTap: onTap,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return Scaffold(
+      appBar: AppBar(title: Text(strings.text('App information'))),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            Card(
+              elevation: 0,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer,
+                      child: Icon(
+                        Icons.chat_bubble_outline,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _csacAppName,
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            strings.text('Third-party CsAC client'),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              elevation: 0,
+              child: _RoundedInkClip(
+                child: Column(
+                  children: [
+                    infoTile(
+                      context,
+                      icon: Icons.apps_outlined,
+                      title: strings.text('App name'),
+                      value: _csacAppName,
+                    ),
+                    const Divider(height: 1),
+                    infoTile(
+                      context,
+                      icon: Icons.account_tree_outlined,
+                      title: strings.text('Branch'),
+                      value: _csacAppBranch,
+                    ),
+                    const Divider(height: 1),
+                    infoTile(
+                      context,
+                      icon: Icons.numbers_outlined,
+                      title: strings.text('Version'),
+                      value: _csacAppVersion,
+                    ),
+                    const Divider(height: 1),
+                    infoTile(
+                      context,
+                      icon: Icons.build_outlined,
+                      title: strings.text('Build number'),
+                      value: _csacAppBuild,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              elevation: 0,
+              child: _RoundedInkClip(
+                child: Column(
+                  children: [
+                    infoTile(
+                      context,
+                      icon: Icons.code,
+                      title: strings.text('Source code'),
+                      value: _csacSourceUrl,
+                      trailing: const Icon(Icons.open_in_new),
+                      onTap: () => openSourceUrl(context),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.copy),
+                      title: Text(strings.text('Copy source link')),
+                      onTap: () => copySourceUrl(context),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class OpenSourceLicensesScreen extends StatefulWidget {
+  const OpenSourceLicensesScreen({super.key});
+
+  @override
+  State<OpenSourceLicensesScreen> createState() =>
+      _OpenSourceLicensesScreenState();
+}
+
+class _OpenSourceLicensesScreenState extends State<OpenSourceLicensesScreen> {
+  late final Future<List<_LicenseNotice>> licenses = loadLicenses();
+
+  Future<List<_LicenseNotice>> loadLicenses() async {
+    final notices = <_LicenseNotice>[];
+    await for (final entry in LicenseRegistry.licenses) {
+      final packages = entry.packages.toList()..sort();
+      final body = entry.paragraphs
+          .map((paragraph) => paragraph.text.trimRight())
+          .where((text) => text.trim().isNotEmpty)
+          .join('\n\n');
+      notices.add(_LicenseNotice(packages: packages, body: body));
+    }
+    notices.sort((a, b) => a.title.compareTo(b.title));
+    return notices;
+  }
+
+  Future<void> copyLicense(_LicenseNotice license) async {
+    await Clipboard.setData(
+      ClipboardData(text: '${license.title}\n\n${license.body}'),
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('License copied.'))),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return Scaffold(
+      appBar: AppBar(title: Text(strings.text('Open-source licenses'))),
+      body: SafeArea(
+        child: FutureBuilder<List<_LicenseNotice>>(
+          future: licenses,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(strings.text('Loading licenses...')),
+                  ],
+                ),
+              );
+            }
+            if (snapshot.hasError) {
+              return _InlineError(
+                message: snapshot.error.toString(),
+                onRetry: () => setState(() {}),
+              );
+            }
+            final items = snapshot.data ?? const <_LicenseNotice>[];
+            if (items.isEmpty) {
+              return _EmptyPanel(message: strings.text('No licenses found.'));
+            }
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                  child: Text(
+                    strings.format('{count} license notices', {
+                      'count': items.length,
+                    }),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                for (final license in items)
+                  Card(
+                    elevation: 0,
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    child: _RoundedInkClip(
+                      child: ExpansionTile(
+                        title: Text(license.title),
+                        subtitle: Text(
+                          strings.format('{count} packages', {
+                            'count': license.packages.length,
+                          }),
+                        ),
+                        childrenPadding: const EdgeInsets.fromLTRB(
+                          16,
+                          0,
+                          16,
+                          16,
+                        ),
+                        children: [
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: () => copyLicense(license),
+                              icon: const Icon(Icons.copy),
+                              label: Text(strings.text('Copy')),
+                            ),
+                          ),
+                          SelectableText(license.body),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _LicenseNotice {
+  const _LicenseNotice({required this.packages, required this.body});
+
+  final List<String> packages;
+  final String body;
+
+  String get title =>
+      packages.isEmpty ? 'Unknown package' : packages.join(', ');
+}
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
@@ -497,6 +860,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool refreshing = false;
   bool savingServer = false;
   late bool developerOptionsExpanded;
+
+  static const themeColorOptions = <_ThemeColorOption>[
+    _ThemeColorOption('Emerald', Color(0xff1f8a70)),
+    _ThemeColorOption('Blue', Color(0xff2563eb)),
+    _ThemeColorOption('Violet', Color(0xff7c3aed)),
+    _ThemeColorOption('Rose', Color(0xffe11d48)),
+    _ThemeColorOption('Orange', Color(0xffea580c)),
+    _ThemeColorOption('Teal', Color(0xff0f766e)),
+    _ThemeColorOption('Indigo', Color(0xff4f46e5)),
+    _ThemeColorOption('Slate', Color(0xff475569)),
+  ];
 
   @override
   void initState() {
@@ -530,6 +904,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case CsacLanguage.zh:
         return '中文';
     }
+  }
+
+  String get themeColorLabel {
+    final selected = themeColorOptions.firstWhere(
+      (option) =>
+          option.color.toARGB32() == widget.state.preferences.themeColorValue,
+      orElse: () => themeColorOptions.first,
+    );
+    return context.strings.text(selected.label);
   }
 
   Future<void> refreshAll() async {
@@ -716,6 +1099,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> chooseThemeColor() async {
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                context.strings.text('Theme color'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final option in themeColorOptions)
+                    _ThemeColorButton(
+                      option: option,
+                      selected:
+                          option.color.toARGB32() ==
+                          widget.state.preferences.themeColorValue,
+                      onTap: () =>
+                          Navigator.of(context).pop(option.color.toARGB32()),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      await widget.state.updateThemeColor(selected);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
   Future<void> chooseLanguage() async {
     final selected = await showModalBottomSheet<CsacLanguage>(
       context: context,
@@ -799,11 +1228,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   children: [
                     ListTile(
+                      leading: const Icon(Icons.info_outline),
+                      title: Text(strings.text('App information')),
+                      subtitle: const Text('CsAC 1.0.0+1 | Leon'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const AppInfoScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.article_outlined),
+                      title: Text(strings.text('Open-source licenses')),
+                      subtitle: Text(
+                        strings.text('View licenses for included libraries'),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const OpenSourceLicensesScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              elevation: 0,
+              child: _RoundedInkClip(
+                child: Column(
+                  children: [
+                    ListTile(
                       leading: const Icon(Icons.dark_mode_outlined),
                       title: Text(strings.text('Theme')),
                       subtitle: Text(themeLabel),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: chooseTheme,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.palette_outlined),
+                      title: Text(strings.text('Theme color')),
+                      subtitle: Text(themeColorLabel),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _ThemeColorDot(
+                            color: Color(
+                              widget.state.preferences.themeColorValue,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Icon(Icons.chevron_right),
+                        ],
+                      ),
+                      onTap: chooseThemeColor,
                     ),
                     const Divider(height: 1),
                     ListTile(

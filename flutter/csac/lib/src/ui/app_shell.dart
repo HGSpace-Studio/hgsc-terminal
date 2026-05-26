@@ -34,8 +34,14 @@ class _CsacMobileAppState extends State<CsacMobileApp> {
             GlobalCupertinoLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
           ],
-          theme: buildCsacTheme(Brightness.light),
-          darkTheme: buildCsacTheme(Brightness.dark),
+          theme: buildCsacTheme(
+            Brightness.light,
+            Color(state.preferences.themeColorValue),
+          ),
+          darkTheme: buildCsacTheme(
+            Brightness.dark,
+            Color(state.preferences.themeColorValue),
+          ),
           themeMode: state.preferences.themeMode,
           home: state.bootstrapping
               ? SplashScreen(status: state.restoreStatus)
@@ -48,10 +54,9 @@ class _CsacMobileAppState extends State<CsacMobileApp> {
   }
 }
 
-ThemeData buildCsacTheme(Brightness brightness) {
-  final isDark = brightness == Brightness.dark;
+ThemeData buildCsacTheme(Brightness brightness, Color seedColor) {
   final scheme = ColorScheme.fromSeed(
-    seedColor: isDark ? const Color(0xff55c7ad) : const Color(0xff1f8a70),
+    seedColor: seedColor,
     brightness: brightness,
   );
   final base = ThemeData(colorScheme: scheme, useMaterial3: true);
