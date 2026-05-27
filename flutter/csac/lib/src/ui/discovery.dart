@@ -302,6 +302,7 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
             type: ConversationType.group,
             id: group.id,
             name: group.name,
+            avatar: group.avatar,
             subtitle: group.subtitle,
           ),
         ),
@@ -439,6 +440,120 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
                   ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class CreateGroupScreen extends StatefulWidget {
+  const CreateGroupScreen({super.key, required this.state});
+
+  final CsacAppState state;
+
+  @override
+  State<CreateGroupScreen> createState() => _CreateGroupScreenState();
+}
+
+class _CreateGroupScreenState extends State<CreateGroupScreen> {
+  final roomName = TextEditingController();
+  bool creating = false;
+  String? error;
+
+  @override
+  void dispose() {
+    roomName.dispose();
+    super.dispose();
+  }
+
+  Future<void> submit() async {
+    final name = roomName.text.trim();
+    if (name.isEmpty) {
+      setState(() => error = context.strings.text('Room name is required.'));
+      return;
+    }
+    setState(() {
+      creating = true;
+      error = null;
+    });
+    try {
+      final group = await widget.state.createGroup(name);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.format('Group created: {name}', {
+              'name': group.name,
+            }),
+          ),
+        ),
+      );
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => ConversationDetailScreen(
+            state: widget.state,
+            conversation: Conversation(
+              type: ConversationType.group,
+              id: group.id,
+              name: group.name,
+              avatar: group.avatar,
+              subtitle: group.subtitle,
+            ),
+          ),
+        ),
+      );
+    } catch (err) {
+      if (mounted) {
+        setState(() => error = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => creating = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return Scaffold(
+      appBar: AppBar(title: Text(strings.text('Create group'))),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            TextField(
+              controller: roomName,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => submit(),
+              decoration: InputDecoration(
+                labelText: strings.text('Room name'),
+                prefixIcon: const Icon(Icons.groups_outlined),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: creating ? null : submit,
+              icon: creating
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add),
+              label: Text(strings.text('Create group')),
+            ),
+          ],
         ),
       ),
     );

@@ -27,7 +27,7 @@ class ProfileScreen extends StatelessWidget {
                   ),
                   actions: [
                     TextButton(
-                      onPressed: state.logout,
+                      onPressed: () => confirmLogout(context, state),
                       child: Text(strings.text('Login')),
                     ),
                   ],
@@ -77,6 +77,18 @@ class ProfileScreen extends StatelessWidget {
                   ),
                   const Divider(height: 1),
                   ListTile(
+                    leading: const Icon(Icons.alternate_email),
+                    title: Text(strings.text('Mentions and replies')),
+                    trailing: Badge(label: Text('${counts.mentions}')),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.manage_accounts_outlined),
+                    title: Text(strings.text('Friend changes')),
+                    trailing: Badge(label: Text('${counts.friendChanges}')),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
                     leading: const Icon(Icons.person_add_alt),
                     title: Text(strings.text('Friend requests')),
                     trailing: Badge(label: Text('${counts.friendRequests}')),
@@ -110,7 +122,7 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: state.logout,
+              onPressed: () => confirmLogout(context, state),
               icon: const Icon(Icons.logout),
               label: Text(strings.text('Logout')),
             ),
@@ -549,16 +561,25 @@ const _csacAppName = 'CsAC';
 const _csacAppBranch = 'Leon';
 const _csacSourceUrl =
     'https://github.com/Leonmmcoset/csac-terminal/tree/main/flutter/csac';
+const _csacAuthorUrl = 'https://github.com/Leonmmcoset';
 
-class AppInfoScreen extends StatelessWidget {
+class AppInfoScreen extends StatefulWidget {
   const AppInfoScreen({super.key});
 
+  @override
+  State<AppInfoScreen> createState() => _AppInfoScreenState();
+}
+
+class _AppInfoScreenState extends State<AppInfoScreen> {
+  int appNameTapCount = 0;
+  DateTime? lastAppNameTap;
+
   Future<void> copySourceUrl(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final copiedText = context.strings.text('Source link copied.');
     await Clipboard.setData(const ClipboardData(text: _csacSourceUrl));
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.strings.text('Source link copied.'))),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(copiedText)));
     }
   }
 
@@ -567,6 +588,32 @@ class AppInfoScreen extends StatelessWidget {
     final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
     if (!opened && context.mounted) {
       await copySourceUrl(context);
+    }
+  }
+
+  Future<void> openAuthorUrl(BuildContext context) async {
+    final url = Uri.parse(_csacAuthorUrl);
+    final messenger = ScaffoldMessenger.of(context);
+    final copiedText = context.strings.text('Author link copied.');
+    final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      await Clipboard.setData(const ClipboardData(text: _csacAuthorUrl));
+      messenger.showSnackBar(SnackBar(content: Text(copiedText)));
+    }
+  }
+
+  void handleAppNameTap(BuildContext context) {
+    final now = DateTime.now();
+    final previous = lastAppNameTap;
+    if (previous == null ||
+        now.difference(previous) > const Duration(seconds: 2)) {
+      appNameTapCount = 0;
+    }
+    lastAppNameTap = now;
+    appNameTapCount++;
+    if (appNameTapCount >= 5) {
+      appNameTapCount = 0;
+      unawaited(openAuthorUrl(context));
     }
   }
 
@@ -624,10 +671,14 @@ class AppInfoScreen extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                _csacAppName,
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => handleAppNameTap(context),
+                                child: Text(
+                                  _csacAppName,
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -1041,11 +1092,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> logoutToLogin() async {
-    await widget.state.logout();
-    if (!mounted) {
-      return;
-    }
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    await confirmLogout(context, widget.state);
   }
 
   Future<void> saveServerUrl() async {

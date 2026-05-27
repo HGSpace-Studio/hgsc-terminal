@@ -555,6 +555,19 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     );
   }
 
+  void openReportGroup(GroupProfile profile) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReportScreen(
+          state: widget.state,
+          type: 'group',
+          targetId: profile.id,
+          targetName: profile.name,
+        ),
+      ),
+    );
+  }
+
   Widget infoRow(IconData icon, String title, String value) {
     if (value.trim().isEmpty) {
       return const SizedBox.shrink();
@@ -674,6 +687,12 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               label: Text(strings.text('Leave group')),
             ),
           ],
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => openReportGroup(profile),
+            icon: const Icon(Icons.flag_outlined),
+            label: Text(strings.text('Report group')),
+          ),
           const SizedBox(height: 20),
           Row(
             children: [

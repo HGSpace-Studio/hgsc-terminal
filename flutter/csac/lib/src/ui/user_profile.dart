@@ -282,6 +282,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             type: ConversationType.private,
             id: target.uid,
             name: target.displayName,
+            avatar: target.avatar,
             subtitle: target.subtitle,
           ),
         ),
@@ -300,6 +301,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             name: group.name,
             subtitle: group.subtitle,
           ),
+        ),
+      ),
+    );
+  }
+
+  void openReport(UserProfile target) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReportScreen(
+          state: widget.state,
+          type: 'user',
+          targetId: target.uid,
+          targetName: target.displayName,
         ),
       ),
     );
@@ -474,6 +488,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                               onTap: loaded.isFriend
                                   ? () => blockFriend(loaded)
                                   : null,
+                            ),
+                            const Divider(height: 1),
+                            actionTile(
+                              icon: Icons.flag_outlined,
+                              title: strings.text('Report user'),
+                              color: colors.error,
+                              onTap: () => openReport(loaded),
                             ),
                           ],
                         ),

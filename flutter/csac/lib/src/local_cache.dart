@@ -88,7 +88,7 @@ class CsacLocalCache {
   Future<List<Conversation>> loadConversations() async {
     final db = await _database();
     final rows = db.select('''
-      SELECT type, remote_id, name, subtitle, unread_count, search_text
+      SELECT type, remote_id, name, avatar, subtitle, unread_count, search_text
       FROM conversations
       ORDER BY display_order ASC, updated_at DESC, name COLLATE NOCASE ASC
       ''');
@@ -98,6 +98,7 @@ class CsacLocalCache {
           type: _conversationType(row['type'] as String),
           id: row['remote_id'] as int,
           name: row['name'] as String,
+          avatar: row['avatar'] as String,
           subtitle: row['subtitle'] as String,
           unreadCount: row['unread_count'] as int,
           searchText: row['search_text'] as String,
@@ -109,7 +110,7 @@ class CsacLocalCache {
     final db = await _database();
     final rows = db.select(
       '''
-      SELECT type, remote_id, name, subtitle, unread_count, search_text
+      SELECT type, remote_id, name, avatar, subtitle, unread_count, search_text
       FROM conversations
       WHERE type = ? AND remote_id = ?
       LIMIT 1
@@ -131,12 +132,13 @@ class CsacLocalCache {
       ''');
     final insertStatement = db.prepare('''
       INSERT INTO conversations (
-        type, remote_id, name, subtitle, unread_count, search_text, updated_at,
-        display_order
+        type, remote_id, name, avatar, subtitle, unread_count, search_text,
+        updated_at, display_order
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(type, remote_id) DO UPDATE SET
         name = excluded.name,
+        avatar = excluded.avatar,
         subtitle = excluded.subtitle,
         unread_count = excluded.unread_count,
         search_text = excluded.search_text,
@@ -153,6 +155,7 @@ class CsacLocalCache {
           _conversationTypeName(conversation.type),
           conversation.id,
           conversation.name,
+          conversation.avatar,
           conversation.subtitle,
           conversation.unreadCount,
           conversation.searchText,
@@ -186,8 +189,9 @@ class CsacLocalCache {
     final db = await _database();
     final rows = db.select(
       '''
-      SELECT id, sender_id, sender, body, time, image_url, can_recall,
-        is_recalled, is_essence, is_mentioned, reply_to
+      SELECT id, sender_id, sender, body, time, image_url, voice_url,
+        voice_duration, can_recall, is_recalled, is_essence, is_mentioned,
+        reply_to
       FROM messages
       WHERE conversation_type = ? AND conversation_id = ?
       ORDER BY id DESC
@@ -212,8 +216,9 @@ class CsacLocalCache {
     final type = _conversationTypeName(conversation.type);
     final beforeRows = db.select(
       '''
-      SELECT id, sender_id, sender, body, time, image_url, can_recall,
-        is_recalled, is_essence, is_mentioned, reply_to
+      SELECT id, sender_id, sender, body, time, image_url, voice_url,
+        voice_duration, can_recall, is_recalled, is_essence, is_mentioned,
+        reply_to
       FROM messages
       WHERE conversation_type = ? AND conversation_id = ? AND id <= ?
       ORDER BY id DESC
@@ -223,8 +228,9 @@ class CsacLocalCache {
     );
     final afterRows = db.select(
       '''
-      SELECT id, sender_id, sender, body, time, image_url, can_recall,
-        is_recalled, is_essence, is_mentioned, reply_to
+      SELECT id, sender_id, sender, body, time, image_url, voice_url,
+        voice_duration, can_recall, is_recalled, is_essence, is_mentioned,
+        reply_to
       FROM messages
       WHERE conversation_type = ? AND conversation_id = ? AND id > ?
       ORDER BY id ASC
@@ -299,6 +305,7 @@ class CsacLocalCache {
         c.type,
         c.remote_id,
         c.name,
+        c.avatar,
         c.subtitle,
         c.unread_count,
         c.search_text,
@@ -308,6 +315,8 @@ class CsacLocalCache {
         m.body,
         m.time,
         m.image_url,
+        m.voice_url,
+        m.voice_duration,
         m.can_recall,
         m.is_recalled,
         m.is_essence,
@@ -343,15 +352,18 @@ class CsacLocalCache {
     final statement = db.prepare('''
       INSERT INTO messages (
         conversation_type, conversation_id, id, sender_id, sender, body, time,
-        image_url, can_recall, is_recalled, is_essence, is_mentioned, reply_to
+        image_url, voice_url, voice_duration, can_recall, is_recalled,
+        is_essence, is_mentioned, reply_to
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(conversation_type, conversation_id, id) DO UPDATE SET
         sender_id = excluded.sender_id,
         sender = excluded.sender,
         body = excluded.body,
         time = excluded.time,
         image_url = excluded.image_url,
+        voice_url = excluded.voice_url,
+        voice_duration = excluded.voice_duration,
         can_recall = excluded.can_recall,
         is_recalled = excluded.is_recalled,
         is_essence = excluded.is_essence,
@@ -375,6 +387,8 @@ class CsacLocalCache {
           message.body,
           message.time,
           message.imageUrl,
+          message.voiceUrl,
+          message.voiceDuration,
           message.canRecall ? 1 : 0,
           message.isRecalled ? 1 : 0,
           message.isEssence ? 1 : 0,
@@ -490,6 +504,7 @@ class CsacLocalCache {
         type TEXT NOT NULL,
         remote_id INTEGER NOT NULL,
         name TEXT NOT NULL,
+        avatar TEXT NOT NULL DEFAULT '',
         subtitle TEXT NOT NULL DEFAULT '',
         unread_count INTEGER NOT NULL DEFAULT 0,
         search_text TEXT NOT NULL DEFAULT '',
@@ -507,6 +522,12 @@ class CsacLocalCache {
     _addColumnIfMissing(
       db,
       'conversations',
+      'avatar',
+      "TEXT NOT NULL DEFAULT ''",
+    );
+    _addColumnIfMissing(
+      db,
+      'conversations',
       'search_text',
       "TEXT NOT NULL DEFAULT ''",
     );
@@ -520,6 +541,8 @@ class CsacLocalCache {
         body TEXT NOT NULL DEFAULT '',
         time TEXT NOT NULL DEFAULT '',
         image_url TEXT NOT NULL DEFAULT '',
+        voice_url TEXT NOT NULL DEFAULT '',
+        voice_duration INTEGER NOT NULL DEFAULT 0,
         can_recall INTEGER NOT NULL DEFAULT 0,
         is_recalled INTEGER NOT NULL DEFAULT 0,
         is_essence INTEGER NOT NULL DEFAULT 0,
@@ -537,6 +560,18 @@ class CsacLocalCache {
         PRIMARY KEY (conversation_type, conversation_id, id)
       )
       ''');
+    _addColumnIfMissing(
+      db,
+      'messages',
+      'voice_url',
+      "TEXT NOT NULL DEFAULT ''",
+    );
+    _addColumnIfMissing(
+      db,
+      'messages',
+      'voice_duration',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
     _addColumnIfMissing(
       db,
       'messages',
@@ -574,6 +609,7 @@ class CsacLocalCache {
       type: _conversationType(row['type'] as String),
       id: row['remote_id'] as int,
       name: row['name'] as String,
+      avatar: row['avatar'] as String,
       subtitle: row['subtitle'] as String,
       unreadCount: row['unread_count'] as int,
       searchText: row['search_text'] as String,
@@ -582,18 +618,25 @@ class CsacLocalCache {
 
   ChatMessage _messageFromRow(Row row) {
     final imageUrl = row['image_url'] as String;
+    final voiceUrl = row['voice_url'] as String;
     var body = row['body'] as String;
     if (imageUrl.isNotEmpty &&
         (body.startsWith('[image]') || looksLikeImagePath(body))) {
       body = '[image]';
     }
+    if (voiceUrl.isNotEmpty && body.trim().isEmpty) {
+      body = '[voice]';
+    }
+    final time = readableTimestamp(row['time']);
     return ChatMessage(
       id: row['id'] as int,
       senderId: row['sender_id'] as int,
       sender: row['sender'] as String,
       body: body,
-      time: row['time'] as String,
+      time: time,
       imageUrl: imageUrl,
+      voiceUrl: voiceUrl,
+      voiceDuration: row['voice_duration'] as int,
       canRecall: (row['can_recall'] as int) != 0,
       isRecalled: (row['is_recalled'] as int) != 0,
       isEssence: (row['is_essence'] as int) != 0,

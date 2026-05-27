@@ -160,8 +160,11 @@ class _MainShellState extends State<MainShell> {
                     label: Text(context.strings.text('Notices')),
                   ),
                   NavigationRailDestination(
-                    icon: const Icon(Icons.person_outline),
-                    selectedIcon: const Icon(Icons.person),
+                    icon: _NavAvatar(user: widget.state.user),
+                    selectedIcon: _NavAvatar(
+                      user: widget.state.user,
+                      selected: true,
+                    ),
                     label: Text(context.strings.text('Me')),
                   ),
                 ],
@@ -313,6 +316,34 @@ class _BadgeIcon extends StatelessWidget {
   }
 }
 
+class _NavAvatar extends StatelessWidget {
+  const _NavAvatar({required this.user, this.selected = false});
+
+  final CsacUser? user;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final avatar = user?.avatar ?? '';
+    if (avatar.isEmpty) {
+      return Icon(selected ? Icons.person : Icons.person_outline);
+    }
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected ? colors.primary : colors.outlineVariant,
+          width: selected ? 2 : 1,
+        ),
+        image: DecorationImage(image: NetworkImage(avatar), fit: BoxFit.cover),
+      ),
+    );
+  }
+}
+
 class ConversationScreen extends StatefulWidget {
   const ConversationScreen({
     super.key,
@@ -375,13 +406,26 @@ class _ConversationScreenState extends State<ConversationScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    user == null
-                        ? strings.text('Not logged in')
-                        : '${user.nickname} / UID ${user.uid}',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                  child: Row(
+                    children: [
+                      _Avatar(
+                        url: user?.avatar ?? '',
+                        fallback: Icons.person_rounded,
+                        radius: 19,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          user == null
+                              ? strings.text('Not logged in')
+                              : '${user.nickname} / UID ${user.uid}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 if (widget.state.offlineMode)
@@ -411,6 +455,18 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     );
                   },
                   icon: const Icon(Icons.group_add_outlined),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  tooltip: strings.text('Create group'),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => CreateGroupScreen(state: widget.state),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.add_home_work_outlined),
                 ),
               ],
             ),
@@ -494,7 +550,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 ),
                 IconButton(
                   tooltip: strings.text('Logout'),
-                  onPressed: widget.state.logout,
+                  onPressed: () =>
+                      confirmLogout(context, widget.state, popToRoot: false),
                   icon: const Icon(Icons.logout),
                 ),
               ],
@@ -525,37 +582,47 @@ class _ConversationTile extends StatelessWidget {
       color: selected ? colors.secondaryContainer : null,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        selected: selected,
-        selectedColor: colors.onSecondaryContainer,
-        selectedTileColor: colors.secondaryContainer,
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: isGroup
-              ? colors.secondaryContainer
-              : colors.primaryContainer,
-          child: Icon(
-            isGroup ? Icons.groups_rounded : Icons.person_rounded,
-            color: isGroup
-                ? colors.onSecondaryContainer
-                : colors.onPrimaryContainer,
+      child: _RoundedInkClip(
+        child: ListTile(
+          selected: selected,
+          selectedColor: colors.onSecondaryContainer,
+          selectedTileColor: colors.secondaryContainer,
+          onTap: onTap,
+          leading: CircleAvatar(
+            radius: 22,
+            backgroundColor: conversation.avatar.isEmpty
+                ? isGroup
+                      ? colors.secondaryContainer
+                      : colors.primaryContainer
+                : null,
+            backgroundImage: conversation.avatar.isEmpty
+                ? null
+                : NetworkImage(conversation.avatar),
+            child: conversation.avatar.isEmpty
+                ? Icon(
+                    isGroup ? Icons.groups_rounded : Icons.person_rounded,
+                    color: isGroup
+                        ? colors.onSecondaryContainer
+                        : colors.onPrimaryContainer,
+                  )
+                : null,
           ),
+          title: Text(
+            conversation.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            conversation.subtitle.isEmpty
+                ? context.strings.text(isGroup ? 'Group chat' : 'Private chat')
+                : conversation.subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: conversation.unreadCount > 0
+              ? Badge(label: Text('${conversation.unreadCount}'))
+              : const Icon(Icons.chevron_right),
         ),
-        title: Text(
-          conversation.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          conversation.subtitle.isEmpty
-              ? context.strings.text(isGroup ? 'Group chat' : 'Private chat')
-              : conversation.subtitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: conversation.unreadCount > 0
-            ? Badge(label: Text('${conversation.unreadCount}'))
-            : const Icon(Icons.chevron_right),
       ),
     );
   }

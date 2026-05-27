@@ -35,6 +35,7 @@ class Friend {
     required this.id,
     required this.uid,
     required this.name,
+    this.avatar = '',
     this.subtitle = '',
     this.unreadCount = 0,
     this.searchText = '',
@@ -43,6 +44,7 @@ class Friend {
   final int id;
   final int uid;
   final String name;
+  final String avatar;
   final String subtitle;
   final int unreadCount;
   final String searchText;
@@ -56,6 +58,12 @@ class Friend {
     final last = asString(json['last_message']).isEmpty
         ? asString(json['last_msg'])
         : asString(json['last_message']);
+    final lastTime = firstReadableTime(json, const [
+      'last_time',
+      'last_msg_time',
+      'last_message_time',
+      'updated_at',
+    ]);
     final online = asString(json['online_status']);
     return Friend(
       id: id,
@@ -63,9 +71,11 @@ class Friend {
       name: remark.isEmpty
           ? (nickname.isEmpty ? 'User $id' : nickname)
           : remark,
+      avatar: normalizeApiUrl(asString(json['avatar'])),
       subtitle: [
         online,
         last,
+        lastTime,
       ].where((part) => part.trim().isNotEmpty).join(' | '),
       unreadCount: asInt(json['unread_count']),
       searchText: [
@@ -74,6 +84,7 @@ class Friend {
         asString(json['username']),
         online,
         last,
+        lastTime,
       ].where((part) => part.trim().isNotEmpty).join(' | '),
     );
   }
@@ -83,6 +94,7 @@ class Group {
   const Group({
     required this.id,
     required this.name,
+    this.avatar = '',
     this.subtitle = '',
     this.unreadCount = 0,
     this.searchText = '',
@@ -90,6 +102,7 @@ class Group {
 
   final int id;
   final String name;
+  final String avatar;
   final String subtitle;
   final int unreadCount;
   final String searchText;
@@ -104,14 +117,30 @@ class Group {
     final description = asString(json['description']);
     final notice = asString(json['notice']);
     final members = asInt(json['member_count']);
+    final lastTime = firstReadableTime(json, const [
+      'last_time',
+      'last_msg_time',
+      'last_message_time',
+      'updated_at',
+    ]);
     final parts = <String>[
       if (members > 0) '$members members',
+      if (lastTime.isNotEmpty) lastTime,
       if (description.isNotEmpty) description,
       if (notice.isNotEmpty) notice,
     ];
     return Group(
       id: id,
       name: roomName.isEmpty ? 'Room $id' : roomName,
+      avatar: normalizeApiUrl(
+        firstString(json, const [
+          'avatar',
+          'room_avatar',
+          'group_avatar',
+          'icon',
+          'image',
+        ]),
+      ),
       subtitle: parts.join(' | '),
       unreadCount: asInt(json['unread_count']),
       searchText: [
@@ -131,6 +160,7 @@ class Conversation {
     required this.type,
     required this.id,
     required this.name,
+    this.avatar = '',
     this.subtitle = '',
     this.unreadCount = 0,
     this.searchText = '',
@@ -139,6 +169,7 @@ class Conversation {
   final ConversationType type;
   final int id;
   final String name;
+  final String avatar;
   final String subtitle;
   final int unreadCount;
   final String searchText;
@@ -147,6 +178,7 @@ class Conversation {
     ConversationType? type,
     int? id,
     String? name,
+    String? avatar,
     String? subtitle,
     int? unreadCount,
     String? searchText,
@@ -155,6 +187,7 @@ class Conversation {
       type: type ?? this.type,
       id: id ?? this.id,
       name: name ?? this.name,
+      avatar: avatar ?? this.avatar,
       subtitle: subtitle ?? this.subtitle,
       unreadCount: unreadCount ?? this.unreadCount,
       searchText: searchText ?? this.searchText,
@@ -220,6 +253,7 @@ class GroupProfile {
   const GroupProfile({
     required this.id,
     required this.name,
+    this.avatar = '',
     this.description = '',
     this.notice = '',
     this.inviteCode = '',
@@ -238,6 +272,7 @@ class GroupProfile {
 
   final int id;
   final String name;
+  final String avatar;
   final String description;
   final String notice;
   final String inviteCode;
@@ -272,6 +307,15 @@ class GroupProfile {
     return GroupProfile(
       id: id,
       name: name.isEmpty ? 'Room $id' : name,
+      avatar: normalizeApiUrl(
+        firstString(json, const [
+          'avatar',
+          'room_avatar',
+          'group_avatar',
+          'icon',
+          'image',
+        ]),
+      ),
       description: firstString(json, const [
         'description',
         'intro',
@@ -356,6 +400,8 @@ class ChatMessage {
     required this.body,
     this.time = '',
     this.imageUrl = '',
+    this.voiceUrl = '',
+    this.voiceDuration = 0,
     this.canRecall = false,
     this.isRecalled = false,
     this.isEssence = false,
@@ -369,6 +415,8 @@ class ChatMessage {
   final String body;
   final String time;
   final String imageUrl;
+  final String voiceUrl;
+  final int voiceDuration;
   final bool canRecall;
   final bool isRecalled;
   final bool isEssence;
@@ -382,6 +430,8 @@ class ChatMessage {
     String? body,
     String? time,
     String? imageUrl,
+    String? voiceUrl,
+    int? voiceDuration,
     bool? canRecall,
     bool? isRecalled,
     bool? isEssence,
@@ -395,6 +445,8 @@ class ChatMessage {
       body: body ?? this.body,
       time: time ?? this.time,
       imageUrl: imageUrl ?? this.imageUrl,
+      voiceUrl: voiceUrl ?? this.voiceUrl,
+      voiceDuration: voiceDuration ?? this.voiceDuration,
       canRecall: canRecall ?? this.canRecall,
       isRecalled: isRecalled ?? this.isRecalled,
       isEssence: isEssence ?? this.isEssence,
@@ -420,6 +472,14 @@ class ChatMessage {
         : normalizeApiUrl(
             contentLooksLikeImage && rawImage.isEmpty ? rawContent : rawImage,
           );
+    final voice = isRecalled
+        ? ''
+        : normalizeApiUrl(firstString(json, const ['voice_url', 'voice']));
+    final duration = firstInt(json, const [
+      'duration',
+      'voice_duration',
+      'voice_seconds',
+    ]);
     var body = asString(json['content']).trim();
     if (isRecalled) {
       body = '[recalled]';
@@ -429,6 +489,9 @@ class ChatMessage {
       }
       if (body.isEmpty && image.isNotEmpty) {
         body = '[image]';
+      }
+      if (body.isEmpty && voice.isNotEmpty) {
+        body = '[voice]';
       }
       if (body.isEmpty) {
         body = '[empty]';
@@ -441,13 +504,15 @@ class ChatMessage {
           ? 'UID $senderId'
           : firstString(json, const ['nickname', 'sender_name']),
       body: body,
-      time: firstString(json, const [
+      time: firstReadableTime(json, const [
         'add_time',
         'created_at',
         'create_time',
         'time',
       ]),
       imageUrl: image,
+      voiceUrl: voice,
+      voiceDuration: duration,
       canRecall: asBool(json['can_recall']),
       isRecalled: isRecalled,
       isEssence: asBool(json['is_essence']),
@@ -556,15 +621,20 @@ class MessageSearchResult {
 class NotificationCounts {
   const NotificationCounts({
     this.notices = 0,
+    this.mentions = 0,
+    this.friendChanges = 0,
     this.friendRequests = 0,
     this.groupApplications = 0,
   });
 
   final int notices;
+  final int mentions;
+  final int friendChanges;
   final int friendRequests;
   final int groupApplications;
 
-  int get total => notices + friendRequests + groupApplications;
+  int get total =>
+      notices + mentions + friendChanges + friendRequests + groupApplications;
 
   factory NotificationCounts.fromJson(Map<String, dynamic> json) {
     return NotificationCounts(
@@ -575,6 +645,23 @@ class NotificationCounts {
         'unread_notice_count',
         'unread_count',
         'count',
+      ]),
+      mentions: firstInt(json, const [
+        'mention_count',
+        'mentions',
+        'mention_unread',
+        'mention_unread_count',
+        'reply_count',
+        'reply_unread',
+        'reply_unread_count',
+        'at_count',
+      ]),
+      friendChanges: firstInt(json, const [
+        'friend_change_count',
+        'friend_changes',
+        'deleted_friend_count',
+        'deleted_notices',
+        'friend_notice_count',
       ]),
       friendRequests: firstInt(json, const [
         'friend_request_count',
@@ -588,6 +675,188 @@ class NotificationCounts {
         'apply_count',
         'group_apply_count',
       ]),
+    );
+  }
+}
+
+class MentionNotice {
+  const MentionNotice({
+    required this.id,
+    required this.conversation,
+    required this.message,
+    required this.kind,
+    this.title = '',
+    this.isRead = false,
+  });
+
+  final int id;
+  final Conversation conversation;
+  final ChatMessage message;
+  final String kind;
+  final String title;
+  final bool isRead;
+
+  bool get isReply =>
+      kind.toLowerCase().contains('reply') || message.replyTo > 0;
+
+  String get displayTitle {
+    if (title.trim().isNotEmpty) {
+      return title.trim();
+    }
+    return isReply ? 'Reply to me' : '@ me';
+  }
+
+  MentionNotice copyWith({bool? isRead}) {
+    return MentionNotice(
+      id: id,
+      conversation: conversation,
+      message: message,
+      kind: kind,
+      title: title,
+      isRead: isRead ?? this.isRead,
+    );
+  }
+
+  factory MentionNotice.fromJson(
+    Map<String, dynamic> json, {
+    String fallbackKind = '',
+  }) {
+    final messageRaw = firstMap(json, const ['message', 'msg', 'chat']);
+    final source = messageRaw == null
+        ? json
+        : <String, dynamic>{...json, ...messageRaw};
+    final message = ChatMessage.fromJson(source);
+    final conversationType = _noticeConversationType(json);
+    final conversationId = conversationType == ConversationType.group
+        ? firstInt(source, const ['room_id', 'rid', 'group_id'])
+        : firstInt(source, const ['friend_id', 'to_uid', 'from_uid', 'uid']);
+    final conversationName = firstString(source, const [
+      'room_name',
+      'group_name',
+      'conversation_name',
+      'friend_name',
+      'target_name',
+    ]);
+    final title = firstString(json, const ['title', 'notice_title']);
+    return MentionNotice(
+      id: firstInt(json, const ['id', 'notice_id']).ifZero(message.id),
+      conversation: Conversation(
+        type: conversationType,
+        id: conversationId,
+        name: conversationName.isEmpty
+            ? (conversationType == ConversationType.group
+                  ? 'Room $conversationId'
+                  : message.sender)
+            : conversationName,
+        avatar: normalizeApiUrl(
+          firstString(source, const ['avatar', 'room_avatar', 'group_avatar']),
+        ),
+        subtitle: conversationType == ConversationType.group
+            ? 'Group chat'
+            : 'Private chat',
+      ),
+      message: message,
+      kind: firstString(json, const [
+        'type',
+        'kind',
+        'notice_type',
+      ]).ifEmpty(fallbackKind),
+      title: title,
+      isRead: asBool(json['is_read']) || asBool(json['read']),
+    );
+  }
+}
+
+class MentionNoticeBundle {
+  const MentionNoticeBundle({
+    required this.items,
+    this.mentionCount = 0,
+    this.replyCount = 0,
+  });
+
+  final List<MentionNotice> items;
+  final int mentionCount;
+  final int replyCount;
+
+  int get unreadCount {
+    final listedUnread = items.where((item) => !item.isRead).length;
+    return listedUnread == 0 ? mentionCount + replyCount : listedUnread;
+  }
+
+  bool get hasOnlySummary => items.isEmpty && mentionCount + replyCount > 0;
+
+  MentionNoticeBundle copyWith({
+    List<MentionNotice>? items,
+    int? mentionCount,
+    int? replyCount,
+  }) {
+    return MentionNoticeBundle(
+      items: items ?? this.items,
+      mentionCount: mentionCount ?? this.mentionCount,
+      replyCount: replyCount ?? this.replyCount,
+    );
+  }
+}
+
+class FriendChangeNotice {
+  const FriendChangeNotice({
+    required this.id,
+    required this.uid,
+    required this.nickname,
+    this.username = '',
+    this.avatar = '',
+    this.content = '',
+    this.time = '',
+    this.kind = '',
+    this.isRead = false,
+  });
+
+  final int id;
+  final int uid;
+  final String nickname;
+  final String username;
+  final String avatar;
+  final String content;
+  final String time;
+  final String kind;
+  final bool isRead;
+
+  String get displayName => nickname.trim().isEmpty ? 'UID $uid' : nickname;
+
+  factory FriendChangeNotice.fromJson(Map<String, dynamic> json) {
+    final uid = firstInt(json, const [
+      'uid',
+      'friend_id',
+      'from_uid',
+      'to_uid',
+      'target_uid',
+      'user_id',
+    ]);
+    return FriendChangeNotice(
+      id: firstInt(json, const ['id', 'notice_id', 'request_id']),
+      uid: uid,
+      nickname: firstString(json, const [
+        'nickname',
+        'friend_name',
+        'target_name',
+        'name',
+      ]).ifEmpty('UID $uid'),
+      username: asString(json['username']),
+      avatar: normalizeApiUrl(asString(json['avatar'])),
+      content: firstString(json, const [
+        'content',
+        'message',
+        'reason',
+        'title',
+      ]),
+      time: firstReadableTime(json, const [
+        'create_time',
+        'add_time',
+        'handle_time',
+        'time',
+      ]),
+      kind: firstString(json, const ['type', 'kind', 'action']),
+      isRead: asBool(json['is_read']) || asBool(json['read']),
     );
   }
 }
@@ -667,8 +936,12 @@ class FriendRequest {
       username: asString(json['username']),
       avatar: normalizeApiUrl(asString(json['avatar'])),
       content: firstString(json, const ['content', 'message', 'reason']),
-      createTime: firstString(json, const ['create_time', 'add_time', 'time']),
-      handleTime: asString(json['handle_time']),
+      createTime: firstReadableTime(json, const [
+        'create_time',
+        'add_time',
+        'time',
+      ]),
+      handleTime: readableTimestamp(json['handle_time']),
       status: asInt(json['status']),
     );
   }
@@ -729,7 +1002,11 @@ class GroupApplication {
       avatar: normalizeApiUrl(asString(json['avatar'])),
       content: firstString(json, const ['content', 'message', 'reason']),
       answer: firstString(json, const ['answer', 'apply_answer']),
-      createTime: firstString(json, const ['create_time', 'add_time', 'time']),
+      createTime: firstReadableTime(json, const [
+        'create_time',
+        'add_time',
+        'time',
+      ]),
       status: asInt(json['status']),
     );
   }
@@ -836,6 +1113,82 @@ String firstString(Map<String, dynamic> json, List<String> keys) {
   return '';
 }
 
+Map<String, dynamic>? firstMap(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+  }
+  return null;
+}
+
+ConversationType _noticeConversationType(Map<String, dynamic> json) {
+  final raw = firstString(json, const [
+    'conversation_type',
+    'chat_type',
+    'target_type',
+    'type',
+  ]).toLowerCase();
+  if (raw.contains('private') || raw.contains('friend')) {
+    return ConversationType.private;
+  }
+  if (raw.contains('group') || raw.contains('room')) {
+    return ConversationType.group;
+  }
+  if (firstInt(json, const ['room_id', 'rid', 'group_id']) > 0) {
+    return ConversationType.group;
+  }
+  return ConversationType.private;
+}
+
+String firstReadableTime(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = json[key];
+    final normalized = readableTimestamp(value);
+    if (normalized.isNotEmpty) {
+      return normalized;
+    }
+  }
+  return '';
+}
+
+String readableTimestamp(Object? value) {
+  if (value == null) {
+    return '';
+  }
+  if (value is num) {
+    if (value == 0) {
+      return '';
+    }
+    return formatLocalDateTime(_dateTimeFromUnix(value.toInt()));
+  }
+  final text = asString(value).trim();
+  if (text.isEmpty || text == '0') {
+    return '';
+  }
+  final numeric = int.tryParse(text);
+  if (numeric != null) {
+    return formatLocalDateTime(_dateTimeFromUnix(numeric));
+  }
+  final parsed = DateTime.tryParse(text);
+  if (parsed != null) {
+    return formatLocalDateTime(parsed.toLocal());
+  }
+  return text;
+}
+
+DateTime _dateTimeFromUnix(int value) {
+  final milliseconds = value.abs() >= 1000000000000 ? value : value * 1000;
+  return DateTime.fromMillisecondsSinceEpoch(milliseconds).toLocal();
+}
+
+String formatLocalDateTime(DateTime value) {
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${value.year}-${two(value.month)}-${two(value.day)} '
+      '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
+}
+
 String _apiAssetBaseUrl = 'https://cschat.ccccocccc.cc';
 
 void configureApiAssetBaseUrl(String apiBaseUrl) {
@@ -900,4 +1253,8 @@ List<ChatMessage> mergeChatMessages(
 
 extension StringFallback on String {
   String ifEmpty(String fallback) => isEmpty ? fallback : this;
+}
+
+extension IntFallback on int {
+  int ifZero(int fallback) => this == 0 ? fallback : this;
 }

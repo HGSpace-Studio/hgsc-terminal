@@ -87,6 +87,53 @@ class CsacAppState extends ChangeNotifier {
     try {
       user = await client.login(username, password);
       await cache.saveUser(user!);
+      await LoginAccountStore.upsert(
+        user: user!,
+        username: username,
+        serverUrl: client.baseUrl,
+        sessionCookies: client.sessionSnapshot,
+      );
+      offlineMode = false;
+      sessionExpired = false;
+      error = null;
+      await syncConversations();
+      await refreshNotificationCounts();
+    } catch (err) {
+      error = err.toString();
+      rethrow;
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> register({
+    required String username,
+    required String nickname,
+    required String password,
+    required String confirmPassword,
+    Uint8List? avatarBytes,
+    String avatarFileName = '',
+  }) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      user = await client.register(
+        username: username,
+        nickname: nickname,
+        password: password,
+        confirmPassword: confirmPassword,
+        avatarBytes: avatarBytes,
+        avatarFileName: avatarFileName,
+      );
+      await cache.saveUser(user!);
+      await LoginAccountStore.upsert(
+        user: user!,
+        username: username,
+        serverUrl: client.baseUrl,
+        sessionCookies: client.sessionSnapshot,
+      );
       offlineMode = false;
       sessionExpired = false;
       error = null;
@@ -176,6 +223,49 @@ class CsacAppState extends ChangeNotifier {
     client.setBaseUrl(preferences.serverUrl);
   }
 
+  Future<List<LoginAccountRecord>> loadLoginAccounts() {
+    return LoginAccountStore.loadForServer(client.baseUrl);
+  }
+
+  Future<void> removeLoginAccount(LoginAccountRecord record) {
+    return LoginAccountStore.remove(record);
+  }
+
+  Future<void> loginWithSavedSession(LoginAccountRecord record) async {
+    if (!record.hasSession) {
+      throw const CsacAuthException('Saved session is not available.');
+    }
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      await client.restoreSession(record.sessionCookies);
+      user = await client.currentUser();
+      await cache.saveUser(user!);
+      await LoginAccountStore.upsert(
+        user: user!,
+        username: record.username,
+        serverUrl: client.baseUrl,
+        sessionCookies: client.sessionSnapshot,
+      );
+      offlineMode = false;
+      sessionExpired = false;
+      error = null;
+      await syncConversations();
+      await refreshNotificationCounts();
+    } on CsacAuthException {
+      await client.clearSession();
+      await LoginAccountStore.clearSession(record);
+      rethrow;
+    } catch (err) {
+      error = err.toString();
+      rethrow;
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
   bool isActiveConversation(Conversation conversation) {
     return activeConversation?.type == conversation.type &&
         activeConversation?.id == conversation.id;
@@ -245,10 +335,32 @@ class CsacAppState extends ChangeNotifier {
 
   Future<void> refreshNotificationCounts() async {
     try {
-      notificationCounts = await client.notificationCounts();
+      final baseCounts = await client.notificationCounts();
+      var mentionCount = baseCounts.mentions;
+      var friendChangeCount = baseCounts.friendChanges;
+      if (mentionCount == 0) {
+        try {
+          mentionCount = (await client.mentionNotices()).unreadCount;
+        } catch (_) {}
+      }
+      if (friendChangeCount == 0) {
+        try {
+          final changes = await client.friendChangeNotices();
+          friendChangeCount = changes.where((notice) => !notice.isRead).length;
+        } catch (_) {}
+      }
+      notificationCounts = NotificationCounts(
+        notices: baseCounts.notices,
+        mentions: mentionCount,
+        friendChanges: friendChangeCount,
+        friendRequests: baseCounts.friendRequests,
+        groupApplications: baseCounts.groupApplications,
+      );
     } catch (_) {
       notificationCounts = NotificationCounts(
         notices: notificationCounts.notices,
+        mentions: notificationCounts.mentions,
+        friendChanges: notificationCounts.friendChanges,
         friendRequests: notificationCounts.friendRequests,
         groupApplications: notificationCounts.groupApplications,
       );
@@ -258,11 +370,15 @@ class CsacAppState extends ChangeNotifier {
 
   void updateNotificationCounts({
     int? notices,
+    int? mentions,
+    int? friendChanges,
     int? friendRequests,
     int? groupApplications,
   }) {
     notificationCounts = NotificationCounts(
       notices: notices ?? notificationCounts.notices,
+      mentions: mentions ?? notificationCounts.mentions,
+      friendChanges: friendChanges ?? notificationCounts.friendChanges,
       friendRequests: friendRequests ?? notificationCounts.friendRequests,
       groupApplications:
           groupApplications ?? notificationCounts.groupApplications,
@@ -272,6 +388,66 @@ class CsacAppState extends ChangeNotifier {
 
   Future<List<CsacNotice>> loadNotices() {
     return client.notices();
+  }
+
+  Future<MentionNoticeBundle> loadMentionNotices() {
+    return client.mentionNotices();
+  }
+
+  Future<MentionNoticeBundle> loadVisibleMentionNotices() async {
+    final bundle = await client.mentionNotices();
+    final readKeys = await MentionNoticeStore.loadReadKeys();
+    final clearedKeys = await MentionNoticeStore.loadClearedKeys();
+    final summaryRead = await MentionNoticeStore.summaryRead();
+    final summaryCleared = await MentionNoticeStore.summaryCleared();
+    final visible = <MentionNotice>[
+      for (final item in bundle.items)
+        if (!clearedKeys.contains(MentionNoticeStore.clearedKey(item)))
+          readKeys.contains(MentionNoticeStore.readKey(item))
+              ? item.copyWith(isRead: true)
+              : item,
+    ];
+    if (visible.isEmpty && bundle.hasOnlySummary) {
+      return summaryCleared
+          ? const MentionNoticeBundle(items: [])
+          : bundle.copyWith(
+              mentionCount: summaryRead ? 0 : bundle.mentionCount,
+              replyCount: summaryRead ? 0 : bundle.replyCount,
+            );
+    }
+    return MentionNoticeBundle(
+      items: visible,
+      mentionCount: bundle.mentionCount,
+      replyCount: bundle.replyCount,
+    );
+  }
+
+  Future<void> markMentionNoticeRead(MentionNotice notice) async {
+    await MentionNoticeStore.markRead(notice);
+    final visible = await loadVisibleMentionNotices();
+    updateNotificationCounts(mentions: visible.unreadCount);
+  }
+
+  Future<void> markMentionSummaryRead() async {
+    await MentionNoticeStore.markSummaryRead();
+    final visible = await loadVisibleMentionNotices();
+    updateNotificationCounts(mentions: visible.unreadCount);
+  }
+
+  Future<void> clearMentionNotice(MentionNotice notice) async {
+    await MentionNoticeStore.clear(notice);
+    final visible = await loadVisibleMentionNotices();
+    updateNotificationCounts(mentions: visible.unreadCount);
+  }
+
+  Future<void> clearMentionSummary() async {
+    await MentionNoticeStore.clearSummary();
+    final visible = await loadVisibleMentionNotices();
+    updateNotificationCounts(mentions: visible.unreadCount);
+  }
+
+  Future<List<FriendChangeNotice>> loadFriendChangeNotices() {
+    return client.friendChangeNotices();
   }
 
   Future<void> markNoticeRead({int? noticeId, bool readAll = false}) async {
@@ -357,6 +533,12 @@ class CsacAppState extends ChangeNotifier {
     return client.publicGroups();
   }
 
+  Future<GroupProfile> createGroup(String roomName) async {
+    final group = await client.createGroup(roomName);
+    await syncConversations();
+    return group;
+  }
+
   Future<void> sendFriendRequest(int uid, String message) {
     return client.sendFriendRequest(uid, message);
   }
@@ -392,6 +574,22 @@ class CsacAppState extends ChangeNotifier {
   }) async {
     await client.applyJoinGroup(roomId, code: code, answer: answer);
     await syncConversations();
+  }
+
+  Future<void> submitReport({
+    required String type,
+    required int targetId,
+    required String reason,
+    bool anonymous = false,
+    String targetName = '',
+  }) {
+    return client.submitReport(
+      type: type,
+      targetId: targetId,
+      reason: reason,
+      anonymous: anonymous,
+      targetName: targetName,
+    );
   }
 
   Future<void> leaveGroup(int roomId) async {
@@ -510,10 +708,22 @@ class CsacAppState extends ChangeNotifier {
     }
   }
 
-  Future<void> logout() async {
+  Future<void> logout({bool keepLoginRecord = true}) async {
+    final previousUser = user;
+    final previousServerUrl = client.baseUrl;
     try {
-      await client.logout();
+      if (keepLoginRecord) {
+        await client.clearSession();
+      } else {
+        await client.logout();
+      }
     } finally {
+      if (!keepLoginRecord && previousUser != null) {
+        await LoginAccountStore.removeCurrent(
+          user: previousUser,
+          serverUrl: previousServerUrl,
+        );
+      }
       await cache.clear();
       await ConversationDraftStore.clearAll();
       user = null;

@@ -40,6 +40,8 @@ class CsacApiClient {
 
   String get originUrl => apiOriginFromBaseUrl(_baseUrl);
 
+  Map<String, String> get sessionSnapshot => Map<String, String>.from(_cookies);
+
   void setBaseUrl(String value) {
     _baseUrl = normalizeServerUrl(value);
     configureApiAssetBaseUrl(_baseUrl);
@@ -98,6 +100,13 @@ class CsacApiClient {
     await prefs.setString(_sessionKey, jsonEncode(_cookies));
   }
 
+  Future<void> restoreSession(Map<String, String> cookies) async {
+    _cookies
+      ..clear()
+      ..addAll(cookies);
+    await saveSession();
+  }
+
   Future<void> clearSession() async {
     _cookies.clear();
     final prefs = await SharedPreferences.getInstance();
@@ -112,6 +121,39 @@ class CsacApiClient {
     final user = data['user'];
     if (user is! Map<String, dynamic>) {
       throw const CsacApiException('Login succeeded but no user was returned.');
+    }
+    await saveSession();
+    return CsacUser.fromJson(user);
+  }
+
+  Future<CsacUser> register({
+    required String username,
+    required String nickname,
+    required String password,
+    required String confirmPassword,
+    Uint8List? avatarBytes,
+    String avatarFileName = '',
+  }) async {
+    final fields = <String, String>{
+      'username': username.trim(),
+      'nickname': nickname.trim(),
+      'pwd': password,
+      'confirm_pwd': confirmPassword,
+    };
+    final data = avatarBytes == null
+        ? await postForm('auth/register', fields)
+        : await postMultipart(
+            'auth/register',
+            fields,
+            fileField: 'avatar',
+            fileBytes: avatarBytes,
+            fileName: avatarFileName.isEmpty ? 'avatar.png' : avatarFileName,
+          );
+    final user = data['user'];
+    if (user is! Map<String, dynamic>) {
+      throw const CsacApiException(
+        'Register succeeded but no user was returned.',
+      );
     }
     await saveSession();
     return CsacUser.fromJson(user);
@@ -193,6 +235,24 @@ class CsacApiClient {
     ]).map(GroupProfile.fromJson).toList();
   }
 
+  Future<GroupProfile> createGroup(String roomName) async {
+    final data = await postForm('group/create', <String, String>{
+      'room_name': roomName.trim(),
+    });
+    final roomId = firstInt(data, const ['room_id', 'id', 'rid']);
+    final inviteCode = firstString(data, const ['invite_code', 'code']);
+    if (roomId <= 0) {
+      throw const CsacApiException('Server did not return group id.');
+    }
+    return GroupProfile(
+      id: roomId,
+      name: roomName.trim().isEmpty ? 'Room $roomId' : roomName.trim(),
+      inviteCode: inviteCode,
+      isInGroup: true,
+      isOwner: true,
+    );
+  }
+
   Future<GroupProfile> groupProfile(int roomId) async {
     final data = await get('group/get_group_view_info', <String, String>{
       'room_id': '$roomId',
@@ -227,6 +287,58 @@ class CsacApiClient {
     return NotificationCounts.fromJson(data);
   }
 
+  Future<MentionNoticeBundle> mentionNotices() async {
+    final data = await get('message/get_mentions');
+    final mentionRows = _firstList(data, const [
+      'mentions',
+      'mention_list',
+      'mention_items',
+      'mention_messages',
+      'mention_msgs',
+      'at_list',
+      'at_items',
+      'at_messages',
+      'messages',
+      'items',
+      'list',
+      'data',
+    ]);
+    final replyRows = _firstList(data, const [
+      'replies',
+      'reply_list',
+      'reply_items',
+      'reply_messages',
+      'reply_msgs',
+      'reply_notices',
+    ]);
+    final items = <MentionNotice>[
+      for (final row in mentionRows)
+        MentionNotice.fromJson(row, fallbackKind: 'mention'),
+      for (final row in replyRows)
+        MentionNotice.fromJson(row, fallbackKind: 'reply'),
+    ];
+    items.sort((a, b) => b.message.time.compareTo(a.message.time));
+    final nested = data['data'] is Map
+        ? Map<String, dynamic>.from(data['data'] as Map)
+        : data;
+    return MentionNoticeBundle(
+      items: items,
+      mentionCount: firstInt(nested, const [
+        'mention_count',
+        'mentions_count',
+        'mention_unread',
+        'unread_mentions',
+        'at_count',
+      ]),
+      replyCount: firstInt(nested, const [
+        'reply_count',
+        'replies_count',
+        'reply_unread',
+        'unread_replies',
+      ]),
+    );
+  }
+
   Future<List<CsacNotice>> notices() async {
     final data = await get('user/get_notice_list');
     return _firstList(data, const [
@@ -242,6 +354,19 @@ class CsacApiClient {
       if (readAll) 'read_all': '1',
       if (!readAll && noticeId != null) 'notice_id': '$noticeId',
     });
+  }
+
+  Future<List<FriendChangeNotice>> friendChangeNotices() async {
+    final data = await get('friend/get_deleted_notices');
+    return _firstList(data, const [
+        'notices',
+        'deleted_notices',
+        'deleted_friends',
+        'friends',
+        'list',
+        'data',
+      ]).map(FriendChangeNotice.fromJson).toList()
+      ..sort((a, b) => b.time.compareTo(a.time));
   }
 
   Future<List<FriendRequest>> friendRequests() async {
@@ -352,6 +477,23 @@ class CsacApiClient {
     });
   }
 
+  Future<void> submitReport({
+    required String type,
+    required int targetId,
+    required String reason,
+    bool anonymous = false,
+    String targetName = '',
+  }) {
+    return postForm('report/submit_report', <String, String>{
+      'type': type,
+      if (type == 'user') 'uid': '$targetId',
+      if (type == 'group') 'rid': '$targetId',
+      'reason': reason.trim(),
+      'anonymous': anonymous ? '1' : '0',
+      if (targetName.trim().isNotEmpty) 'target_name': targetName.trim(),
+    });
+  }
+
   Future<void> leaveGroup(int roomId) {
     return postForm('group/leave', <String, String>{'room_id': '$roomId'});
   }
@@ -442,6 +584,7 @@ class CsacApiClient {
           type: ConversationType.private,
           id: friend.id,
           name: friend.name,
+          avatar: friend.avatar,
           subtitle: friend.subtitle,
           unreadCount: friend.unreadCount,
           searchText: friend.searchText,
@@ -451,6 +594,7 @@ class CsacApiClient {
           type: ConversationType.group,
           id: group.id,
           name: group.name,
+          avatar: group.avatar,
           subtitle: group.subtitle,
           unreadCount: group.unreadCount,
           searchText: group.searchText,
@@ -537,6 +681,30 @@ class CsacApiClient {
       fields,
       fileField: 'img',
       fileBytes: imageBytes,
+      fileName: fileName,
+    );
+  }
+
+  Future<void> sendVoiceMessage(
+    Conversation conversation,
+    Uint8List voiceBytes,
+    String fileName, {
+    int duration = 0,
+    int replyTo = 0,
+  }) {
+    final fields = <String, String>{
+      if (conversation.type == ConversationType.group)
+        'room_id': '${conversation.id}',
+      if (conversation.type == ConversationType.private)
+        'friend_id': '${conversation.id}',
+      'duration': '$duration',
+      if (replyTo > 0) 'reply_to': '$replyTo',
+    };
+    return postMultipart(
+      'message/send_voice_msg',
+      fields,
+      fileField: 'voice',
+      fileBytes: voiceBytes,
       fileName: fileName,
     );
   }

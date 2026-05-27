@@ -8,6 +8,9 @@ class _PendingSend {
     required this.text,
     this.imageBytes,
     this.imageName = '',
+    this.voiceBytes,
+    this.voiceName = '',
+    this.voiceDuration = 0,
     this.replyTo = 0,
     this.mentionUids = const <int>[],
     this.status = _PendingSendStatus.sending,
@@ -18,17 +21,24 @@ class _PendingSend {
   final String text;
   final Uint8List? imageBytes;
   final String imageName;
+  final Uint8List? voiceBytes;
+  final String voiceName;
+  final int voiceDuration;
   final int replyTo;
   final List<int> mentionUids;
   final _PendingSendStatus status;
   final String error;
 
   bool get hasImage => imageBytes != null;
+  bool get hasVoice => voiceBytes != null;
 
   _PendingSend copyWith({
     String? text,
     Uint8List? imageBytes,
     String? imageName,
+    Uint8List? voiceBytes,
+    String? voiceName,
+    int? voiceDuration,
     int? replyTo,
     List<int>? mentionUids,
     _PendingSendStatus? status,
@@ -39,6 +49,9 @@ class _PendingSend {
       text: text ?? this.text,
       imageBytes: imageBytes ?? this.imageBytes,
       imageName: imageName ?? this.imageName,
+      voiceBytes: voiceBytes ?? this.voiceBytes,
+      voiceName: voiceName ?? this.voiceName,
+      voiceDuration: voiceDuration ?? this.voiceDuration,
       replyTo: replyTo ?? this.replyTo,
       mentionUids: mentionUids ?? this.mentionUids,
       status: status ?? this.status,
@@ -83,6 +96,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool loading = true;
   bool refreshing = false;
   bool pickingImage = false;
+  bool pickingVoice = false;
   bool applyingDraft = false;
   bool offline = false;
   String? error;
@@ -403,6 +417,99 @@ class _ChatScreenState extends State<ChatScreen> {
     unawaited(performPendingSend(pending.localId));
   }
 
+  Future<void> pickAndSendVoice() async {
+    if (pickingVoice) {
+      return;
+    }
+    setState(() => pickingVoice = true);
+    try {
+      final picked = await openFile(
+        acceptedTypeGroups: <XTypeGroup>[
+          XTypeGroup(
+            label: context.strings.text('Audio files'),
+            extensions: const <String>[
+              'mp3',
+              'm4a',
+              'aac',
+              'wav',
+              'ogg',
+              'webm',
+              'amr',
+            ],
+          ),
+        ],
+      );
+      if (!mounted || picked == null) {
+        return;
+      }
+      final bytes = await picked.readAsBytes();
+      if (!mounted) {
+        return;
+      }
+      final duration = await askVoiceDuration(picked.name);
+      if (duration == null || !mounted) {
+        return;
+      }
+      final pending = _PendingSend(
+        localId: nextPendingId--,
+        text: '',
+        voiceBytes: bytes,
+        voiceName: picked.name,
+        voiceDuration: duration,
+        replyTo: replyTarget?.id ?? 0,
+      );
+      setState(() {
+        pendingSends.add(pending);
+        replyTarget = null;
+        mentionTargets.clear();
+        error = null;
+      });
+      scrollToEnd();
+      unawaited(performPendingSend(pending.localId));
+    } finally {
+      if (mounted) {
+        setState(() => pickingVoice = false);
+      }
+    }
+  }
+
+  Future<int?> askVoiceDuration(String fileName) async {
+    final controller = TextEditingController(text: '0');
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          context.strings.format('Send voice: {fileName}', {
+            'fileName': fileName,
+          }),
+        ),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: context.strings.text('Duration seconds'),
+            helperText: context.strings.text('Use 0 if unknown.'),
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: Text(context.strings.text('Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(
+              context,
+            ).pop(math.max(0, int.tryParse(controller.text.trim()) ?? 0)),
+            child: Text(context.strings.text('Send')),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
   Future<void> performPendingSend(int localId) async {
     final pending = pendingSends
         .where((item) => item.localId == localId)
@@ -423,6 +530,14 @@ class _ChatScreenState extends State<ChatScreen> {
           caption: pending.text,
           replyTo: pending.replyTo,
           mentionUids: pending.mentionUids,
+        );
+      } else if (pending.hasVoice) {
+        await widget.state.client.sendVoiceMessage(
+          widget.conversation,
+          pending.voiceBytes!,
+          pending.voiceName,
+          duration: pending.voiceDuration,
+          replyTo: pending.replyTo,
         );
       } else {
         await widget.state.client.sendMessage(
@@ -786,6 +901,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (message.time.isNotEmpty) message.time,
       if (message.body.trim().isNotEmpty) message.body.trim(),
       if (message.imageUrl.isNotEmpty) message.imageUrl,
+      if (message.voiceUrl.isNotEmpty) message.voiceUrl,
     ].join('\n');
   }
 
@@ -795,6 +911,8 @@ class _ChatScreenState extends State<ChatScreen> {
       if (message.body.trim().isNotEmpty) message.body.trim(),
       if (message.imageUrl.isNotEmpty)
         context.strings.format('Image: {url}', {'url': message.imageUrl}),
+      if (message.voiceUrl.isNotEmpty)
+        context.strings.format('Voice: {url}', {'url': message.voiceUrl}),
     ].join('\n');
   }
 
@@ -983,6 +1101,12 @@ class _ChatScreenState extends State<ChatScreen> {
                         onImageTap: message.imageUrl.isEmpty
                             ? null
                             : () => showImagePreview(context, message.imageUrl),
+                        onVoiceTap: message.voiceUrl.isEmpty
+                            ? null
+                            : () => launchUrl(
+                                Uri.parse(message.voiceUrl),
+                                mode: LaunchMode.externalApplication,
+                              ),
                       );
                     },
                   ),
@@ -1040,6 +1164,20 @@ class _ChatScreenState extends State<ChatScreen> {
                             : const Icon(Icons.image_outlined),
                       ),
                       const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        tooltip: strings.text('Voice'),
+                        onPressed: pickingVoice ? null : pickAndSendVoice,
+                        icon: pickingVoice
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.mic_none),
+                      ),
+                      const SizedBox(width: 8),
                       FilledButton(
                         onPressed: send,
                         child: const Icon(Icons.send),
@@ -1069,6 +1207,7 @@ class _MessageBubble extends StatelessWidget {
     this.onLongPress,
     this.onReplyTap,
     this.onImageTap,
+    this.onVoiceTap,
   });
 
   final ChatMessage message;
@@ -1081,6 +1220,7 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback? onLongPress;
   final VoidCallback? onReplyTap;
   final VoidCallback? onImageTap;
+  final VoidCallback? onVoiceTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1211,11 +1351,69 @@ class _MessageBubble extends StatelessWidget {
                         !message.body.startsWith('[image]'))
                       const SizedBox(height: 8),
                   ],
+                  if (message.voiceUrl.isNotEmpty) ...[
+                    _VoiceMessageTile(
+                      duration: message.voiceDuration,
+                      textColor: textColor,
+                      onTap: onVoiceTap,
+                    ),
+                    if (message.body.isNotEmpty &&
+                        !message.body.startsWith('[voice]'))
+                      const SizedBox(height: 8),
+                  ],
                   if (message.body.isNotEmpty &&
-                      !message.body.startsWith('[image]'))
+                      !message.body.startsWith('[image]') &&
+                      !message.body.startsWith('[voice]'))
                     Text(message.body, style: TextStyle(color: textColor)),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceMessageTile extends StatelessWidget {
+  const _VoiceMessageTile({
+    required this.duration,
+    required this.textColor,
+    this.onTap,
+  });
+
+  final int duration;
+  final Color textColor;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: colors.surface.withValues(alpha: 0.28),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: textColor.withValues(alpha: 0.24)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.play_arrow_rounded, color: textColor),
+            const SizedBox(width: 8),
+            Icon(Icons.graphic_eq_rounded, color: textColor),
+            const SizedBox(width: 8),
+            Text(
+              duration > 0
+                  ? context.strings.format('Voice message ({seconds}s)', {
+                      'seconds': duration,
+                    })
+                  : context.strings.text('Voice message'),
+              style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -1277,6 +1475,36 @@ class _PendingMessageBubble extends StatelessWidget {
                       Flexible(
                         child: Text(
                           pending.imageName,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: failed
+                                ? colors.onErrorContainer
+                                : colors.onPrimaryContainer,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (pending.text.isNotEmpty) const SizedBox(height: 8),
+                ],
+                if (pending.hasVoice) ...[
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.mic_none,
+                        size: 18,
+                        color: failed
+                            ? colors.onErrorContainer
+                            : colors.onPrimaryContainer,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          pending.voiceDuration > 0
+                              ? '${pending.voiceName} (${pending.voiceDuration}s)'
+                              : pending.voiceName,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: failed

@@ -64,6 +64,10 @@ ThemeData buildCsacTheme(Brightness brightness, Color seedColor) {
     scaffoldBackgroundColor: scheme.surface,
     canvasColor: scheme.surface,
     cardColor: scheme.surfaceContainerLow,
+    cardTheme: CardThemeData(
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
     appBarTheme: AppBarTheme(
       backgroundColor: scheme.surface,
       foregroundColor: scheme.onSurface,
@@ -171,13 +175,67 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final username = TextEditingController();
   final password = TextEditingController();
+  final passwordFocus = FocusNode();
+  List<LoginAccountRecord> accounts = const <LoginAccountRecord>[];
+  bool loadingAccounts = true;
   String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    loadAccounts();
+  }
 
   @override
   void dispose() {
     username.dispose();
     password.dispose();
+    passwordFocus.dispose();
     super.dispose();
+  }
+
+  Future<void> loadAccounts() async {
+    final loaded = await widget.state.loadLoginAccounts();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      accounts = loaded;
+      loadingAccounts = false;
+    });
+  }
+
+  Future<void> selectAccount(LoginAccountRecord account) async {
+    if (account.hasSession) {
+      setState(() => error = null);
+      try {
+        await widget.state.loginWithSavedSession(account);
+        if (mounted) {
+          await loadAccounts();
+        }
+        return;
+      } catch (_) {
+        if (mounted) {
+          await loadAccounts();
+          setState(
+            () => error = context.strings.text(
+              'Saved session expired. Please enter password.',
+            ),
+          );
+        }
+      }
+    }
+    username.text = account.username.trim().isEmpty
+        ? '${account.uid}'
+        : account.username.trim();
+    password.clear();
+    setState(() => error = null);
+    passwordFocus.requestFocus();
+  }
+
+  Future<void> removeAccount(LoginAccountRecord account) async {
+    await widget.state.removeLoginAccount(account);
+    await loadAccounts();
   }
 
   Future<void> submit() async {
@@ -191,6 +249,9 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     try {
       await widget.state.login(name, password.text);
+      if (mounted) {
+        await loadAccounts();
+      }
     } catch (err) {
       setState(() => error = err.toString());
     }
@@ -206,8 +267,17 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
     if (mounted) {
+      await loadAccounts();
       setState(() {});
     }
+  }
+
+  Future<void> openRegister() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RegisterScreen(state: widget.state),
+      ),
+    );
   }
 
   @override
@@ -252,6 +322,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 14),
                   TextField(
                     controller: password,
+                    focusNode: passwordFocus,
                     obscureText: true,
                     onSubmitted: (_) => submit(),
                     decoration: InputDecoration(
@@ -281,6 +352,71 @@ class _LoginScreenState extends State<LoginScreen> {
                         : const Icon(Icons.login),
                     label: Text(strings.text('Login')),
                   ),
+                  const SizedBox(height: 10),
+                  if (loadingAccounts)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    )
+                  else if (accounts.isNotEmpty) ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        strings.text('Recent accounts'),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    for (final account in accounts.take(3))
+                      Card(
+                        elevation: 0,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: _RoundedInkClip(
+                          child: ListTile(
+                            leading: _Avatar(
+                              url: account.avatar,
+                              fallback: Icons.person_rounded,
+                              radius: 20,
+                            ),
+                            title: Text(
+                              account.displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              [
+                                account.subtitle,
+                                if (account.hasSession)
+                                  strings.text('Saved session'),
+                              ].join(' | '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: IconButton(
+                              tooltip: strings.text('Remove login record'),
+                              onPressed: () => removeAccount(account),
+                              icon: const Icon(Icons.close),
+                            ),
+                            onTap: () => selectAccount(account),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 2),
+                  ],
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: widget.state.loading ? null : openRegister,
+                    icon: const Icon(Icons.person_add_alt),
+                    label: Text(strings.text('Register account')),
+                  ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: openServerSettings,
@@ -299,6 +435,188 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key, required this.state});
+
+  final CsacAppState state;
+
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final username = TextEditingController();
+  final nickname = TextEditingController();
+  final password = TextEditingController();
+  final confirmPassword = TextEditingController();
+  XFile? avatar;
+  bool submitting = false;
+  String? error;
+
+  @override
+  void dispose() {
+    username.dispose();
+    nickname.dispose();
+    password.dispose();
+    confirmPassword.dispose();
+    super.dispose();
+  }
+
+  Future<void> chooseAvatar() async {
+    final picked = await openFile(
+      acceptedTypeGroups: <XTypeGroup>[
+        XTypeGroup(
+          label: context.strings.text('Images'),
+          extensions: imageExtensions,
+        ),
+      ],
+    );
+    if (picked != null && mounted) {
+      setState(() => avatar = picked);
+    }
+  }
+
+  Future<void> submit() async {
+    final strings = context.strings;
+    if (username.text.trim().isEmpty ||
+        nickname.text.trim().isEmpty ||
+        password.text.isEmpty ||
+        confirmPassword.text.isEmpty) {
+      setState(() => error = strings.text('Please fill all fields.'));
+      return;
+    }
+    if (password.text.length < 6) {
+      setState(
+        () =>
+            error = strings.text('New password must be at least 6 characters.'),
+      );
+      return;
+    }
+    if (password.text != confirmPassword.text) {
+      setState(() => error = strings.text('Passwords do not match.'));
+      return;
+    }
+    setState(() {
+      submitting = true;
+      error = null;
+    });
+    try {
+      final selectedAvatar = avatar;
+      final avatarBytes = selectedAvatar == null
+          ? null
+          : await selectedAvatar.readAsBytes();
+      await widget.state.register(
+        username: username.text,
+        nickname: nickname.text,
+        password: password.text,
+        confirmPassword: confirmPassword.text,
+        avatarBytes: avatarBytes,
+        avatarFileName: selectedAvatar?.name ?? '',
+      );
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context).pop();
+    } catch (err) {
+      if (mounted) {
+        setState(() => error = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => submitting = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return Scaffold(
+      appBar: AppBar(title: Text(strings.text('Register account'))),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            TextField(
+              controller: username,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: strings.text('Username'),
+                helperText: strings.text('3-32 letters, numbers, _@.-'),
+                prefixIcon: const Icon(Icons.person_outline),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nickname,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: strings.text('Nickname'),
+                prefixIcon: const Icon(Icons.badge_outlined),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: password,
+              obscureText: true,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: strings.text('Password'),
+                prefixIcon: const Icon(Icons.lock_outline),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: confirmPassword,
+              obscureText: true,
+              onSubmitted: (_) => submit(),
+              decoration: InputDecoration(
+                labelText: strings.text('Confirm password'),
+                prefixIcon: const Icon(Icons.lock_reset),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: submitting ? null : chooseAvatar,
+              icon: const Icon(Icons.image_outlined),
+              label: Text(
+                avatar == null
+                    ? strings.text('Choose avatar')
+                    : strings.format('Selected: {name}', {
+                        'name': avatar!.name,
+                      }),
+              ),
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: submitting ? null : submit,
+              icon: submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.person_add_alt),
+              label: Text(strings.text('Register')),
+            ),
+          ],
         ),
       ),
     );
