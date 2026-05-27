@@ -760,6 +760,17 @@ class _ChatScreenState extends State<ChatScreen> {
         .then((_) => loadGroupAnnouncement());
   }
 
+  Future<void> openMediaCenter() {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ConversationMediaScreen(
+          state: widget.state,
+          conversation: widget.conversation,
+        ),
+      ),
+    );
+  }
+
   void enterSelection(ChatMessage message) {
     setState(() {
       selectedMessageIds
@@ -1030,6 +1041,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     onPressed: openEssenceList,
                     icon: const Icon(Icons.star_outline),
                   ),
+                IconButton(
+                  tooltip: strings.text('Media and files'),
+                  onPressed: openMediaCenter,
+                  icon: const Icon(Icons.perm_media_outlined),
+                ),
                 IconButton(
                   tooltip: strings.text('Details'),
                   onPressed: openConversationDetails,

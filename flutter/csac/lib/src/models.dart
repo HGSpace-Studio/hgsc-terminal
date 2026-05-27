@@ -2,6 +2,8 @@ enum ConversationType { private, group }
 
 enum SearchScope { all, private, group, image, essence }
 
+enum ConversationMediaKind { all, image, voice, file }
+
 class CsacUser {
   const CsacUser({
     required this.uid,
@@ -402,6 +404,8 @@ class ChatMessage {
     this.imageUrl = '',
     this.voiceUrl = '',
     this.voiceDuration = 0,
+    this.fileUrl = '',
+    this.fileName = '',
     this.canRecall = false,
     this.isRecalled = false,
     this.isEssence = false,
@@ -417,6 +421,8 @@ class ChatMessage {
   final String imageUrl;
   final String voiceUrl;
   final int voiceDuration;
+  final String fileUrl;
+  final String fileName;
   final bool canRecall;
   final bool isRecalled;
   final bool isEssence;
@@ -432,6 +438,8 @@ class ChatMessage {
     String? imageUrl,
     String? voiceUrl,
     int? voiceDuration,
+    String? fileUrl,
+    String? fileName,
     bool? canRecall,
     bool? isRecalled,
     bool? isEssence,
@@ -447,6 +455,8 @@ class ChatMessage {
       imageUrl: imageUrl ?? this.imageUrl,
       voiceUrl: voiceUrl ?? this.voiceUrl,
       voiceDuration: voiceDuration ?? this.voiceDuration,
+      fileUrl: fileUrl ?? this.fileUrl,
+      fileName: fileName ?? this.fileName,
       canRecall: canRecall ?? this.canRecall,
       isRecalled: isRecalled ?? this.isRecalled,
       isEssence: isEssence ?? this.isEssence,
@@ -475,6 +485,24 @@ class ChatMessage {
     final voice = isRecalled
         ? ''
         : normalizeApiUrl(firstString(json, const ['voice_url', 'voice']));
+    final file = isRecalled
+        ? ''
+        : normalizeApiUrl(
+            firstString(json, const [
+              'file_url',
+              'file',
+              'file_path',
+              'attachment_url',
+              'document_url',
+              'download_url',
+            ]),
+          );
+    final fileName = firstString(json, const [
+      'file_name',
+      'filename',
+      'attachment_name',
+      'document_name',
+    ]);
     final duration = firstInt(json, const [
       'duration',
       'voice_duration',
@@ -492,6 +520,9 @@ class ChatMessage {
       }
       if (body.isEmpty && voice.isNotEmpty) {
         body = '[voice]';
+      }
+      if (body.isEmpty && file.isNotEmpty) {
+        body = '[file]';
       }
       if (body.isEmpty) {
         body = '[empty]';
@@ -513,12 +544,63 @@ class ChatMessage {
       imageUrl: image,
       voiceUrl: voice,
       voiceDuration: duration,
+      fileUrl: file,
+      fileName: fileName,
       canRecall: asBool(json['can_recall']),
       isRecalled: isRecalled,
       isEssence: asBool(json['is_essence']),
       isMentioned: asBool(json['is_mentioned']),
       replyTo: firstInt(json, const ['reply_to', 'reply_msg_id']),
     );
+  }
+}
+
+class ConversationMediaItem {
+  const ConversationMediaItem({
+    required this.conversation,
+    required this.message,
+    required this.kind,
+    required this.url,
+    this.title = '',
+  });
+
+  final Conversation conversation;
+  final ChatMessage message;
+  final ConversationMediaKind kind;
+  final String url;
+  final String title;
+
+  String get displayTitle {
+    final value = title.trim();
+    if (value.isNotEmpty) {
+      return value;
+    }
+    final name = fileNameFromUrl(url);
+    if (name.isNotEmpty) {
+      return name;
+    }
+    switch (kind) {
+      case ConversationMediaKind.image:
+        return 'Image';
+      case ConversationMediaKind.voice:
+        return 'Voice message';
+      case ConversationMediaKind.file:
+        return 'File';
+      case ConversationMediaKind.all:
+        return 'Media';
+    }
+  }
+
+  String get searchableText {
+    return [
+      conversation.name,
+      message.sender,
+      message.body,
+      message.time,
+      url,
+      title,
+      fileNameFromUrl(url),
+    ].where((value) => value.trim().isNotEmpty).join(' | ').toLowerCase();
   }
 }
 
@@ -780,7 +862,7 @@ class MentionNoticeBundle {
 
   int get unreadCount {
     final listedUnread = items.where((item) => !item.isRead).length;
-    return listedUnread == 0 ? mentionCount + replyCount : listedUnread;
+    return items.isEmpty ? mentionCount + replyCount : listedUnread;
   }
 
   bool get hasOnlySummary => items.isEmpty && mentionCount + replyCount > 0;
@@ -1234,6 +1316,54 @@ bool looksLikeImagePath(String value) {
   return lower.startsWith('upload/') ||
       lower.startsWith('/upload/') ||
       uri?.hasScheme == true;
+}
+
+bool looksLikeVoicePath(String value) {
+  final path = _cleanPathForExtension(value);
+  return RegExp(r'\.(mp3|m4a|aac|wav|ogg|webm|amr|flac)$').hasMatch(path);
+}
+
+bool looksLikeFileLink(String value) {
+  final text = value.trim();
+  if (text.isEmpty || text.contains('\n')) {
+    return false;
+  }
+  final uri = Uri.tryParse(text);
+  if (uri == null || (!uri.hasScheme && !text.startsWith('upload/'))) {
+    return false;
+  }
+  final path = _cleanPathForExtension(text);
+  if (path.isEmpty || looksLikeImagePath(text) || looksLikeVoicePath(text)) {
+    return false;
+  }
+  return RegExp(
+    r'\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|md|zip|rar|7z|tar|gz|apk|ipa|exe|dmg|csv|json|xml)$',
+  ).hasMatch(path);
+}
+
+List<String> extractLinks(String value) {
+  final matches = RegExp(r"""https?://[^\s<>"'\]\)]+""").allMatches(value);
+  return [
+    for (final match in matches)
+      value
+          .substring(match.start, match.end)
+          .replaceAll(RegExp(r'[，。,.]+$'), ''),
+  ];
+}
+
+String fileNameFromUrl(String url) {
+  final uri = Uri.tryParse(url.trim());
+  final path = uri?.path.isNotEmpty == true ? uri!.path : url.trim();
+  final parts = path.split('/').where((part) => part.isNotEmpty).toList();
+  final name = parts.isEmpty ? '' : parts.last;
+  return Uri.decodeComponent(name);
+}
+
+String _cleanPathForExtension(String value) {
+  final text = value.trim();
+  final uri = Uri.tryParse(text);
+  final path = uri?.path.isNotEmpty == true ? uri!.path : text;
+  return path.toLowerCase().split('?').first.split('#').first;
 }
 
 List<ChatMessage> mergeChatMessages(

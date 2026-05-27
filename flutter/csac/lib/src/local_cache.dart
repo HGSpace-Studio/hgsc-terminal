@@ -190,8 +190,8 @@ class CsacLocalCache {
     final rows = db.select(
       '''
       SELECT id, sender_id, sender, body, time, image_url, voice_url,
-        voice_duration, can_recall, is_recalled, is_essence, is_mentioned,
-        reply_to
+        voice_duration, file_url, file_name, can_recall, is_recalled,
+        is_essence, is_mentioned, reply_to
       FROM messages
       WHERE conversation_type = ? AND conversation_id = ?
       ORDER BY id DESC
@@ -217,8 +217,8 @@ class CsacLocalCache {
     final beforeRows = db.select(
       '''
       SELECT id, sender_id, sender, body, time, image_url, voice_url,
-        voice_duration, can_recall, is_recalled, is_essence, is_mentioned,
-        reply_to
+        voice_duration, file_url, file_name, can_recall, is_recalled,
+        is_essence, is_mentioned, reply_to
       FROM messages
       WHERE conversation_type = ? AND conversation_id = ? AND id <= ?
       ORDER BY id DESC
@@ -229,8 +229,8 @@ class CsacLocalCache {
     final afterRows = db.select(
       '''
       SELECT id, sender_id, sender, body, time, image_url, voice_url,
-        voice_duration, can_recall, is_recalled, is_essence, is_mentioned,
-        reply_to
+        voice_duration, file_url, file_name, can_recall, is_recalled,
+        is_essence, is_mentioned, reply_to
       FROM messages
       WHERE conversation_type = ? AND conversation_id = ? AND id > ?
       ORDER BY id ASC
@@ -317,6 +317,8 @@ class CsacLocalCache {
         m.image_url,
         m.voice_url,
         m.voice_duration,
+        m.file_url,
+        m.file_name,
         m.can_recall,
         m.is_recalled,
         m.is_essence,
@@ -341,6 +343,104 @@ class CsacLocalCache {
     ];
   }
 
+  Future<List<ConversationMediaItem>> loadConversationMedia(
+    Conversation conversation, {
+    ConversationMediaKind kind = ConversationMediaKind.all,
+    String query = '',
+    int limit = 500,
+  }) async {
+    final db = await _database();
+    final rows = db.select(
+      '''
+      SELECT
+        c.type,
+        c.remote_id,
+        c.name,
+        c.avatar,
+        c.subtitle,
+        c.unread_count,
+        c.search_text,
+        m.id,
+        m.sender_id,
+        m.sender,
+        m.body,
+        m.time,
+        m.image_url,
+        m.voice_url,
+        m.voice_duration,
+        m.file_url,
+        m.file_name,
+        m.can_recall,
+        m.is_recalled,
+        m.is_essence,
+        m.is_mentioned,
+        m.reply_to
+      FROM messages m
+      JOIN conversations c
+        ON c.type = m.conversation_type AND c.remote_id = m.conversation_id
+      WHERE m.conversation_type = ? AND m.conversation_id = ?
+        AND (
+          m.image_url <> '' OR m.voice_url <> '' OR m.file_url <> ''
+          OR m.body LIKE '%http://%' OR m.body LIKE '%https://%'
+        )
+      ORDER BY m.id DESC
+      LIMIT ?
+      ''',
+      [_conversationTypeName(conversation.type), conversation.id, limit],
+    );
+    final text = query.trim().toLowerCase();
+    final items = <ConversationMediaItem>[];
+    final seen = <String>{};
+    for (final row in rows) {
+      final resolvedConversation = _conversationFromRow(row);
+      final message = _messageFromRow(row);
+      void add(
+        ConversationMediaKind itemKind,
+        String rawUrl, {
+        String title = '',
+      }) {
+        final url = normalizeApiUrl(rawUrl);
+        if (url.isEmpty ||
+            (kind != ConversationMediaKind.all && kind != itemKind)) {
+          return;
+        }
+        final key = '${itemKind.name}:$url:${message.id}';
+        if (!seen.add(key)) {
+          return;
+        }
+        final item = ConversationMediaItem(
+          conversation: resolvedConversation,
+          message: message,
+          kind: itemKind,
+          url: url,
+          title: title,
+        );
+        if (text.isNotEmpty && !item.searchableText.contains(text)) {
+          return;
+        }
+        items.add(item);
+      }
+
+      add(ConversationMediaKind.image, message.imageUrl);
+      add(
+        ConversationMediaKind.voice,
+        message.voiceUrl,
+        title: message.voiceDuration > 0 ? '${message.voiceDuration}s' : '',
+      );
+      add(ConversationMediaKind.file, message.fileUrl, title: message.fileName);
+      for (final link in extractLinks(message.body)) {
+        if (looksLikeImagePath(link)) {
+          add(ConversationMediaKind.image, link);
+        } else if (looksLikeVoicePath(link)) {
+          add(ConversationMediaKind.voice, link);
+        } else if (looksLikeFileLink(link)) {
+          add(ConversationMediaKind.file, link);
+        }
+      }
+    }
+    return items;
+  }
+
   Future<void> saveMessages(
     Conversation conversation,
     List<ChatMessage> messages,
@@ -352,10 +452,10 @@ class CsacLocalCache {
     final statement = db.prepare('''
       INSERT INTO messages (
         conversation_type, conversation_id, id, sender_id, sender, body, time,
-        image_url, voice_url, voice_duration, can_recall, is_recalled,
-        is_essence, is_mentioned, reply_to
+        image_url, voice_url, voice_duration, file_url, file_name, can_recall,
+        is_recalled, is_essence, is_mentioned, reply_to
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(conversation_type, conversation_id, id) DO UPDATE SET
         sender_id = excluded.sender_id,
         sender = excluded.sender,
@@ -364,6 +464,8 @@ class CsacLocalCache {
         image_url = excluded.image_url,
         voice_url = excluded.voice_url,
         voice_duration = excluded.voice_duration,
+        file_url = excluded.file_url,
+        file_name = excluded.file_name,
         can_recall = excluded.can_recall,
         is_recalled = excluded.is_recalled,
         is_essence = excluded.is_essence,
@@ -389,6 +491,8 @@ class CsacLocalCache {
           message.imageUrl,
           message.voiceUrl,
           message.voiceDuration,
+          message.fileUrl,
+          message.fileName,
           message.canRecall ? 1 : 0,
           message.isRecalled ? 1 : 0,
           message.isEssence ? 1 : 0,
@@ -543,6 +647,8 @@ class CsacLocalCache {
         image_url TEXT NOT NULL DEFAULT '',
         voice_url TEXT NOT NULL DEFAULT '',
         voice_duration INTEGER NOT NULL DEFAULT 0,
+        file_url TEXT NOT NULL DEFAULT '',
+        file_name TEXT NOT NULL DEFAULT '',
         can_recall INTEGER NOT NULL DEFAULT 0,
         is_recalled INTEGER NOT NULL DEFAULT 0,
         is_essence INTEGER NOT NULL DEFAULT 0,
@@ -571,6 +677,13 @@ class CsacLocalCache {
       'messages',
       'voice_duration',
       'INTEGER NOT NULL DEFAULT 0',
+    );
+    _addColumnIfMissing(db, 'messages', 'file_url', "TEXT NOT NULL DEFAULT ''");
+    _addColumnIfMissing(
+      db,
+      'messages',
+      'file_name',
+      "TEXT NOT NULL DEFAULT ''",
     );
     _addColumnIfMissing(
       db,
@@ -619,6 +732,7 @@ class CsacLocalCache {
   ChatMessage _messageFromRow(Row row) {
     final imageUrl = row['image_url'] as String;
     final voiceUrl = row['voice_url'] as String;
+    final fileUrl = row['file_url'] as String;
     var body = row['body'] as String;
     if (imageUrl.isNotEmpty &&
         (body.startsWith('[image]') || looksLikeImagePath(body))) {
@@ -626,6 +740,9 @@ class CsacLocalCache {
     }
     if (voiceUrl.isNotEmpty && body.trim().isEmpty) {
       body = '[voice]';
+    }
+    if (fileUrl.isNotEmpty && body.trim().isEmpty) {
+      body = '[file]';
     }
     final time = readableTimestamp(row['time']);
     return ChatMessage(
@@ -637,6 +754,8 @@ class CsacLocalCache {
       imageUrl: imageUrl,
       voiceUrl: voiceUrl,
       voiceDuration: row['voice_duration'] as int,
+      fileUrl: fileUrl,
+      fileName: row['file_name'] as String,
       canRecall: (row['can_recall'] as int) != 0,
       isRecalled: (row['is_recalled'] as int) != 0,
       isEssence: (row['is_essence'] as int) != 0,

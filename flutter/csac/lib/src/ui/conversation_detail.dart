@@ -568,6 +568,17 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     );
   }
 
+  Future<void> openMediaCenter() {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ConversationMediaScreen(
+          state: widget.state,
+          conversation: widget.conversation,
+        ),
+      ),
+    );
+  }
+
   Widget infoRow(IconData icon, String title, String value) {
     if (value.trim().isEmpty) {
       return const SizedBox.shrink();
@@ -687,6 +698,12 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               label: Text(strings.text('Leave group')),
             ),
           ],
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: openMediaCenter,
+            icon: const Icon(Icons.perm_media_outlined),
+            label: Text(strings.text('Media and files')),
+          ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () => openReportGroup(profile),

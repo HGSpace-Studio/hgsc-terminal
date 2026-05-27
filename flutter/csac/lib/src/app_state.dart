@@ -336,12 +336,12 @@ class CsacAppState extends ChangeNotifier {
   Future<void> refreshNotificationCounts() async {
     try {
       final baseCounts = await client.notificationCounts();
-      var mentionCount = baseCounts.mentions;
+      var mentionCount = 0;
       var friendChangeCount = baseCounts.friendChanges;
-      if (mentionCount == 0) {
-        try {
-          mentionCount = (await client.mentionNotices()).unreadCount;
-        } catch (_) {}
+      try {
+        mentionCount = (await loadVisibleMentionNotices()).unreadCount;
+      } catch (_) {
+        mentionCount = notificationCounts.mentions;
       }
       if (friendChangeCount == 0) {
         try {
@@ -515,6 +515,14 @@ class CsacAppState extends ChangeNotifier {
     SearchScope scope,
   ) {
     return cache.searchMessages(query, scope);
+  }
+
+  Future<List<ConversationMediaItem>> loadConversationMedia(
+    Conversation conversation, {
+    ConversationMediaKind kind = ConversationMediaKind.all,
+    String query = '',
+  }) {
+    return cache.loadConversationMedia(conversation, kind: kind, query: query);
   }
 
   Future<List<GroupMember>> loadGroupMembers(int roomId) {

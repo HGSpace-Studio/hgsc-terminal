@@ -200,6 +200,23 @@ void showImagePreview(BuildContext context, String url) {
 }
 
 Future<void> downloadImage(BuildContext context, String url) async {
+  await downloadUrl(
+    context,
+    url,
+    suggestedName:
+        'csac_${DateTime.now().millisecondsSinceEpoch}${normalizedImageExtension(Uri.parse(url).path)}',
+    typeLabel: context.strings.text('Images'),
+    extensions: imageExtensions,
+  );
+}
+
+Future<void> downloadUrl(
+  BuildContext context,
+  String url, {
+  String suggestedName = '',
+  String typeLabel = '',
+  List<String> extensions = const <String>[],
+}) async {
   final strings = context.strings;
   try {
     final response = await http.get(Uri.parse(url));
@@ -207,13 +224,17 @@ Future<void> downloadImage(BuildContext context, String url) async {
       throw Exception('HTTP ${response.statusCode}');
     }
     final uri = Uri.parse(url);
-    final ext = normalizedImageExtension(uri.path);
-    final fileName = 'csac_${DateTime.now().millisecondsSinceEpoch}$ext';
+    final fallbackExt = extensions.isEmpty
+        ? p.extension(uri.path)
+        : '.${extensions.first}';
+    final fileName = suggestedName.trim().isEmpty
+        ? defaultDownloadName(url, fallbackExtension: fallbackExt)
+        : suggestedName.trim();
     final location = await getSaveLocation(
       suggestedName: fileName,
-      acceptedTypeGroups: <XTypeGroup>[
-        XTypeGroup(label: strings.text('Images'), extensions: imageExtensions),
-      ],
+      acceptedTypeGroups: extensions.isEmpty
+          ? const <XTypeGroup>[]
+          : <XTypeGroup>[XTypeGroup(label: typeLabel, extensions: extensions)],
     );
     if (location == null) {
       return;
@@ -221,14 +242,17 @@ Future<void> downloadImage(BuildContext context, String url) async {
     var path = location.path;
     if (p.extension(path).isEmpty) {
       final activeExt = location.activeFilter?.extensions?.firstOrNull;
-      path = '$path.${activeExt ?? ext.replaceFirst('.', '')}';
+      final ext = activeExt ?? fallbackExt.replaceFirst('.', '');
+      if (ext.isNotEmpty) {
+        path = '$path.$ext';
+      }
     }
-    final imageFile = XFile.fromData(
+    final file = XFile.fromData(
       response.bodyBytes,
       name: p.basename(path),
       mimeType: mimeTypeForExtension(p.extension(path)),
     );
-    await imageFile.saveTo(path);
+    await file.saveTo(path);
     if (!context.mounted) {
       return;
     }
@@ -253,6 +277,17 @@ Future<void> downloadImage(BuildContext context, String url) async {
 
 const imageExtensions = <String>['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
 
+const voiceExtensions = <String>[
+  'mp3',
+  'm4a',
+  'aac',
+  'wav',
+  'ogg',
+  'webm',
+  'amr',
+  'flac',
+];
+
 String normalizedImageExtension(String path) {
   final ext = p.extension(path).toLowerCase();
   if (ext.isEmpty) {
@@ -265,6 +300,15 @@ String normalizedImageExtension(String path) {
   return '.jpg';
 }
 
+String defaultDownloadName(String url, {String fallbackExtension = ''}) {
+  final fromUrl = fileNameFromUrl(url);
+  if (fromUrl.isNotEmpty && p.extension(fromUrl).isNotEmpty) {
+    return fromUrl;
+  }
+  final extension = fallbackExtension.isEmpty ? '.bin' : fallbackExtension;
+  return 'csac_${DateTime.now().millisecondsSinceEpoch}$extension';
+}
+
 String mimeTypeForExtension(String extension) {
   switch (extension.toLowerCase().replaceFirst('.', '')) {
     case 'png':
@@ -275,9 +319,36 @@ String mimeTypeForExtension(String extension) {
       return 'image/webp';
     case 'bmp':
       return 'image/bmp';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'aac':
+      return 'audio/aac';
+    case 'wav':
+      return 'audio/wav';
+    case 'ogg':
+      return 'audio/ogg';
+    case 'webm':
+      return 'audio/webm';
+    case 'amr':
+      return 'audio/amr';
+    case 'flac':
+      return 'audio/flac';
+    case 'pdf':
+      return 'application/pdf';
+    case 'zip':
+      return 'application/zip';
+    case 'json':
+      return 'application/json';
+    case 'txt':
+    case 'md':
+    case 'csv':
+      return 'text/plain';
     case 'jpg':
     case 'jpeg':
-    default:
       return 'image/jpeg';
+    default:
+      return 'application/octet-stream';
   }
 }

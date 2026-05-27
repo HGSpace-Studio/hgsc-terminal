@@ -27,6 +27,7 @@ part 'src/ui/user_profile.dart';
 part 'src/ui/conversation_detail.dart';
 part 'src/ui/chat.dart';
 part 'src/ui/media.dart';
+part 'src/ui/conversation_media.dart';
 part 'src/ui/helpers.dart';
 
 void main() {
