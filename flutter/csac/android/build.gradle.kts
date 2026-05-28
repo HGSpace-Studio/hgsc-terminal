@@ -1,11 +1,5 @@
 allprojects {
     repositories {
-        val disableAliyunMaven =
-            providers.gradleProperty("csacDisableAliyunMaven").orNull == "true"
-        if (!disableAliyunMaven) {
-            maven("https://maven.aliyun.com/repository/google")
-            maven("https://maven.aliyun.com/repository/public")
-        }
         google()
         mavenCentral()
     }
@@ -21,6 +15,7 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
+
 subprojects {
     project.evaluationDependsOn(":app")
 }
