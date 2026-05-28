@@ -56,7 +56,7 @@ class CsacAppState extends ChangeNotifier {
     } on CsacAuthException catch (err) {
       await client.clearSession();
       user = await cache.loadUser();
-      conversations = await cache.loadConversations();
+      conversations = _sortConversations(await cache.loadConversations());
       sessionExpired = true;
       offlineMode = user != null;
       error = user == null
@@ -66,7 +66,7 @@ class CsacAppState extends ChangeNotifier {
             ).text('Session expired. Cached history is available offline.');
     } catch (_) {
       user = await cache.loadUser();
-      conversations = await cache.loadConversations();
+      conversations = _sortConversations(await cache.loadConversations());
       offlineMode = user != null;
       sessionExpired = false;
       error = user == null
@@ -162,6 +162,29 @@ class CsacAppState extends ChangeNotifier {
 
   Future<void> updateLanguage(CsacLanguage language) async {
     preferences = preferences.copyWith(language: language);
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateConversationSortMode(ConversationSortMode mode) async {
+    preferences = preferences.copyWith(conversationSortMode: mode);
+    if (mode == ConversationSortMode.latest) {
+      await _hydrateConversationActivityFromCache();
+    } else {
+      conversations = _sortConversations(conversations);
+    }
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateMessageTimeFormat(MessageTimeFormat format) async {
+    preferences = preferences.copyWith(messageTimeFormat: format);
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateChatBackgroundPath(String path) async {
+    preferences = preferences.copyWith(chatBackgroundPath: path);
     await preferences.save();
     notifyListeners();
   }
@@ -279,7 +302,7 @@ class CsacAppState extends ChangeNotifier {
     try {
       await syncConversations();
     } catch (_) {
-      conversations = await cache.loadConversations();
+      conversations = _sortConversations(await cache.loadConversations());
       offlineMode = user != null;
       notifyListeners();
       rethrow;
@@ -287,22 +310,90 @@ class CsacAppState extends ChangeNotifier {
   }
 
   Future<void> loadCachedConversations() async {
-    conversations = await cache.loadConversations();
+    conversations = _sortConversations(await cache.loadConversations());
     notifyListeners();
   }
 
   Future<void> syncConversations() async {
     final loaded = await client.conversations();
-    final normalized = <Conversation>[
-      for (final conversation in loaded)
-        isActiveConversation(conversation)
-            ? conversation.copyWith(unreadCount: 0)
-            : conversation,
-    ];
+    final cachedActivity = await cache.loadConversationActivity();
+    final normalized = _sortConversations(<Conversation>[
+      for (final entry in loaded.indexed)
+        () {
+          final conversation = entry.$2.copyWith(displayOrder: entry.$1);
+          final cached =
+              cachedActivity['${conversation.type.name}:${conversation.id}'] ??
+              0;
+          return _normalizeConversation(
+            conversation.copyWith(
+              lastMessageAt: conversation.lastMessageAt >= cached
+                  ? conversation.lastMessageAt
+                  : cached,
+            ),
+          );
+        }(),
+    ]);
     conversations = normalized;
     await cache.saveConversations(normalized);
     offlineMode = false;
     notifyListeners();
+  }
+
+  Conversation _normalizeConversation(Conversation conversation) {
+    return isActiveConversation(conversation)
+        ? conversation.copyWith(unreadCount: 0)
+        : conversation;
+  }
+
+  List<Conversation> _sortConversations(List<Conversation> input) {
+    final sorted = input.toList();
+    switch (preferences.conversationSortMode) {
+      case ConversationSortMode.latest:
+        sorted.sort((a, b) {
+          final byTime = b.latestSortValue.compareTo(a.latestSortValue);
+          if (byTime != 0) {
+            return byTime;
+          }
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+        break;
+      case ConversationSortMode.type:
+        sorted.sort((a, b) {
+          final byType = a.type.index.compareTo(b.type.index);
+          if (byType != 0) {
+            return byType;
+          }
+          final byOrder = a.displayOrder.compareTo(b.displayOrder);
+          if (byOrder != 0) {
+            return byOrder;
+          }
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+        break;
+    }
+    return sorted;
+  }
+
+  Future<void> _hydrateConversationActivityFromCache() async {
+    final activity = await cache.loadConversationActivity();
+    conversations = _sortConversations([
+      for (final conversation in conversations)
+        _withCachedActivity(conversation, activity),
+    ]);
+    await cache.saveConversations(conversations);
+  }
+
+  Conversation _withCachedActivity(
+    Conversation conversation,
+    Map<String, int> activity,
+  ) {
+    final cached =
+        activity['${conversation.type.name}:${conversation.id}'] ?? 0;
+    return conversation.copyWith(
+      lastMessageAt: conversation.lastMessageAt >= cached
+          ? conversation.lastMessageAt
+          : cached,
+    );
   }
 
   Future<void> refreshHome() async {
@@ -320,7 +411,7 @@ class CsacAppState extends ChangeNotifier {
             ? item.copyWith(unreadCount: 0)
             : item,
     ];
-    conversations = updated;
+    conversations = _sortConversations(updated);
     await cache.saveConversations(updated);
     notifyListeners();
     if (!syncServer) {
@@ -686,6 +777,7 @@ class CsacAppState extends ChangeNotifier {
         : await cache.latestMessageId(conversation);
     final loaded = await client.messages(conversation, afterId: baseline);
     await cache.saveMessages(conversation, loaded);
+    await _applyConversationActivity(conversation, loaded);
     return cache.filterLocallyDeletedMessages(conversation, loaded);
   }
 
@@ -694,6 +786,7 @@ class CsacAppState extends ChangeNotifier {
   ) async {
     final loaded = await client.messages(conversation);
     await cache.replaceMessages(conversation, loaded);
+    await _applyConversationActivity(conversation, loaded, replace: true);
     return cache.filterLocallyDeletedMessages(conversation, loaded);
   }
 
@@ -741,5 +834,48 @@ class CsacAppState extends ChangeNotifier {
       offlineMode = false;
       notifyListeners();
     }
+  }
+
+  Future<void> _applyConversationActivity(
+    Conversation conversation,
+    List<ChatMessage> messages, {
+    bool replace = false,
+  }) async {
+    if (messages.isEmpty && !replace) {
+      return;
+    }
+    var latest = 0;
+    for (final message in messages) {
+      final candidate = message.timeSortValue > 0
+          ? message.timeSortValue
+          : timestampForSort(message.time);
+      if (candidate > latest) {
+        latest = candidate;
+      }
+    }
+    var changed = false;
+    final updated = <Conversation>[
+      for (final item in conversations)
+        if (item.type == conversation.type && item.id == conversation.id)
+          () {
+            final nextTime = replace
+                ? latest
+                : latest > item.lastMessageAt
+                ? latest
+                : item.lastMessageAt;
+            if (nextTime != item.lastMessageAt) {
+              changed = true;
+            }
+            return item.copyWith(lastMessageAt: nextTime);
+          }()
+        else
+          item,
+    ];
+    if (!changed) {
+      return;
+    }
+    conversations = _sortConversations(updated);
+    await cache.saveConversations(conversations);
+    notifyListeners();
   }
 }

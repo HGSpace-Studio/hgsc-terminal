@@ -301,6 +301,7 @@ class _ConversationMediaScreenState extends State<ConversationMediaScreen> {
                             itemCount: items.length,
                             itemBuilder: (context, index) => _MediaListTile(
                               item: items[index],
+                              preferences: widget.state.preferences,
                               onOpen: () => openItem(items[index]),
                               onMore: () => showActions(items[index]),
                             ),
@@ -321,6 +322,7 @@ class _ConversationMediaScreenState extends State<ConversationMediaScreen> {
                           itemCount: items.length,
                           itemBuilder: (context, index) => _MediaGridTile(
                             item: items[index],
+                            preferences: widget.state.preferences,
                             onOpen: () => openItem(items[index]),
                             onMore: () => showActions(items[index]),
                           ),
@@ -362,16 +364,19 @@ class _MediaKindChip extends StatelessWidget {
 class _MediaListTile extends StatelessWidget {
   const _MediaListTile({
     required this.item,
+    required this.preferences,
     required this.onOpen,
     required this.onMore,
   });
 
   final ConversationMediaItem item;
+  final CsacPreferences preferences;
   final VoidCallback onOpen;
   final VoidCallback onMore;
 
   @override
   Widget build(BuildContext context) {
+    final time = displayMessageTime(item.message, preferences);
     return Card(
       elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 5),
@@ -386,7 +391,7 @@ class _MediaListTile extends StatelessWidget {
           subtitle: Text(
             [
               item.message.sender,
-              if (item.message.time.isNotEmpty) item.message.time,
+              if (time.isNotEmpty) time,
               if (item.message.body.isNotEmpty &&
                   !item.message.body.startsWith('['))
                 compactMessage(item.message.body),
@@ -409,17 +414,20 @@ class _MediaListTile extends StatelessWidget {
 class _MediaGridTile extends StatelessWidget {
   const _MediaGridTile({
     required this.item,
+    required this.preferences,
     required this.onOpen,
     required this.onMore,
   });
 
   final ConversationMediaItem item;
+  final CsacPreferences preferences;
   final VoidCallback onOpen;
   final VoidCallback onMore;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final time = displayMessageTime(item.message, preferences);
     return Card(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
@@ -451,9 +459,9 @@ class _MediaGridTile extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          item.message.time.isEmpty
+                          time.isEmpty
                               ? item.message.sender
-                              : '${item.message.sender} | ${item.message.time}',
+                              : '${item.message.sender} | $time',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodySmall

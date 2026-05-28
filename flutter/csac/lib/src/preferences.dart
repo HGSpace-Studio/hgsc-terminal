@@ -7,6 +7,10 @@ import 'models.dart';
 
 enum CsacLanguage { en, zh }
 
+enum ConversationSortMode { latest, type }
+
+enum MessageTimeFormat { slash, dash, compact, timeOnly }
+
 const defaultThemeColorValue = 0xff1f8a70;
 
 class CsacPreferences {
@@ -14,29 +18,44 @@ class CsacPreferences {
     this.themeMode = ThemeMode.system,
     this.themeColorValue = defaultThemeColorValue,
     this.language = CsacLanguage.zh,
+    this.conversationSortMode = ConversationSortMode.latest,
+    this.messageTimeFormat = MessageTimeFormat.slash,
+    this.chatBackgroundPath = '',
     this.serverUrl = '',
   });
 
   static const _themeKey = 'csac.theme_mode';
   static const _themeColorKey = 'csac.theme_color';
   static const _languageKey = 'csac.language';
+  static const _conversationSortModeKey = 'csac.conversation_sort_mode';
+  static const _messageTimeFormatKey = 'csac.message_time_format';
+  static const _chatBackgroundPathKey = 'csac.chat_background_path';
   static const _serverUrlKey = 'csac.server_url';
 
   final ThemeMode themeMode;
   final int themeColorValue;
   final CsacLanguage language;
+  final ConversationSortMode conversationSortMode;
+  final MessageTimeFormat messageTimeFormat;
+  final String chatBackgroundPath;
   final String serverUrl;
 
   CsacPreferences copyWith({
     ThemeMode? themeMode,
     int? themeColorValue,
     CsacLanguage? language,
+    ConversationSortMode? conversationSortMode,
+    MessageTimeFormat? messageTimeFormat,
+    String? chatBackgroundPath,
     String? serverUrl,
   }) {
     return CsacPreferences(
       themeMode: themeMode ?? this.themeMode,
       themeColorValue: themeColorValue ?? this.themeColorValue,
       language: language ?? this.language,
+      conversationSortMode: conversationSortMode ?? this.conversationSortMode,
+      messageTimeFormat: messageTimeFormat ?? this.messageTimeFormat,
+      chatBackgroundPath: chatBackgroundPath ?? this.chatBackgroundPath,
       serverUrl: serverUrl ?? this.serverUrl,
     );
   }
@@ -47,6 +66,13 @@ class CsacPreferences {
       themeMode: _themeModeFromName(prefs.getString(_themeKey)),
       themeColorValue: _themeColorFromPrefs(prefs),
       language: _languageFromName(prefs.getString(_languageKey)),
+      conversationSortMode: _conversationSortModeFromName(
+        prefs.getString(_conversationSortModeKey),
+      ),
+      messageTimeFormat: _messageTimeFormatFromName(
+        prefs.getString(_messageTimeFormatKey),
+      ),
+      chatBackgroundPath: prefs.getString(_chatBackgroundPathKey) ?? '',
       serverUrl: (prefs.getString(_serverUrlKey) ?? '').trim(),
     );
   }
@@ -56,6 +82,13 @@ class CsacPreferences {
     await prefs.setString(_themeKey, themeMode.name);
     await prefs.setInt(_themeColorKey, themeColorValue);
     await prefs.setString(_languageKey, language.name);
+    await prefs.setString(_conversationSortModeKey, conversationSortMode.name);
+    await prefs.setString(_messageTimeFormatKey, messageTimeFormat.name);
+    if (chatBackgroundPath.trim().isEmpty) {
+      await prefs.remove(_chatBackgroundPathKey);
+    } else {
+      await prefs.setString(_chatBackgroundPathKey, chatBackgroundPath.trim());
+    }
     if (serverUrl.trim().isEmpty) {
       await prefs.remove(_serverUrlKey);
     } else {
@@ -87,6 +120,24 @@ class CsacPreferences {
       }
     }
     return CsacLanguage.zh;
+  }
+
+  static ConversationSortMode _conversationSortModeFromName(String? value) {
+    for (final mode in ConversationSortMode.values) {
+      if (mode.name == value) {
+        return mode;
+      }
+    }
+    return ConversationSortMode.latest;
+  }
+
+  static MessageTimeFormat _messageTimeFormatFromName(String? value) {
+    for (final format in MessageTimeFormat.values) {
+      if (format.name == value) {
+        return format;
+      }
+    }
+    return MessageTimeFormat.slash;
   }
 }
 

@@ -187,59 +187,82 @@ class _MentionNoticesPageState extends State<MentionNoticesPage> {
             _EmptyPanel(message: strings.text('No mentions or replies.'))
           else
             for (final notice in bundle.items)
-              Card(
-                elevation: 0,
-                margin: const EdgeInsets.symmetric(vertical: 5),
-                child: _RoundedInkClip(
-                  child: ListTile(
-                    onTap: () => openMention(notice),
-                    leading: Icon(
-                      notice.isReply
-                          ? Icons.reply_outlined
-                          : Icons.alternate_email,
-                    ),
-                    title: Text(
-                      notice.displayTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: notice.isRead
-                            ? FontWeight.w500
-                            : FontWeight.w800,
-                      ),
-                    ),
-                    subtitle: Text(
-                      [
-                        notice.conversation.name,
-                        if (notice.message.sender.isNotEmpty)
-                          notice.message.sender,
-                        if (notice.message.time.isNotEmpty) notice.message.time,
-                        notice.message.body.replaceAll('\n', ' '),
-                      ].where((part) => part.trim().isNotEmpty).join(' | '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: Wrap(
-                      spacing: 4,
-                      children: [
-                        if (!notice.isRead)
-                          IconButton(
-                            tooltip: strings.text('Mark read'),
-                            onPressed: () => markRead(notice),
-                            icon: const Icon(Icons.done),
-                          ),
-                        IconButton(
-                          tooltip: strings.text('Clear'),
-                          onPressed: () => clearNotice(notice),
-                          icon: const Icon(Icons.clear),
-                        ),
-                        const Icon(Icons.chevron_right),
-                      ],
-                    ),
-                  ),
-                ),
+              _MentionNoticeTile(
+                notice: notice,
+                preferences: widget.state.preferences,
+                onTap: () => openMention(notice),
+                onMarkRead: () => markRead(notice),
+                onClear: () => clearNotice(notice),
               ),
         ],
+      ),
+    );
+  }
+}
+
+class _MentionNoticeTile extends StatelessWidget {
+  const _MentionNoticeTile({
+    required this.notice,
+    required this.preferences,
+    required this.onTap,
+    required this.onMarkRead,
+    required this.onClear,
+  });
+
+  final MentionNotice notice;
+  final CsacPreferences preferences;
+  final VoidCallback onTap;
+  final VoidCallback onMarkRead;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final time = displayMessageTime(notice.message, preferences);
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      child: _RoundedInkClip(
+        child: ListTile(
+          onTap: onTap,
+          leading: Icon(
+            notice.isReply ? Icons.reply_outlined : Icons.alternate_email,
+          ),
+          title: Text(
+            notice.displayTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight: notice.isRead ? FontWeight.w500 : FontWeight.w800,
+            ),
+          ),
+          subtitle: Text(
+            [
+              notice.conversation.name,
+              if (notice.message.sender.isNotEmpty) notice.message.sender,
+              if (time.isNotEmpty) time,
+              notice.message.body.replaceAll('\n', ' '),
+            ].where((part) => part.trim().isNotEmpty).join(' | '),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Wrap(
+            spacing: 4,
+            children: [
+              if (!notice.isRead)
+                IconButton(
+                  tooltip: context.strings.text('Mark read'),
+                  onPressed: onMarkRead,
+                  icon: const Icon(Icons.done),
+                ),
+              IconButton(
+                tooltip: context.strings.text('Clear'),
+                onPressed: onClear,
+                icon: const Icon(Icons.clear),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
       ),
     );
   }

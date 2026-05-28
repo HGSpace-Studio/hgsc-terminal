@@ -588,6 +588,7 @@ class CsacApiClient {
           subtitle: friend.subtitle,
           unreadCount: friend.unreadCount,
           searchText: friend.searchText,
+          lastMessageAt: timestampForSort(friend.subtitle),
         ),
       for (final group in groupsList)
         Conversation(
@@ -598,6 +599,7 @@ class CsacApiClient {
           subtitle: group.subtitle,
           unreadCount: group.unreadCount,
           searchText: group.searchText,
+          lastMessageAt: timestampForSort(group.subtitle),
         ),
     ];
   }
@@ -745,6 +747,45 @@ class CsacApiClient {
     return _send(() => http.Request('GET', uri));
   }
 
+  Future<Uint8List> getBinary(String url, {String accept = '*/*'}) async {
+    final uri = Uri.parse(url);
+    http.Response response = await _sendOnce(_binaryRequest(uri, accept));
+    for (var attempt = 0; _looksLikeHtml(response); attempt++) {
+      final body = utf8.decode(response.bodyBytes, allowMalformed: true);
+      if (!_isChallenge(body)) {
+        break;
+      }
+      if (attempt >= 3) {
+        throw CsacApiException(
+          'Server returned JavaScript challenge while downloading media.',
+        );
+      }
+      final retryUri = _solveChallenge(response.request?.url ?? uri, body);
+      response = await _sendOnce(_binaryRequest(retryUri, accept));
+    }
+    if (response.statusCode == 401) {
+      throw const CsacAuthException('Not logged in.');
+    }
+    if (response.statusCode == 403) {
+      throw const CsacApiException('Access forbidden.');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw CsacApiException('HTTP ${response.statusCode}');
+    }
+    if (_looksLikeHtml(response)) {
+      throw const CsacApiException(
+        'Media download returned HTML instead of a file.',
+      );
+    }
+    return response.bodyBytes;
+  }
+
+  http.Request _binaryRequest(Uri uri, String accept) {
+    final request = http.Request('GET', uri);
+    request.headers['Accept'] = accept;
+    return request;
+  }
+
   Future<Map<String, dynamic>> postForm(
     String route, [
     Map<String, String>? values,
@@ -861,6 +902,20 @@ class CsacApiClient {
     final response = await http.Response.fromStream(streamed);
     _storeCookies(response);
     return response;
+  }
+
+  bool _looksLikeHtml(http.Response response) {
+    final contentType = response.headers['content-type'] ?? '';
+    if (contentType.toLowerCase().contains('text/html')) {
+      return true;
+    }
+    final text = utf8
+        .decode(response.bodyBytes.take(256).toList(), allowMalformed: true)
+        .trimLeft()
+        .toLowerCase();
+    return text.startsWith('<!doctype html') ||
+        text.startsWith('<html') ||
+        text.startsWith('<script');
   }
 
   void _prepareHeaders(http.BaseRequest request) {

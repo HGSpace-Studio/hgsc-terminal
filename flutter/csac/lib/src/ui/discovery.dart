@@ -742,6 +742,7 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
                     final result = results[index];
                     return _SearchResultTile(
                       result: result,
+                      preferences: widget.state.preferences,
                       onTap: () => openResult(result),
                     );
                   },
@@ -783,15 +784,21 @@ class _ScopeChip extends StatelessWidget {
 }
 
 class _SearchResultTile extends StatelessWidget {
-  const _SearchResultTile({required this.result, required this.onTap});
+  const _SearchResultTile({
+    required this.result,
+    required this.preferences,
+    required this.onTap,
+  });
 
   final MessageSearchResult result;
+  final CsacPreferences preferences;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final isGroup = result.conversation.type == ConversationType.group;
     final message = result.message;
+    final time = displayMessageTime(message, preferences);
     final colors = Theme.of(context).colorScheme;
     return Card(
       elevation: 0,
@@ -818,7 +825,7 @@ class _SearchResultTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${message.sender}${message.time.isEmpty ? '' : ' · ${message.time}'}',
+              '${message.sender}${time.isEmpty ? '' : ' · $time'}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

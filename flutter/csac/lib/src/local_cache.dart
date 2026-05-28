@@ -88,7 +88,8 @@ class CsacLocalCache {
   Future<List<Conversation>> loadConversations() async {
     final db = await _database();
     final rows = db.select('''
-      SELECT type, remote_id, name, avatar, subtitle, unread_count, search_text
+      SELECT type, remote_id, name, avatar, subtitle, unread_count, search_text,
+        last_message_at, display_order
       FROM conversations
       ORDER BY display_order ASC, updated_at DESC, name COLLATE NOCASE ASC
       ''');
@@ -102,6 +103,8 @@ class CsacLocalCache {
           subtitle: row['subtitle'] as String,
           unreadCount: row['unread_count'] as int,
           searchText: row['search_text'] as String,
+          lastMessageAt: row['last_message_at'] as int,
+          displayOrder: row['display_order'] as int,
         ),
     ];
   }
@@ -110,7 +113,8 @@ class CsacLocalCache {
     final db = await _database();
     final rows = db.select(
       '''
-      SELECT type, remote_id, name, avatar, subtitle, unread_count, search_text
+      SELECT type, remote_id, name, avatar, subtitle, unread_count, search_text,
+        last_message_at, display_order
       FROM conversations
       WHERE type = ? AND remote_id = ?
       LIMIT 1
@@ -124,6 +128,26 @@ class CsacLocalCache {
     return _conversationFromRow(row);
   }
 
+  Future<Map<String, int>> loadConversationActivity() async {
+    final db = await _database();
+    final rows = db.select('''
+      SELECT conversation_type, conversation_id, time
+      FROM messages
+      ORDER BY conversation_type ASC, conversation_id ASC, id ASC
+      ''');
+    final activity = <String, int>{};
+    for (final row in rows) {
+      final type = row['conversation_type'] as String;
+      final id = row['conversation_id'] as int;
+      final key = '$type:$id';
+      final timestamp = timestampForSort(row['time']);
+      if (timestamp > (activity[key] ?? 0)) {
+        activity[key] = timestamp;
+      }
+    }
+    return activity;
+  }
+
   Future<void> saveConversations(List<Conversation> conversations) async {
     final db = await _database();
     final deleteStatement = db.prepare('''
@@ -133,15 +157,16 @@ class CsacLocalCache {
     final insertStatement = db.prepare('''
       INSERT INTO conversations (
         type, remote_id, name, avatar, subtitle, unread_count, search_text,
-        updated_at, display_order
+        last_message_at, updated_at, display_order
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(type, remote_id) DO UPDATE SET
         name = excluded.name,
         avatar = excluded.avatar,
         subtitle = excluded.subtitle,
         unread_count = excluded.unread_count,
         search_text = excluded.search_text,
+        last_message_at = excluded.last_message_at,
         updated_at = excluded.updated_at,
         display_order = excluded.display_order
       ''');
@@ -159,6 +184,7 @@ class CsacLocalCache {
           conversation.subtitle,
           conversation.unreadCount,
           conversation.searchText,
+          conversation.lastMessageAt,
           now,
           index,
         ]);
@@ -309,6 +335,8 @@ class CsacLocalCache {
         c.subtitle,
         c.unread_count,
         c.search_text,
+        c.last_message_at,
+        c.display_order,
         m.id,
         m.sender_id,
         m.sender,
@@ -360,6 +388,8 @@ class CsacLocalCache {
         c.subtitle,
         c.unread_count,
         c.search_text,
+        c.last_message_at,
+        c.display_order,
         m.id,
         m.sender_id,
         m.sender,
@@ -612,6 +642,7 @@ class CsacLocalCache {
         subtitle TEXT NOT NULL DEFAULT '',
         unread_count INTEGER NOT NULL DEFAULT 0,
         search_text TEXT NOT NULL DEFAULT '',
+        last_message_at INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL DEFAULT 0,
         display_order INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (type, remote_id)
@@ -634,6 +665,12 @@ class CsacLocalCache {
       'conversations',
       'search_text',
       "TEXT NOT NULL DEFAULT ''",
+    );
+    _addColumnIfMissing(
+      db,
+      'conversations',
+      'last_message_at',
+      'INTEGER NOT NULL DEFAULT 0',
     );
     db.execute('''
       CREATE TABLE IF NOT EXISTS messages (
@@ -726,6 +763,8 @@ class CsacLocalCache {
       subtitle: row['subtitle'] as String,
       unreadCount: row['unread_count'] as int,
       searchText: row['search_text'] as String,
+      lastMessageAt: row['last_message_at'] as int,
+      displayOrder: row['display_order'] as int,
     );
   }
 
@@ -751,6 +790,7 @@ class CsacLocalCache {
       sender: row['sender'] as String,
       body: body,
       time: time,
+      timeSortValue: timestampForSort(row['time']),
       imageUrl: imageUrl,
       voiceUrl: voiceUrl,
       voiceDuration: row['voice_duration'] as int,

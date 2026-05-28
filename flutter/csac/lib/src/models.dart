@@ -4,6 +4,8 @@ enum SearchScope { all, private, group, image, essence }
 
 enum ConversationMediaKind { all, image, voice, file }
 
+enum CsacTimestampPattern { slash, dash, compact, timeOnly }
+
 class CsacUser {
   const CsacUser({
     required this.uid,
@@ -166,6 +168,8 @@ class Conversation {
     this.subtitle = '',
     this.unreadCount = 0,
     this.searchText = '',
+    this.lastMessageAt = 0,
+    this.displayOrder = 0,
   });
 
   final ConversationType type;
@@ -175,6 +179,8 @@ class Conversation {
   final String subtitle;
   final int unreadCount;
   final String searchText;
+  final int lastMessageAt;
+  final int displayOrder;
 
   Conversation copyWith({
     ConversationType? type,
@@ -184,6 +190,8 @@ class Conversation {
     String? subtitle,
     int? unreadCount,
     String? searchText,
+    int? lastMessageAt,
+    int? displayOrder,
   }) {
     return Conversation(
       type: type ?? this.type,
@@ -193,8 +201,12 @@ class Conversation {
       subtitle: subtitle ?? this.subtitle,
       unreadCount: unreadCount ?? this.unreadCount,
       searchText: searchText ?? this.searchText,
+      lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+      displayOrder: displayOrder ?? this.displayOrder,
     );
   }
+
+  int get latestSortValue => lastMessageAt > 0 ? lastMessageAt : -displayOrder;
 }
 
 class UserProfile {
@@ -401,6 +413,7 @@ class ChatMessage {
     required this.sender,
     required this.body,
     this.time = '',
+    this.timeSortValue = 0,
     this.imageUrl = '',
     this.voiceUrl = '',
     this.voiceDuration = 0,
@@ -418,6 +431,7 @@ class ChatMessage {
   final String sender;
   final String body;
   final String time;
+  final int timeSortValue;
   final String imageUrl;
   final String voiceUrl;
   final int voiceDuration;
@@ -435,6 +449,7 @@ class ChatMessage {
     String? sender,
     String? body,
     String? time,
+    int? timeSortValue,
     String? imageUrl,
     String? voiceUrl,
     int? voiceDuration,
@@ -452,6 +467,7 @@ class ChatMessage {
       sender: sender ?? this.sender,
       body: body ?? this.body,
       time: time ?? this.time,
+      timeSortValue: timeSortValue ?? this.timeSortValue,
       imageUrl: imageUrl ?? this.imageUrl,
       voiceUrl: voiceUrl ?? this.voiceUrl,
       voiceDuration: voiceDuration ?? this.voiceDuration,
@@ -528,6 +544,12 @@ class ChatMessage {
         body = '[empty]';
       }
     }
+    final rawTime = firstTimestampValue(json, const [
+      'add_time',
+      'created_at',
+      'create_time',
+      'time',
+    ]);
     return ChatMessage(
       id: id,
       senderId: senderId,
@@ -535,12 +557,8 @@ class ChatMessage {
           ? 'UID $senderId'
           : firstString(json, const ['nickname', 'sender_name']),
       body: body,
-      time: firstReadableTime(json, const [
-        'add_time',
-        'created_at',
-        'create_time',
-        'time',
-      ]),
+      time: readableTimestamp(rawTime),
+      timeSortValue: timestampForSort(rawTime),
       imageUrl: image,
       voiceUrl: voice,
       voiceDuration: duration,
@@ -1225,14 +1243,60 @@ ConversationType _noticeConversationType(Map<String, dynamic> json) {
 }
 
 String firstReadableTime(Map<String, dynamic> json, List<String> keys) {
+  return readableTimestamp(firstTimestampValue(json, keys));
+}
+
+Object? firstTimestampValue(Map<String, dynamic> json, List<String> keys) {
   for (final key in keys) {
     final value = json[key];
     final normalized = readableTimestamp(value);
     if (normalized.isNotEmpty) {
-      return normalized;
+      return value;
     }
   }
-  return '';
+  return null;
+}
+
+int timestampForSort(Object? value) {
+  if (value == null) {
+    return 0;
+  }
+  if (value is num) {
+    if (value == 0) {
+      return 0;
+    }
+    return _dateTimeFromUnix(value.toInt()).millisecondsSinceEpoch;
+  }
+  final text = asString(value).trim();
+  if (text.isEmpty || text == '0') {
+    return 0;
+  }
+  final numeric = int.tryParse(text);
+  if (numeric != null) {
+    return _dateTimeFromUnix(numeric).millisecondsSinceEpoch;
+  }
+  var best = 0;
+  for (final match in RegExp(
+    r'\d{4}-\d{1,2}-\d{1,2}[ T]\d{1,2}:\d{1,2}(?::\d{1,2})?',
+  ).allMatches(text)) {
+    final raw = text.substring(match.start, match.end);
+    final normalized = raw.contains(RegExp(r':\d{1,2}$')) ? raw : '$raw:00';
+    final parsed = DateTime.tryParse(normalized.replaceFirst(' ', 'T'));
+    if (parsed != null) {
+      final candidate = parsed.toLocal().millisecondsSinceEpoch;
+      if (candidate > best) {
+        best = candidate;
+      }
+    }
+  }
+  final parsed = DateTime.tryParse(text);
+  if (parsed != null) {
+    final candidate = parsed.toLocal().millisecondsSinceEpoch;
+    if (candidate > best) {
+      best = candidate;
+    }
+  }
+  return best;
 }
 
 String readableTimestamp(Object? value) {
@@ -1260,15 +1324,54 @@ String readableTimestamp(Object? value) {
   return text;
 }
 
+DateTime? parseCsacTimestamp(Object? value) {
+  final millis = timestampForSort(value);
+  if (millis <= 0) {
+    return null;
+  }
+  return DateTime.fromMillisecondsSinceEpoch(millis).toLocal();
+}
+
+String formatCsacTimestamp(
+  Object? value, {
+  CsacTimestampPattern pattern = CsacTimestampPattern.slash,
+}) {
+  final parsed = parseCsacTimestamp(value);
+  if (parsed == null) {
+    return readableTimestamp(value);
+  }
+  switch (pattern) {
+    case CsacTimestampPattern.slash:
+      return formatLocalDateTime(parsed, separator: '/');
+    case CsacTimestampPattern.dash:
+      return formatLocalDateTime(parsed, separator: '-');
+    case CsacTimestampPattern.compact:
+      return formatCompactLocalDateTime(parsed);
+    case CsacTimestampPattern.timeOnly:
+      return formatLocalTime(parsed);
+  }
+}
+
 DateTime _dateTimeFromUnix(int value) {
   final milliseconds = value.abs() >= 1000000000000 ? value : value * 1000;
   return DateTime.fromMillisecondsSinceEpoch(milliseconds).toLocal();
 }
 
-String formatLocalDateTime(DateTime value) {
+String formatLocalDateTime(DateTime value, {String separator = '-'}) {
   String two(int number) => number.toString().padLeft(2, '0');
-  return '${value.year}-${two(value.month)}-${two(value.day)} '
+  return '${value.year}$separator${two(value.month)}$separator${two(value.day)} '
       '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
+}
+
+String formatCompactLocalDateTime(DateTime value) {
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(value.month)}/${two(value.day)} '
+      '${two(value.hour)}:${two(value.minute)}';
+}
+
+String formatLocalTime(DateTime value) {
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
 }
 
 String _apiAssetBaseUrl = 'https://cschat.ccccocccc.cc';

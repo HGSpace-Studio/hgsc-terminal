@@ -80,8 +80,10 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final input = TextEditingController();
+  final inputFocus = FocusNode();
   final scroll = ScrollController();
   final imagePicker = ImagePicker();
+  final voicePlayer = AudioPlayer();
   final itemKeys = <int, GlobalKey>{};
   final messages = <ChatMessage>[];
   final pendingSends = <_PendingSend>[];
@@ -89,16 +91,30 @@ class _ChatScreenState extends State<ChatScreen> {
   final selectedMessageIds = <int>{};
   Timer? timer;
   Timer? draftTimer;
+  StreamSubscription<PlayerState>? voicePlayerStateSub;
+  StreamSubscription<Duration?>? voiceDurationSub;
+  StreamSubscription<Duration>? voicePositionSub;
+  StreamSubscription<PlaybackEvent>? voicePlaybackEventSub;
   GroupProfile? groupProfile;
   ChatMessage? replyTarget;
+  int? playingVoiceMessageId;
+  final voiceCachePaths = <int, String>{};
+  PlayerState voicePlayerState = PlayerState(false, ProcessingState.idle);
+  Duration voiceDuration = Duration.zero;
+  Duration voicePosition = Duration.zero;
+  double voiceSpeed = 1;
+  int initialUnreadCount = 0;
   int nextPendingId = -1;
   int refreshTicks = 0;
   bool loading = true;
   bool refreshing = false;
   bool pickingImage = false;
   bool pickingVoice = false;
+  bool recordingVoice = false;
   bool applyingDraft = false;
+  bool mentionPickerOpening = false;
   bool offline = false;
+  bool nearBottom = true;
   String? error;
 
   bool get selectionMode => selectedMessageIds.isNotEmpty;
@@ -109,12 +125,27 @@ class _ChatScreenState extends State<ChatScreen> {
         .toList();
   }
 
+  int? get firstUnreadMessageId {
+    if (initialUnreadCount <= 0 || messages.isEmpty) {
+      return null;
+    }
+    final index = (messages.length - initialUnreadCount).clamp(
+      0,
+      messages.length - 1,
+    );
+    return messages[index].id;
+  }
+
   @override
   void initState() {
     super.initState();
     widget.state.setActiveConversation(widget.conversation);
+    initialUnreadCount = widget.conversation.unreadCount;
     widget.state.markConversationRead(widget.conversation);
     input.addListener(scheduleDraftSave);
+    input.addListener(handleMentionTrigger);
+    scroll.addListener(handleScroll);
+    bindVoicePlayer();
     loadDraft();
     loadGroupAnnouncement();
     loadInitial();
@@ -132,9 +163,72 @@ class _ChatScreenState extends State<ChatScreen> {
     if (widget.state.isActiveConversation(widget.conversation)) {
       widget.state.setActiveConversation(null);
     }
+    scroll.removeListener(handleScroll);
+    input.removeListener(scheduleDraftSave);
+    input.removeListener(handleMentionTrigger);
     input.dispose();
+    inputFocus.dispose();
     scroll.dispose();
+    voicePlayerStateSub?.cancel();
+    voiceDurationSub?.cancel();
+    voicePositionSub?.cancel();
+    voicePlaybackEventSub?.cancel();
+    unawaited(voicePlayer.dispose());
     super.dispose();
+  }
+
+  void bindVoicePlayer() {
+    voicePlayerStateSub = voicePlayer.playerStateStream.listen((state) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        voicePlayerState = state;
+        if (state.processingState == ProcessingState.completed) {
+          playingVoiceMessageId = null;
+          voicePosition = Duration.zero;
+        }
+      });
+    });
+    voiceDurationSub = voicePlayer.durationStream.listen((duration) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => voiceDuration = duration ?? Duration.zero);
+    });
+    voicePositionSub = voicePlayer.positionStream.listen((position) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => voicePosition = position);
+    });
+    voicePlaybackEventSub = voicePlayer.playbackEventStream.listen(
+      (_) {},
+      onError: (Object err, StackTrace stackTrace) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          playingVoiceMessageId = null;
+          voicePlayerState = PlayerState(false, ProcessingState.idle);
+          voicePosition = Duration.zero;
+          error = context.strings.format('Voice playback failed: {error}', {
+            'error': err,
+          });
+        });
+      },
+    );
+  }
+
+  void handleScroll() {
+    if (!scroll.hasClients) {
+      return;
+    }
+    final distance = scroll.position.maxScrollExtent - scroll.offset;
+    final next = distance < 96;
+    if (next != nearBottom && mounted) {
+      setState(() => nearBottom = next);
+    }
   }
 
   Future<void> loadDraft() async {
@@ -156,6 +250,35 @@ class _ChatScreenState extends State<ChatScreen> {
     draftTimer?.cancel();
     draftTimer = Timer(const Duration(milliseconds: 450), () {
       unawaited(ConversationDraftStore.save(widget.conversation, input.text));
+    });
+  }
+
+  void handleMentionTrigger() {
+    if (widget.conversation.type != ConversationType.group ||
+        mentionPickerOpening ||
+        applyingDraft) {
+      return;
+    }
+    final selection = input.selection;
+    if (!selection.isValid || !selection.isCollapsed || selection.start <= 0) {
+      return;
+    }
+    final text = input.text;
+    final cursor = selection.start;
+    if (cursor > text.length || text[cursor - 1] != '@') {
+      return;
+    }
+    final beforeAt = cursor == 1 ? ' ' : text[cursor - 2];
+    if (beforeAt.trim().isNotEmpty) {
+      return;
+    }
+    mentionPickerOpening = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await chooseMentionTargets();
+      } finally {
+        mentionPickerOpening = false;
+      }
     });
   }
 
@@ -473,6 +596,60 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> recordAndSendVoice() async {
+    if (recordingVoice) {
+      return;
+    }
+    setState(() => recordingVoice = true);
+    try {
+      final recorded = await showDialog<_RecordedVoice>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const _VoiceRecorderDialog(),
+      );
+      if (!mounted || recorded == null) {
+        return;
+      }
+      final file = File(recorded.path);
+      if (!await file.exists()) {
+        if (mounted) {
+          setState(
+            () => error = context.strings.text('Recording file missing.'),
+          );
+        }
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      final pending = _PendingSend(
+        localId: nextPendingId--,
+        text: '',
+        voiceBytes: bytes,
+        voiceName: p.basename(recorded.path),
+        voiceDuration: recorded.durationSeconds,
+        replyTo: replyTarget?.id ?? 0,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        pendingSends.add(pending);
+        replyTarget = null;
+        mentionTargets.clear();
+        error = null;
+      });
+      scrollToEnd();
+      unawaited(performPendingSend(pending.localId));
+    } catch (err) {
+      if (mounted) {
+        setState(() => error = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => recordingVoice = false);
+      }
+    }
+  }
+
   Future<int?> askVoiceDuration(String fileName) async {
     final controller = TextEditingController(text: '0');
     final result = await showDialog<int>(
@@ -626,11 +803,37 @@ class _ChatScreenState extends State<ChatScreen> {
           ..clear()
           ..addAll(selected);
       });
+      replaceMentionTriggerWithSelection(selected);
+      inputFocus.requestFocus();
     } catch (err) {
       if (mounted) {
         setState(() => error = err.toString());
       }
     }
+  }
+
+  void replaceMentionTriggerWithSelection(List<GroupMember> selected) {
+    if (selected.isEmpty) {
+      return;
+    }
+    final selection = input.selection;
+    if (!selection.isValid || selection.start <= 0) {
+      return;
+    }
+    final cursor = selection.start;
+    final text = input.text;
+    if (cursor > text.length || text[cursor - 1] != '@') {
+      return;
+    }
+    final names = selected.map((member) => '@${member.name}').join(' ');
+    final replacement = '$names ';
+    final nextText = text.replaceRange(cursor - 1, cursor, replacement);
+    final nextOffset = cursor - 1 + replacement.length;
+    input.value = input.value.copyWith(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextOffset),
+      composing: TextRange.empty,
+    );
   }
 
   void replaceMessageLocally(ChatMessage replacement) {
@@ -709,10 +912,10 @@ class _ChatScreenState extends State<ChatScreen> {
         enterSelection(message);
         break;
       case _MessageAction.copyText:
+        final time = displayMessageTime(message, widget.state.preferences);
         Clipboard.setData(
           ClipboardData(
-            text:
-                '#${message.id} ${message.sender}\n${message.time}\n\n${message.body}',
+            text: '#${message.id} ${message.sender}\n$time\n\n${message.body}',
           ),
         );
         ScaffoldMessenger.of(context).showSnackBar(
@@ -769,6 +972,75 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> showComposeMenu() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: Text(context.strings.text('Image')),
+              onTap: () => Navigator.of(context).pop('image'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.mic),
+              title: Text(context.strings.text('Record voice')),
+              onTap: () => Navigator.of(context).pop('recordVoice'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.audio_file_outlined),
+              title: Text(context.strings.text('Choose audio file')),
+              onTap: () => Navigator.of(context).pop('voiceFile'),
+            ),
+            if (widget.conversation.type == ConversationType.group)
+              ListTile(
+                leading: const Icon(Icons.alternate_email),
+                title: Text(context.strings.text('Mention')),
+                onTap: () => Navigator.of(context).pop('mention'),
+              ),
+            if (widget.conversation.type == ConversationType.group)
+              ListTile(
+                leading: const Icon(Icons.star_outline),
+                title: Text(context.strings.text('Essence')),
+                onTap: () => Navigator.of(context).pop('essence'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.perm_media_outlined),
+              title: Text(context.strings.text('Media and files')),
+              onTap: () => Navigator.of(context).pop('media'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) {
+      return;
+    }
+    switch (action) {
+      case 'image':
+        await pickAndSendImage();
+        break;
+      case 'recordVoice':
+        await recordAndSendVoice();
+        break;
+      case 'voiceFile':
+        await pickAndSendVoice();
+        break;
+      case 'mention':
+        await chooseMentionTargets();
+        break;
+      case 'essence':
+        await openEssenceList();
+        break;
+      case 'media':
+        await openMediaCenter();
+        break;
+    }
   }
 
   void enterSelection(ChatMessage message) {
@@ -907,9 +1179,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String formatMessageForCopy(ChatMessage message) {
+    final time = displayMessageTime(message, widget.state.preferences);
     return [
       '#${message.id} ${message.sender}',
-      if (message.time.isNotEmpty) message.time,
+      if (time.isNotEmpty) time,
       if (message.body.trim().isNotEmpty) message.body.trim(),
       if (message.imageUrl.isNotEmpty) message.imageUrl,
       if (message.voiceUrl.isNotEmpty) message.voiceUrl,
@@ -927,6 +1200,137 @@ class _ChatScreenState extends State<ChatScreen> {
     ].join('\n');
   }
 
+  bool isVoicePlaying(ChatMessage message) {
+    return playingVoiceMessageId == message.id &&
+        voicePlayerState.playing &&
+        voicePlayerState.processingState != ProcessingState.completed;
+  }
+
+  Future<void> toggleVoicePlayback(ChatMessage message) async {
+    if (message.voiceUrl.isEmpty) {
+      return;
+    }
+    try {
+      if (playingVoiceMessageId == message.id) {
+        if (voicePlayerState.playing) {
+          await voicePlayer.pause();
+        } else {
+          await voicePlayer.setSpeed(voiceSpeed);
+          await voicePlayer.play();
+        }
+        return;
+      }
+      await voicePlayer.stop();
+      final voicePath = await cachedVoicePath(message);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        playingVoiceMessageId = message.id;
+        voiceDuration = message.voiceDuration > 0
+            ? Duration(seconds: message.voiceDuration)
+            : Duration.zero;
+        voicePosition = Duration.zero;
+        voicePlayerState = PlayerState(true, ProcessingState.loading);
+      });
+      final loadedDuration = await voicePlayer.setFilePath(voicePath);
+      await voicePlayer.setSpeed(voiceSpeed);
+      if (mounted && loadedDuration != null) {
+        setState(() => voiceDuration = loadedDuration);
+      }
+      await voicePlayer.play();
+    } catch (err) {
+      if (mounted) {
+        setState(() {
+          playingVoiceMessageId = null;
+          voicePlayerState = PlayerState(false, ProcessingState.idle);
+          voicePosition = Duration.zero;
+          error = context.strings.format('Voice playback failed: {error}', {
+            'error': err,
+          });
+        });
+      }
+    }
+  }
+
+  Future<String> cachedVoicePath(ChatMessage message) async {
+    final existing = voiceCachePaths[message.id];
+    if (existing != null &&
+        await File(existing).exists() &&
+        !await fileLooksLikeHtml(existing)) {
+      return existing;
+    }
+    final uri = Uri.parse(message.voiceUrl);
+    final extension = p.extension(uri.path).isEmpty
+        ? '.m4a'
+        : p.extension(uri.path);
+    final directory = await getTemporaryDirectory();
+    final path = p.join(directory.path, 'csac_voice_${message.id}$extension');
+    final file = File(path);
+    if (await file.exists() &&
+        await file.length() > 0 &&
+        !await fileLooksLikeHtml(file.path)) {
+      voiceCachePaths[message.id] = path;
+      return path;
+    }
+    final bytes = await widget.state.client.getBinary(
+      uri.toString(),
+      accept: 'audio/*, application/octet-stream, */*',
+    );
+    await file.writeAsBytes(bytes, flush: true);
+    voiceCachePaths[message.id] = path;
+    return path;
+  }
+
+  Future<bool> fileLooksLikeHtml(String path) async {
+    final file = File(path);
+    if (!await file.exists()) {
+      return false;
+    }
+    final stream = file.openRead(0, math.min(256, await file.length()));
+    final bytes = await stream.expand((chunk) => chunk).toList();
+    final text = String.fromCharCodes(bytes).trimLeft().toLowerCase();
+    return text.startsWith('<!doctype html') ||
+        text.startsWith('<html') ||
+        text.startsWith('<script');
+  }
+
+  Future<void> seekVoice(Duration position) async {
+    final duration = voiceDuration;
+    if (duration <= Duration.zero) {
+      return;
+    }
+    final clamped = position < Duration.zero
+        ? Duration.zero
+        : position > duration
+        ? duration
+        : position;
+    await voicePlayer.seek(clamped);
+    if (mounted) {
+      setState(() => voicePosition = clamped);
+    }
+  }
+
+  Future<void> cycleVoiceSpeed() async {
+    const speeds = <double>[1, 1.25, 1.5, 2];
+    final index = speeds.indexWhere(
+      (speed) => (speed - voiceSpeed).abs() < 0.01,
+    );
+    final nextSpeed = speeds[(index + 1) % speeds.length];
+    setState(() => voiceSpeed = nextSpeed);
+    await voicePlayer.setSpeed(nextSpeed);
+  }
+
+  Duration displayVoiceDuration(ChatMessage message) {
+    if (playingVoiceMessageId == message.id && voiceDuration > Duration.zero) {
+      return voiceDuration;
+    }
+    if (message.voiceDuration > 0) {
+      return Duration(seconds: message.voiceDuration);
+    }
+    return Duration.zero;
+  }
+
   void scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!scroll.hasClients) {
@@ -938,6 +1342,17 @@ class _ChatScreenState extends State<ChatScreen> {
         curve: Curves.easeOut,
       );
     });
+  }
+
+  void jumpToEnd() {
+    if (!scroll.hasClients) {
+      return;
+    }
+    scroll.animateTo(
+      scroll.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
+    );
   }
 
   void scrollAfterLoad() {
@@ -981,11 +1396,22 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void scrollToFirstUnread() {
+    final messageId = firstUnreadMessageId;
+    if (messageId == null) {
+      return;
+    }
+    scrollToMessage(messageId);
+    setState(() => initialUnreadCount = 0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
     final announcement = groupProfile?.notice.trim() ?? '';
     final showEmpty = !loading && messages.isEmpty && pendingSends.isEmpty;
+    final unreadMessageId = firstUnreadMessageId;
+    final backgroundPath = widget.state.preferences.chatBackgroundPath.trim();
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: !widget.embedded && !selectionMode,
@@ -1053,158 +1479,215 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ],
       ),
-      body: Column(
-        children: [
-          if (error != null)
-            MaterialBanner(
-              content: Text(error!),
-              actions: [
-                TextButton(
-                  onPressed: () => setState(() => error = null),
-                  child: Text(strings.text('Dismiss')),
-                ),
-              ],
-            ),
-          if (announcement.isNotEmpty)
-            _GroupAnnouncementBar(
-              announcement: announcement,
-              onTap: openConversationDetails,
-            ),
-          Expanded(
-            child: loading
-                ? const Center(child: CircularProgressIndicator())
-                : showEmpty
-                ? _EmptyPanel(message: strings.text('No messages.'))
-                : ListView.builder(
-                    controller: scroll,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: messages.length + pendingSends.length,
-                    itemBuilder: (context, index) {
-                      if (index >= messages.length) {
-                        final pending = pendingSends[index - messages.length];
-                        return _PendingMessageBubble(
-                          pending: pending,
-                          onRetry: () => retryPendingSend(pending.localId),
-                        );
-                      }
-                      final message = messages[index];
-                      final mine = widget.state.user?.uid == message.senderId;
-                      final selected = selectedMessageIds.contains(message.id);
-                      final replyMessage = messages
-                          .where((item) => item.id == message.replyTo)
-                          .cast<ChatMessage?>()
-                          .firstOrNull;
-                      return _MessageBubble(
-                        key: itemKeys.putIfAbsent(
-                          message.id,
-                          () => GlobalKey(),
-                        ),
-                        message: message,
-                        replyMessage: replyMessage,
-                        mine: mine,
-                        focused: widget.focusMessageId == message.id,
-                        selected: selected,
-                        selectionMode: selectionMode,
-                        onTap: selectionMode
-                            ? () => toggleMessageSelection(message)
-                            : null,
-                        onLongPress: selectionMode
-                            ? null
-                            : () => showMessageActions(message, mine),
-                        onReplyTap: message.replyTo > 0
-                            ? () => scrollToMessage(message.replyTo)
-                            : null,
-                        onImageTap: message.imageUrl.isEmpty
-                            ? null
-                            : () => showImagePreview(context, message.imageUrl),
-                        onVoiceTap: message.voiceUrl.isEmpty
-                            ? null
-                            : () => launchUrl(
-                                Uri.parse(message.voiceUrl),
-                                mode: LaunchMode.externalApplication,
-                              ),
-                      );
-                    },
-                  ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (replyTarget != null || mentionTargets.isNotEmpty)
-                    _ComposeTargetsBar(
-                      replyTarget: replyTarget,
-                      mentions: mentionTargets,
-                      onClearReply: () => setState(() => replyTarget = null),
-                      onClearMentions: () =>
-                          setState(() => mentionTargets.clear()),
-                    ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: input,
-                          minLines: 1,
-                          maxLines: 4,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => send(),
-                          decoration: InputDecoration(
-                            hintText: strings.text('Message'),
-                            border: const OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (widget.conversation.type == ConversationType.group)
-                        IconButton.filledTonal(
-                          tooltip: strings.text('Mention'),
-                          onPressed: chooseMentionTargets,
-                          icon: const Icon(Icons.alternate_email),
-                        ),
-                      if (widget.conversation.type == ConversationType.group)
-                        const SizedBox(width: 8),
-                      IconButton.filledTonal(
-                        tooltip: strings.text('Image'),
-                        onPressed: pickingImage ? null : pickAndSendImage,
-                        icon: pickingImage
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.image_outlined),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.filledTonal(
-                        tooltip: strings.text('Voice'),
-                        onPressed: pickingVoice ? null : pickAndSendVoice,
-                        icon: pickingVoice
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.mic_none),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: send,
-                        child: const Icon(Icons.send),
-                      ),
-                    ],
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: Column(
+          children: [
+            if (error != null)
+              MaterialBanner(
+                content: Text(error!),
+                actions: [
+                  TextButton(
+                    onPressed: () => setState(() => error = null),
+                    child: Text(strings.text('Dismiss')),
                   ),
                 ],
               ),
+            if (announcement.isNotEmpty)
+              _GroupAnnouncementBar(
+                announcement: announcement,
+                onTap: openConversationDetails,
+              ),
+            if (unreadMessageId != null)
+              Material(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                child: InkWell(
+                  onTap: scrollToFirstUnread,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.mark_chat_unread_outlined,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            strings.format('Jump to {count} unread messages', {
+                              'count': initialUnreadCount,
+                            }),
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          Icons.keyboard_arrow_down,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(child: _ChatBackground(path: backgroundPath)),
+                  loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : showEmpty
+                      ? _EmptyPanel(message: strings.text('No messages.'))
+                      : ListView.builder(
+                          controller: scroll,
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 76),
+                          itemCount: messages.length + pendingSends.length,
+                          itemBuilder: (context, index) {
+                            if (index >= messages.length) {
+                              final pending =
+                                  pendingSends[index - messages.length];
+                              return _PendingMessageBubble(
+                                pending: pending,
+                                onRetry: () =>
+                                    retryPendingSend(pending.localId),
+                              );
+                            }
+                            final message = messages[index];
+                            final mine =
+                                widget.state.user?.uid == message.senderId;
+                            final selected = selectedMessageIds.contains(
+                              message.id,
+                            );
+                            final replyMessage = messages
+                                .where((item) => item.id == message.replyTo)
+                                .cast<ChatMessage?>()
+                                .firstOrNull;
+                            return _MessageBubble(
+                              key: itemKeys.putIfAbsent(
+                                message.id,
+                                () => GlobalKey(),
+                              ),
+                              message: message,
+                              replyMessage: replyMessage,
+                              mine: mine,
+                              focused: widget.focusMessageId == message.id,
+                              selected: selected,
+                              selectionMode: selectionMode,
+                              preferences: widget.state.preferences,
+                              onTap: selectionMode
+                                  ? () => toggleMessageSelection(message)
+                                  : null,
+                              onLongPress: selectionMode
+                                  ? null
+                                  : () => showMessageActions(message, mine),
+                              onReplyTap: message.replyTo > 0
+                                  ? () => scrollToMessage(message.replyTo)
+                                  : null,
+                              onImageTap: message.imageUrl.isEmpty
+                                  ? null
+                                  : () => showImagePreview(
+                                      context,
+                                      message.imageUrl,
+                                    ),
+                              voicePlaying: isVoicePlaying(message),
+                              voiceActive: playingVoiceMessageId == message.id,
+                              voicePosition: playingVoiceMessageId == message.id
+                                  ? voicePosition
+                                  : Duration.zero,
+                              voiceDuration: displayVoiceDuration(message),
+                              voiceSpeed: voiceSpeed,
+                              onVoiceTap: message.voiceUrl.isEmpty
+                                  ? null
+                                  : () => toggleVoicePlayback(message),
+                              onVoiceSeek: message.voiceUrl.isEmpty
+                                  ? null
+                                  : seekVoice,
+                              onVoiceSpeed: message.voiceUrl.isEmpty
+                                  ? null
+                                  : cycleVoiceSpeed,
+                            );
+                          },
+                        ),
+                  if (!nearBottom && !loading)
+                    Positioned(
+                      right: 16,
+                      bottom: 12,
+                      child: FloatingActionButton.small(
+                        tooltip: strings.text('Jump to bottom'),
+                        onPressed: jumpToEnd,
+                        child: const Icon(Icons.keyboard_arrow_down),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-        ],
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (replyTarget != null || mentionTargets.isNotEmpty)
+                      _ComposeTargetsBar(
+                        replyTarget: replyTarget,
+                        mentions: mentionTargets,
+                        onClearReply: () => setState(() => replyTarget = null),
+                        onClearMentions: () =>
+                            setState(() => mentionTargets.clear()),
+                      ),
+                    Row(
+                      children: [
+                        IconButton.filledTonal(
+                          tooltip: strings.text('More'),
+                          onPressed: showComposeMenu,
+                          icon: const Icon(Icons.add),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: input,
+                            focusNode: inputFocus,
+                            minLines: 1,
+                            maxLines: 4,
+                            textInputAction: TextInputAction.send,
+                            onSubmitted: (_) => send(),
+                            decoration: InputDecoration(
+                              hintText: strings.text('Message'),
+                              border: const OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 46,
+                          height: 46,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              shape: const CircleBorder(),
+                              padding: EdgeInsets.zero,
+                            ),
+                            onPressed: send,
+                            child: const Icon(Icons.send),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1219,11 +1702,19 @@ class _MessageBubble extends StatelessWidget {
     this.focused = false,
     this.selected = false,
     this.selectionMode = false,
+    required this.preferences,
     this.onTap,
     this.onLongPress,
     this.onReplyTap,
     this.onImageTap,
+    this.voicePlaying = false,
+    this.voiceActive = false,
+    this.voicePosition = Duration.zero,
+    this.voiceDuration = Duration.zero,
+    this.voiceSpeed = 1,
     this.onVoiceTap,
+    this.onVoiceSeek,
+    this.onVoiceSpeed,
   });
 
   final ChatMessage message;
@@ -1232,11 +1723,19 @@ class _MessageBubble extends StatelessWidget {
   final bool focused;
   final bool selected;
   final bool selectionMode;
+  final CsacPreferences preferences;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onReplyTap;
   final VoidCallback? onImageTap;
+  final bool voicePlaying;
+  final bool voiceActive;
+  final Duration voicePosition;
+  final Duration voiceDuration;
+  final double voiceSpeed;
   final VoidCallback? onVoiceTap;
+  final ValueChanged<Duration>? onVoiceSeek;
+  final VoidCallback? onVoiceSpeed;
 
   @override
   Widget build(BuildContext context) {
@@ -1254,6 +1753,7 @@ class _MessageBubble extends StatelessWidget {
         : colors.surfaceContainerHigh;
     final align = mine ? CrossAxisAlignment.end : CrossAxisAlignment.start;
     final strings = context.strings;
+    final messageTime = displayMessageTime(message, preferences);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: GestureDetector(
@@ -1277,7 +1777,7 @@ class _MessageBubble extends StatelessWidget {
                 ],
                 Flexible(
                   child: Text(
-                    '${message.sender}${message.time.isEmpty ? '' : ' · ${message.time}'}',
+                    '${message.sender}${messageTime.isEmpty ? '' : ' · $messageTime'}',
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: colors.onSurfaceVariant,
@@ -1369,9 +1869,16 @@ class _MessageBubble extends StatelessWidget {
                   ],
                   if (message.voiceUrl.isNotEmpty) ...[
                     _VoiceMessageTile(
-                      duration: message.voiceDuration,
+                      declaredDuration: message.voiceDuration,
+                      position: voicePosition,
+                      duration: voiceDuration,
+                      playing: voicePlaying,
+                      active: voiceActive,
+                      speed: voiceSpeed,
                       textColor: textColor,
                       onTap: onVoiceTap,
+                      onSeek: onVoiceSeek,
+                      onSpeed: onVoiceSpeed,
                     ),
                     if (message.body.isNotEmpty &&
                         !message.body.startsWith('[voice]'))
@@ -1391,48 +1898,415 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
-class _VoiceMessageTile extends StatelessWidget {
-  const _VoiceMessageTile({
-    required this.duration,
-    required this.textColor,
-    this.onTap,
-  });
+class _ChatBackground extends StatelessWidget {
+  const _ChatBackground({required this.path});
 
-  final int duration;
-  final Color textColor;
-  final VoidCallback? onTap;
+  final String path;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        constraints: const BoxConstraints(minWidth: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: colors.surface.withValues(alpha: 0.28),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: textColor.withValues(alpha: 0.24)),
+    final overlay = colors.surface.withValues(
+      alpha: Theme.of(context).brightness == Brightness.dark ? 0.78 : 0.68,
+    );
+    if (path.isEmpty || !File(path).existsSync()) {
+      return ColoredBox(color: colors.surface);
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: FileImage(File(path)),
+          fit: BoxFit.cover,
+          colorFilter: ColorFilter.mode(overlay, BlendMode.srcOver),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.play_arrow_rounded, color: textColor),
-            const SizedBox(width: 8),
-            Icon(Icons.graphic_eq_rounded, color: textColor),
-            const SizedBox(width: 8),
-            Text(
-              duration > 0
-                  ? context.strings.format('Voice message ({seconds}s)', {
-                      'seconds': duration,
-                    })
-                  : context.strings.text('Voice message'),
-              style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+class _VoiceMessageTile extends StatelessWidget {
+  const _VoiceMessageTile({
+    required this.declaredDuration,
+    required this.duration,
+    required this.position,
+    required this.playing,
+    required this.active,
+    required this.speed,
+    required this.textColor,
+    this.onTap,
+    this.onSeek,
+    this.onSpeed,
+  });
+
+  final int declaredDuration;
+  final Duration duration;
+  final Duration position;
+  final bool playing;
+  final bool active;
+  final double speed;
+  final Color textColor;
+  final VoidCallback? onTap;
+  final ValueChanged<Duration>? onSeek;
+  final VoidCallback? onSpeed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = Theme.of(context).colorScheme;
+    final total = duration > Duration.zero
+        ? duration
+        : declaredDuration > 0
+        ? Duration(seconds: declaredDuration)
+        : Duration.zero;
+    final clampedPosition = position > total && total > Duration.zero
+        ? total
+        : position;
+    final totalMs = total.inMilliseconds;
+    final positionMs = clampedPosition.inMilliseconds.clamp(0, totalMs);
+    final canSeek = active && totalMs > 0 && onSeek != null;
+    final statusLabel = playing
+        ? context.strings.text('Playing')
+        : active
+        ? context.strings.text('Paused')
+        : context.strings.text('Voice message');
+    return Container(
+      constraints: const BoxConstraints(minWidth: 220, maxWidth: 320),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: colors.surface.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: active ? colors.primary : textColor.withValues(alpha: 0.24),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              IconButton.filledTonal(
+                onPressed: onTap,
+                style: IconButton.styleFrom(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  minimumSize: const Size(38, 38),
+                ),
+                icon: Icon(
+                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                ),
+                tooltip: context.strings.text(playing ? 'Pause' : 'Play'),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.graphic_eq_rounded, color: textColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  statusLabel,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: textColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: active ? onSpeed : null,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(44, 32),
+                ),
+                child: Text(formatVoiceSpeed(speed)),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 3,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
             ),
-          ],
+            child: Slider(
+              value: totalMs > 0 ? positionMs.toDouble() : 0,
+              min: 0,
+              max: totalMs > 0 ? totalMs.toDouble() : 1,
+              onChanged: canSeek
+                  ? (value) => onSeek!(Duration(milliseconds: value.round()))
+                  : null,
+            ),
+          ),
+          Row(
+            children: [
+              Text(
+                formatVoiceClock(clampedPosition),
+                style: theme.textTheme.labelSmall?.copyWith(color: textColor),
+              ),
+              const Spacer(),
+              Text(
+                total > Duration.zero
+                    ? formatVoiceClock(total)
+                    : context.strings.text('Unknown duration'),
+                style: theme.textTheme.labelSmall?.copyWith(color: textColor),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String formatVoiceClock(Duration duration) {
+  final totalSeconds = duration.inSeconds;
+  final minutes = totalSeconds ~/ 60;
+  final seconds = totalSeconds % 60;
+  if (minutes >= 60) {
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+    return '$hours:${remainingMinutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+  return '$minutes:${seconds.toString().padLeft(2, '0')}';
+}
+
+String formatVoiceSpeed(double speed) {
+  if ((speed - speed.roundToDouble()).abs() < 0.01) {
+    return '${speed.round()}x';
+  }
+  return '${speed.toStringAsFixed(2).replaceFirst(RegExp(r'0$'), '')}x';
+}
+
+class _RecordedVoice {
+  const _RecordedVoice({required this.path, required this.durationSeconds});
+
+  final String path;
+  final int durationSeconds;
+}
+
+class _VoiceRecorderDialog extends StatefulWidget {
+  const _VoiceRecorderDialog();
+
+  @override
+  State<_VoiceRecorderDialog> createState() => _VoiceRecorderDialogState();
+}
+
+class _VoiceRecorderDialogState extends State<_VoiceRecorderDialog> {
+  final recorder = AudioRecorder();
+  Timer? ticker;
+  DateTime? startedAt;
+  String? outputPath;
+  bool starting = true;
+  bool stopping = false;
+  bool cancelled = false;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(startRecording());
+  }
+
+  @override
+  void dispose() {
+    ticker?.cancel();
+    unawaited(recorder.dispose());
+    super.dispose();
+  }
+
+  Future<void> startRecording() async {
+    try {
+      final hasPermission = await recorder.hasPermission();
+      if (!mounted) {
+        return;
+      }
+      if (!hasPermission) {
+        setState(() {
+          starting = false;
+          error = context.strings.text('Microphone permission is required.');
+        });
+        return;
+      }
+      final directory = await getTemporaryDirectory();
+      final fileName =
+          'csac_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final path = p.join(directory.path, fileName);
+      await recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 64000,
+          sampleRate: 44100,
         ),
+        path: path,
+      );
+      if (!mounted) {
+        return;
+      }
+      outputPath = path;
+      startedAt = DateTime.now();
+      ticker = Timer.periodic(const Duration(milliseconds: 250), (_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+      setState(() => starting = false);
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        starting = false;
+        error = err.toString();
+      });
+    }
+  }
+
+  int elapsedSeconds() {
+    final started = startedAt;
+    if (started == null) {
+      return 0;
+    }
+    return math.max(0, DateTime.now().difference(started).inSeconds);
+  }
+
+  String elapsedLabel() {
+    final elapsed = elapsedSeconds();
+    final minutes = elapsed ~/ 60;
+    final seconds = elapsed % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> cancelRecording() async {
+    cancelled = true;
+    ticker?.cancel();
+    try {
+      await recorder.cancel();
+    } catch (_) {
+      final path = outputPath;
+      if (path != null) {
+        unawaited(
+          File(path).delete().catchError((_) => File(path)).then((_) {}),
+        );
+      }
+    }
+    if (mounted) {
+      Navigator.of(context).pop(null);
+    }
+  }
+
+  Future<void> stopRecording() async {
+    if (stopping || starting) {
+      return;
+    }
+    final navigator = Navigator.of(context);
+    final missingFileMessage = context.strings.text('Recording file missing.');
+    setState(() => stopping = true);
+    try {
+      ticker?.cancel();
+      final duration = math.max(1, elapsedSeconds());
+      final path = await recorder.stop() ?? outputPath;
+      if (!mounted || cancelled) {
+        return;
+      }
+      if (path == null || !await File(path).exists()) {
+        setState(() {
+          stopping = false;
+          error = missingFileMessage;
+        });
+        return;
+      }
+      navigator.pop(_RecordedVoice(path: path, durationSeconds: duration));
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        stopping = false;
+        error = err.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: Text(strings.text('Record voice')),
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 82,
+                height: 82,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: error == null
+                      ? colors.primaryContainer
+                      : colors.errorContainer,
+                ),
+                child: Icon(
+                  error == null ? Icons.mic : Icons.mic_off,
+                  size: 42,
+                  color: error == null
+                      ? colors.onPrimaryContainer
+                      : colors.onErrorContainer,
+                ),
+              ),
+              const SizedBox(height: 18),
+              if (starting)
+                Text(strings.text('Starting recorder...'))
+              else if (error != null)
+                Text(
+                  error!,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colors.error,
+                  ),
+                )
+              else
+                Text(
+                  elapsedLabel(),
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colors.primary,
+                  ),
+                ),
+              const SizedBox(height: 8),
+              Text(
+                strings.text('Tap stop to send this voice message.'),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: stopping ? null : cancelRecording,
+            child: Text(strings.text('Cancel')),
+          ),
+          FilledButton.icon(
+            onPressed: starting || stopping || error != null
+                ? null
+                : stopRecording,
+            icon: stopping
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.stop_circle_outlined),
+            label: Text(
+              strings.text(stopping ? 'Sending...' : 'Stop and send'),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2074,30 +2948,49 @@ class _EssenceMessagesScreenState extends State<EssenceMessagesScreen> {
               _EmptyPanel(message: context.strings.text('No essence messages.'))
             else
               for (final message in messages)
-                Card(
-                  elevation: 0,
-                  margin: const EdgeInsets.symmetric(vertical: 5),
-                  child: ListTile(
-                    onTap: () => openMessage(message),
-                    leading: const Icon(Icons.star_outline),
-                    title: Text(
-                      message.sender,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      [
-                        if (message.time.isNotEmpty) message.time,
-                        message.body,
-                      ].join(' | '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                  ),
+                _EssenceMessageTile(
+                  message: message,
+                  preferences: widget.state.preferences,
+                  onTap: () => openMessage(message),
                 ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _EssenceMessageTile extends StatelessWidget {
+  const _EssenceMessageTile({
+    required this.message,
+    required this.preferences,
+    required this.onTap,
+  });
+
+  final ChatMessage message;
+  final CsacPreferences preferences;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final time = displayMessageTime(message, preferences);
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      child: ListTile(
+        onTap: onTap,
+        leading: const Icon(Icons.star_outline),
+        title: Text(
+          message.sender,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          [if (time.isNotEmpty) time, message.body].join(' | '),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: const Icon(Icons.chevron_right),
       ),
     );
   }

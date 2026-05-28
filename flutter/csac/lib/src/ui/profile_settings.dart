@@ -1009,6 +1009,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return context.strings.text(selected.label);
   }
 
+  String get conversationSortLabel {
+    final strings = context.strings;
+    switch (widget.state.preferences.conversationSortMode) {
+      case ConversationSortMode.latest:
+        return strings.text('Latest message');
+      case ConversationSortMode.type:
+        return strings.text('Conversation type');
+    }
+  }
+
+  String get messageTimeFormatLabel {
+    return messageTimeFormatLabelFor(
+      context,
+      widget.state.preferences.messageTimeFormat,
+    );
+  }
+
+  String get chatBackgroundLabel {
+    return widget.state.preferences.chatBackgroundPath.trim().isEmpty
+        ? context.strings.text('Default background')
+        : context.strings.text('Custom background');
+  }
+
   Future<void> refreshAll() async {
     setState(() => refreshing = true);
     try {
@@ -1271,6 +1294,156 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> chooseConversationSortMode() async {
+    final selected = await showModalBottomSheet<ConversationSortMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading:
+                    widget.state.preferences.conversationSortMode ==
+                        ConversationSortMode.latest
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: Text(context.strings.text('Latest message')),
+                subtitle: Text(
+                  context.strings.text('Show chats with recent activity first'),
+                ),
+                onTap: () =>
+                    Navigator.of(context).pop(ConversationSortMode.latest),
+              ),
+              ListTile(
+                leading:
+                    widget.state.preferences.conversationSortMode ==
+                        ConversationSortMode.type
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: Text(context.strings.text('Conversation type')),
+                subtitle: Text(
+                  context.strings.text('Group friends and groups separately'),
+                ),
+                onTap: () =>
+                    Navigator.of(context).pop(ConversationSortMode.type),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      await widget.state.updateConversationSortMode(selected);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  Future<void> chooseMessageTimeFormat() async {
+    final selected = await showModalBottomSheet<MessageTimeFormat>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final format in MessageTimeFormat.values)
+                ListTile(
+                  leading: widget.state.preferences.messageTimeFormat == format
+                      ? const Icon(Icons.check)
+                      : const SizedBox(width: 24),
+                  title: Text(messageTimeFormatLabelFor(context, format)),
+                  subtitle: Text(messageTimeFormatExampleFor(format)),
+                  onTap: () => Navigator.of(context).pop(format),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      await widget.state.updateMessageTimeFormat(selected);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  Future<void> chooseChatBackground() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.image_outlined),
+                title: Text(context.strings.text('Choose background image')),
+                onTap: () => Navigator.of(context).pop('choose'),
+              ),
+              if (widget.state.preferences.chatBackgroundPath.trim().isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: Text(context.strings.text('Reset background')),
+                  onTap: () => Navigator.of(context).pop('reset'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || action == null) {
+      return;
+    }
+    if (action == 'reset') {
+      await widget.state.updateChatBackgroundPath('');
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+    final picked = await openFile(
+      acceptedTypeGroups: <XTypeGroup>[
+        XTypeGroup(
+          label: context.strings.text('Images'),
+          extensions: imageExtensions,
+        ),
+      ],
+    );
+    if (!mounted || picked == null) {
+      return;
+    }
+    try {
+      final path = await persistChatBackground(picked);
+      await widget.state.updateChatBackgroundPath(path);
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(context.strings.text('Chat background saved.')),
+          ),
+        );
+      }
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.format('Save failed: {error}', {'error': err}),
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = widget.state.user;
@@ -1389,6 +1562,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text(languageLabel),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: chooseLanguage,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.sort),
+                      title: Text(strings.text('Conversation sorting')),
+                      subtitle: Text(conversationSortLabel),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: chooseConversationSortMode,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.schedule_outlined),
+                      title: Text(strings.text('Message time format')),
+                      subtitle: Text(messageTimeFormatLabel),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: chooseMessageTimeFormat,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.wallpaper_outlined),
+                      title: Text(strings.text('Chat background')),
+                      subtitle: Text(chatBackgroundLabel),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: chooseChatBackground,
                     ),
                   ],
                 ),

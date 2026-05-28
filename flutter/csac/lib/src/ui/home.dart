@@ -160,11 +160,8 @@ class _MainShellState extends State<MainShell> {
                     label: Text(context.strings.text('Notices')),
                   ),
                   NavigationRailDestination(
-                    icon: _NavAvatar(user: widget.state.user),
-                    selectedIcon: _NavAvatar(
-                      user: widget.state.user,
-                      selected: true,
-                    ),
+                    icon: const Icon(Icons.person_outline),
+                    selectedIcon: const Icon(Icons.person),
                     label: Text(context.strings.text('Me')),
                   ),
                 ],
@@ -316,34 +313,6 @@ class _BadgeIcon extends StatelessWidget {
   }
 }
 
-class _NavAvatar extends StatelessWidget {
-  const _NavAvatar({required this.user, this.selected = false});
-
-  final CsacUser? user;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final avatar = user?.avatar ?? '';
-    if (avatar.isEmpty) {
-      return Icon(selected ? Icons.person : Icons.person_outline);
-    }
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      width: 30,
-      height: 30,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: selected ? colors.primary : colors.outlineVariant,
-          width: selected ? 2 : 1,
-        ),
-        image: DecorationImage(image: NetworkImage(avatar), fit: BoxFit.cover),
-      ),
-    );
-  }
-}
-
 class ConversationScreen extends StatefulWidget {
   const ConversationScreen({
     super.key,
@@ -380,6 +349,51 @@ class _ConversationScreenState extends State<ConversationScreen> {
       if (mounted) {
         setState(() => refreshing = false);
       }
+    }
+  }
+
+  Future<void> openHomeAction(String action) async {
+    switch (action) {
+      case 'refresh':
+        await refresh();
+        break;
+      case 'addFriend':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => AddFriendScreen(state: widget.state),
+          ),
+        );
+        break;
+      case 'joinGroup':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => JoinGroupScreen(state: widget.state),
+          ),
+        );
+        break;
+      case 'createGroup':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => CreateGroupScreen(state: widget.state),
+          ),
+        );
+        break;
+      case 'searchMessages':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => MessageSearchScreen(state: widget.state),
+          ),
+        );
+        break;
+      case 'logout':
+        await confirmLogout(context, widget.state, popToRoot: false);
+        break;
+    }
+    if (mounted &&
+        action != 'refresh' &&
+        action != 'searchMessages' &&
+        action != 'logout') {
+      await refresh();
     }
   }
 
@@ -433,40 +447,33 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     avatar: const Icon(Icons.cloud_off_outlined, size: 18),
                     label: Text(strings.text('Offline')),
                   ),
-                IconButton.filledTonal(
-                  tooltip: strings.text('Add friend'),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => AddFriendScreen(state: widget.state),
+                PopupMenuButton<String>(
+                  tooltip: strings.text('More'),
+                  onSelected: openHomeAction,
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'addFriend',
+                      child: ListTile(
+                        leading: const Icon(Icons.person_add_alt),
+                        title: Text(strings.text('Add friend')),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.person_add_alt),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  tooltip: strings.text('Join group'),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => JoinGroupScreen(state: widget.state),
+                    ),
+                    PopupMenuItem(
+                      value: 'joinGroup',
+                      child: ListTile(
+                        leading: const Icon(Icons.group_add_outlined),
+                        title: Text(strings.text('Join group')),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.group_add_outlined),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  tooltip: strings.text('Create group'),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => CreateGroupScreen(state: widget.state),
+                    ),
+                    PopupMenuItem(
+                      value: 'createGroup',
+                      child: ListTile(
+                        leading: const Icon(Icons.add_home_work_outlined),
+                        title: Text(strings.text('Create group')),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.add_home_work_outlined),
+                    ),
+                  ],
+                  icon: const Icon(Icons.add_circle_outline),
                 ),
               ],
             ),
@@ -531,28 +538,53 @@ class _ConversationScreenState extends State<ConversationScreen> {
           : AppBar(
               title: const Text('CsAC'),
               actions: [
-                IconButton(
-                  tooltip: strings.text('Refresh'),
-                  onPressed: refreshing ? null : refresh,
-                  icon: const Icon(Icons.refresh),
-                ),
-                IconButton(
-                  tooltip: strings.text('Search messages'),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            MessageSearchScreen(state: widget.state),
+                PopupMenuButton<String>(
+                  tooltip: strings.text('More'),
+                  onSelected: openHomeAction,
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'refresh',
+                      child: ListTile(
+                        leading: const Icon(Icons.refresh),
+                        title: Text(strings.text('Refresh')),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.manage_search),
-                ),
-                IconButton(
-                  tooltip: strings.text('Logout'),
-                  onPressed: () =>
-                      confirmLogout(context, widget.state, popToRoot: false),
-                  icon: const Icon(Icons.logout),
+                    ),
+                    PopupMenuItem(
+                      value: 'addFriend',
+                      child: ListTile(
+                        leading: const Icon(Icons.person_add_alt),
+                        title: Text(strings.text('Add friend')),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'joinGroup',
+                      child: ListTile(
+                        leading: const Icon(Icons.group_add_outlined),
+                        title: Text(strings.text('Join group')),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'createGroup',
+                      child: ListTile(
+                        leading: const Icon(Icons.add_home_work_outlined),
+                        title: Text(strings.text('Create group')),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'searchMessages',
+                      child: ListTile(
+                        leading: const Icon(Icons.manage_search),
+                        title: Text(strings.text('Search messages')),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'logout',
+                      child: ListTile(
+                        leading: const Icon(Icons.logout),
+                        title: Text(strings.text('Logout')),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
