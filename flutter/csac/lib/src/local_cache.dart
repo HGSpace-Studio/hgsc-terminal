@@ -232,6 +232,22 @@ class CsacLocalCache {
     return messages;
   }
 
+  Future<List<ChatMessage>> loadAllMessages(Conversation conversation) async {
+    final db = await _database();
+    final rows = db.select(
+      '''
+      SELECT id, sender_id, sender, body, time, image_url, voice_url,
+        voice_duration, file_url, file_name, can_recall, is_recalled,
+        is_essence, is_mentioned, reply_to
+      FROM messages
+      WHERE conversation_type = ? AND conversation_id = ?
+      ORDER BY id ASC
+      ''',
+      [_conversationTypeName(conversation.type), conversation.id],
+    );
+    return <ChatMessage>[for (final row in rows) _messageFromRow(row)];
+  }
+
   Future<List<ChatMessage>> loadMessagesAround(
     Conversation conversation,
     int messageId, {
@@ -270,6 +286,20 @@ class CsacLocalCache {
     ];
     messages.sort((a, b) => a.id.compareTo(b.id));
     return mergeChatMessages(const <ChatMessage>[], messages);
+  }
+
+  Future<bool> hasMessage(Conversation conversation, int messageId) async {
+    final db = await _database();
+    final rows = db.select(
+      '''
+      SELECT 1
+      FROM messages
+      WHERE conversation_type = ? AND conversation_id = ? AND id = ?
+      LIMIT 1
+      ''',
+      [_conversationTypeName(conversation.type), conversation.id, messageId],
+    );
+    return rows.isNotEmpty;
   }
 
   Future<int> latestMessageId(Conversation conversation) async {

@@ -119,6 +119,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool get selectionMode => selectedMessageIds.isNotEmpty;
 
+  void setExporting(bool value) {
+    setState(() => refreshing = value);
+  }
+
   List<ChatMessage> get selectedMessages {
     return messages
         .where((message) => selectedMessageIds.contains(message.id))
@@ -1014,6 +1018,11 @@ class _ChatScreenState extends State<ChatScreen> {
               title: Text(context.strings.text('Media and files')),
               onTap: () => Navigator.of(context).pop('media'),
             ),
+            ListTile(
+              leading: const Icon(Icons.ios_share_outlined),
+              title: Text(context.strings.text('Export chat history')),
+              onTap: () => Navigator.of(context).pop('export'),
+            ),
           ],
         ),
       ),
@@ -1039,6 +1048,26 @@ class _ChatScreenState extends State<ChatScreen> {
         break;
       case 'media':
         await openMediaCenter();
+        break;
+      case 'export':
+        await exportConversation();
+        break;
+    }
+  }
+
+  Future<void> handleAppBarMenuAction(String action) async {
+    switch (action) {
+      case 'refresh':
+        await reloadConversationFromNetwork(showLoading: true);
+        break;
+      case 'essence':
+        await openEssenceList();
+        break;
+      case 'media':
+        await openMediaCenter();
+        break;
+      case 'export':
+        await exportConversation();
         break;
     }
   }
@@ -1455,22 +1484,41 @@ class _ChatScreenState extends State<ChatScreen> {
                     padding: EdgeInsets.only(right: 8),
                     child: Icon(Icons.cloud_off_outlined),
                   ),
-                IconButton(
-                  tooltip: strings.text('Refresh'),
-                  onPressed: () =>
-                      reloadConversationFromNetwork(showLoading: true),
-                  icon: const Icon(Icons.refresh),
-                ),
-                if (widget.conversation.type == ConversationType.group)
-                  IconButton(
-                    tooltip: strings.text('Essence'),
-                    onPressed: openEssenceList,
-                    icon: const Icon(Icons.star_outline),
-                  ),
-                IconButton(
-                  tooltip: strings.text('Media and files'),
-                  onPressed: openMediaCenter,
-                  icon: const Icon(Icons.perm_media_outlined),
+                PopupMenuButton<String>(
+                  tooltip: strings.text('More'),
+                  onSelected: handleAppBarMenuAction,
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'refresh',
+                      child: ListTile(
+                        leading: const Icon(Icons.refresh),
+                        title: Text(strings.text('Refresh')),
+                      ),
+                    ),
+                    if (widget.conversation.type == ConversationType.group)
+                      PopupMenuItem(
+                        value: 'essence',
+                        child: ListTile(
+                          leading: const Icon(Icons.star_outline),
+                          title: Text(strings.text('Essence')),
+                        ),
+                      ),
+                    PopupMenuItem(
+                      value: 'media',
+                      child: ListTile(
+                        leading: const Icon(Icons.perm_media_outlined),
+                        title: Text(strings.text('Media and files')),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'export',
+                      child: ListTile(
+                        leading: const Icon(Icons.ios_share_outlined),
+                        title: Text(strings.text('Export chat history')),
+                      ),
+                    ),
+                  ],
+                  icon: const Icon(Icons.more_vert),
                 ),
                 IconButton(
                   tooltip: strings.text('Details'),
@@ -2878,42 +2926,123 @@ class EssenceMessagesScreen extends StatefulWidget {
 }
 
 class _EssenceMessagesScreenState extends State<EssenceMessagesScreen> {
+  final search = TextEditingController();
   List<ChatMessage> messages = const <ChatMessage>[];
+  EssenceStats? stats;
+  String statsType = 'all';
   bool loading = true;
+  bool loadingStats = true;
   String? error;
+  String? statsError;
+
+  static const statsTypeOptions = ['today', 'week', 'month', 'all'];
 
   @override
   void initState() {
     super.initState();
+    search.addListener(() => setState(() {}));
     load();
+  }
+
+  @override
+  void dispose() {
+    search.dispose();
+    super.dispose();
   }
 
   Future<void> load() async {
     setState(() {
       loading = true;
+      loadingStats = true;
       error = null;
+      statsError = null;
     });
     try {
-      final loaded = await widget.state.loadEssenceMessages(
-        widget.conversation.id,
-      );
+      final results = await Future.wait<Object?>([
+        widget.state.loadEssenceMessages(widget.conversation.id),
+        widget.state
+            .loadEssenceStats(widget.conversation.id, type: statsType)
+            .then<Object?>((value) => value)
+            .catchError((Object err) => err),
+      ]);
+      final loaded = results[0] as List<ChatMessage>;
+      final statsResult = results[1];
       if (!mounted) {
         return;
       }
-      setState(() => messages = loaded.reversed.toList());
+      setState(() {
+        messages = loaded.reversed.toList();
+        if (statsResult is EssenceStats) {
+          stats = statsResult;
+        } else {
+          stats = EssenceStats.fromMessages(loaded, type: statsType);
+          statsError = statsResult?.toString();
+        }
+      });
     } catch (err) {
       if (mounted) {
         setState(() => error = err.toString());
       }
     } finally {
       if (mounted) {
-        setState(() => loading = false);
+        setState(() {
+          loading = false;
+          loadingStats = false;
+        });
       }
     }
   }
 
-  Future<void> openMessage(ChatMessage message) {
-    return Navigator.of(context).push(
+  Future<void> changeStatsType(String value) async {
+    if (value == statsType) {
+      return;
+    }
+    setState(() {
+      statsType = value;
+      loadingStats = true;
+      statsError = null;
+    });
+    try {
+      final loaded = await widget.state.loadEssenceStats(
+        widget.conversation.id,
+        type: value,
+      );
+      if (mounted) {
+        setState(() => stats = loaded);
+      }
+    } catch (err) {
+      if (mounted) {
+        setState(() {
+          stats = EssenceStats.fromMessages(messages, type: value);
+          statsError = err.toString();
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => loadingStats = false);
+      }
+    }
+  }
+
+  Future<void> openMessage(ChatMessage message) async {
+    final exists = await widget.state.hasCachedMessage(
+      widget.conversation,
+      message.id,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (!exists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.text('Unable to locate this essence message.'),
+          ),
+        ),
+      );
+      return;
+    }
+    return Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => ChatScreen(
           state: widget.state,
@@ -2926,12 +3055,24 @@ class _EssenceMessagesScreenState extends State<EssenceMessagesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
+    final query = search.text.trim().toLowerCase();
+    final filteredMessages = query.isEmpty
+        ? messages
+        : messages.where((message) {
+            final target =
+                '${message.sender} ${message.body} ${message.time} ${message.imageUrl} ${message.voiceUrl} ${message.fileUrl}'
+                    .toLowerCase();
+            return target.contains(query);
+          }).toList();
+    final effectiveStats =
+        stats ?? EssenceStats.fromMessages(messages, type: statsType);
     return Scaffold(
       appBar: AppBar(
-        title: Text(context.strings.text('Essence messages')),
+        title: Text(strings.text('Essence messages')),
         actions: [
           IconButton(
-            tooltip: context.strings.text('Refresh'),
+            tooltip: strings.text('Refresh'),
             onPressed: load,
             icon: const Icon(Icons.refresh),
           ),
@@ -2944,10 +3085,48 @@ class _EssenceMessagesScreenState extends State<EssenceMessagesScreen> {
           children: [
             if (loading) const LinearProgressIndicator(minHeight: 2),
             if (error != null) _InlineError(message: error!, onRetry: load),
+            _EssenceStatsHeader(
+              stats: effectiveStats,
+              loading: loadingStats,
+              statsError: statsError,
+              selectedType: statsType,
+              typeOptions: statsTypeOptions,
+              onTypeChanged: changeStatsType,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: search,
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                labelText: strings.text('Search essence messages'),
+                border: const OutlineInputBorder(),
+                suffixIcon: query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: strings.text('Clear'),
+                        onPressed: search.clear,
+                        icon: const Icon(Icons.clear),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              strings.format('{count} essence messages', {
+                'count': filteredMessages.length,
+              }),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
             if (!loading && messages.isEmpty)
-              _EmptyPanel(message: context.strings.text('No essence messages.'))
+              _EmptyPanel(message: strings.text('No essence messages.'))
+            else if (!loading && filteredMessages.isEmpty)
+              _EmptyPanel(
+                message: strings.text('No matching essence messages.'),
+              )
             else
-              for (final message in messages)
+              for (final message in filteredMessages)
                 _EssenceMessageTile(
                   message: message,
                   preferences: widget.state.preferences,
@@ -2957,6 +3136,316 @@ class _EssenceMessagesScreenState extends State<EssenceMessagesScreen> {
         ),
       ),
     );
+  }
+}
+
+class _EssenceStatsHeader extends StatelessWidget {
+  const _EssenceStatsHeader({
+    required this.stats,
+    required this.loading,
+    required this.statsError,
+    required this.selectedType,
+    required this.typeOptions,
+    required this.onTypeChanged,
+  });
+
+  final EssenceStats stats;
+  final bool loading;
+  final String? statsError;
+  final String selectedType;
+  final List<String> typeOptions;
+  final ValueChanged<String> onTypeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    strings.text('Essence statistics'),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (loading)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final type in typeOptions)
+                  ChoiceChip(
+                    label: Text(strings.text(essenceStatsTypeLabel(type))),
+                    selected: selectedType == type,
+                    onSelected: (_) => onTypeChanged(type),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: _EssenceMetricTile(
+                    icon: Icons.star_outline,
+                    label: strings.text('Total essence'),
+                    value: '${stats.total}',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _EssenceMetricTile(
+                    icon: Icons.people_outline,
+                    label: strings.text('Contributors'),
+                    value: '${stats.contributors.length}',
+                  ),
+                ),
+              ],
+            ),
+            if (statsError != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 18,
+                    color: colors.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      strings.text('Showing local fallback statistics.'),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (stats.categories.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text(
+                strings.text('Category breakdown'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              for (final category in stats.categories)
+                _EssenceCategoryRow(category: category, total: stats.total),
+            ],
+            if (stats.contributors.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text(
+                strings.text('Contribution ranking'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              for (final contributor in stats.contributors.take(5))
+                _EssenceContributorRow(contributor: contributor),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EssenceMetricTile extends StatelessWidget {
+  const _EssenceMetricTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: colors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EssenceCategoryRow extends StatelessWidget {
+  const _EssenceCategoryRow({required this.category, required this.total});
+
+  final EssenceCategoryCount category;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = total <= 0 ? 0.0 : category.count / total;
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Icon(
+            essenceCategoryIcon(category.category),
+            size: 20,
+            color: colors.primary,
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 70,
+            child: Text(
+              context.strings.text(essenceCategoryLabel(category.category)),
+            ),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: ratio.clamp(0, 1),
+                minHeight: 8,
+                backgroundColor: colors.surfaceContainerHighest,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 38,
+            child: Text(
+              '${category.count}',
+              textAlign: TextAlign.end,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EssenceContributorRow extends StatelessWidget {
+  const _EssenceContributorRow({required this.contributor});
+
+  final EssenceContributor contributor;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: _Avatar(
+        url: contributor.avatar,
+        fallback: Icons.person_rounded,
+        radius: 16,
+      ),
+      title: Text(
+        contributor.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Chip(
+        label: Text(
+          context.strings.format('{count} messages', {
+            'count': contributor.count,
+          }),
+        ),
+        visualDensity: VisualDensity.compact,
+      ),
+    );
+  }
+}
+
+String essenceStatsTypeLabel(String type) {
+  switch (type) {
+    case 'today':
+      return 'Today';
+    case 'week':
+      return 'This week';
+    case 'month':
+      return 'This month';
+    case 'all':
+      return 'All time';
+    default:
+      return type;
+  }
+}
+
+String essenceCategoryLabel(String category) {
+  switch (category) {
+    case 'text':
+      return 'Text';
+    case 'image':
+      return 'Images';
+    case 'voice':
+      return 'Voice';
+    case 'file':
+      return 'Files';
+    default:
+      return category;
+  }
+}
+
+IconData essenceCategoryIcon(String category) {
+  switch (category) {
+    case 'image':
+      return Icons.image_outlined;
+    case 'voice':
+      return Icons.mic_none_outlined;
+    case 'file':
+      return Icons.insert_drive_file_outlined;
+    default:
+      return Icons.notes_outlined;
   }
 }
 

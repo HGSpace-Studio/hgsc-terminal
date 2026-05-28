@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -10,6 +11,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -27,9 +29,11 @@ part 'src/ui/discovery.dart';
 part 'src/ui/notifications.dart';
 part 'src/ui/profile_settings.dart';
 part 'src/ui/common_widgets.dart';
+part 'src/ui/app_lock.dart';
 part 'src/ui/user_profile.dart';
 part 'src/ui/conversation_detail.dart';
 part 'src/ui/chat.dart';
+part 'src/ui/chat_export.dart';
 part 'src/ui/media.dart';
 part 'src/ui/conversation_media.dart';
 part 'src/ui/helpers.dart';

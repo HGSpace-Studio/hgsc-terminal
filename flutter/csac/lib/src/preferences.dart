@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:pointycastle/export.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
@@ -22,6 +25,10 @@ class CsacPreferences {
     this.messageTimeFormat = MessageTimeFormat.slash,
     this.chatBackgroundPath = '',
     this.serverUrl = '',
+    this.appLockEnabled = false,
+    this.appLockPinSalt = '',
+    this.appLockPinHash = '',
+    this.appLockBiometricEnabled = false,
   });
 
   static const _themeKey = 'csac.theme_mode';
@@ -31,6 +38,10 @@ class CsacPreferences {
   static const _messageTimeFormatKey = 'csac.message_time_format';
   static const _chatBackgroundPathKey = 'csac.chat_background_path';
   static const _serverUrlKey = 'csac.server_url';
+  static const _appLockEnabledKey = 'csac.app_lock.enabled';
+  static const _appLockPinSaltKey = 'csac.app_lock.pin_salt';
+  static const _appLockPinHashKey = 'csac.app_lock.pin_hash';
+  static const _appLockBiometricEnabledKey = 'csac.app_lock.biometric_enabled';
 
   final ThemeMode themeMode;
   final int themeColorValue;
@@ -39,6 +50,22 @@ class CsacPreferences {
   final MessageTimeFormat messageTimeFormat;
   final String chatBackgroundPath;
   final String serverUrl;
+  final bool appLockEnabled;
+  final String appLockPinSalt;
+  final String appLockPinHash;
+  final bool appLockBiometricEnabled;
+
+  bool get hasAppLockPin =>
+      appLockPinSalt.trim().isNotEmpty && appLockPinHash.trim().isNotEmpty;
+
+  bool get effectiveAppLockEnabled => appLockEnabled && hasAppLockPin;
+
+  bool verifyAppLockPin(String pin) {
+    if (!hasAppLockPin) {
+      return false;
+    }
+    return AppLockPin.hash(pin, appLockPinSalt) == appLockPinHash;
+  }
 
   CsacPreferences copyWith({
     ThemeMode? themeMode,
@@ -48,6 +75,10 @@ class CsacPreferences {
     MessageTimeFormat? messageTimeFormat,
     String? chatBackgroundPath,
     String? serverUrl,
+    bool? appLockEnabled,
+    String? appLockPinSalt,
+    String? appLockPinHash,
+    bool? appLockBiometricEnabled,
   }) {
     return CsacPreferences(
       themeMode: themeMode ?? this.themeMode,
@@ -57,6 +88,11 @@ class CsacPreferences {
       messageTimeFormat: messageTimeFormat ?? this.messageTimeFormat,
       chatBackgroundPath: chatBackgroundPath ?? this.chatBackgroundPath,
       serverUrl: serverUrl ?? this.serverUrl,
+      appLockEnabled: appLockEnabled ?? this.appLockEnabled,
+      appLockPinSalt: appLockPinSalt ?? this.appLockPinSalt,
+      appLockPinHash: appLockPinHash ?? this.appLockPinHash,
+      appLockBiometricEnabled:
+          appLockBiometricEnabled ?? this.appLockBiometricEnabled,
     );
   }
 
@@ -74,6 +110,11 @@ class CsacPreferences {
       ),
       chatBackgroundPath: prefs.getString(_chatBackgroundPathKey) ?? '',
       serverUrl: (prefs.getString(_serverUrlKey) ?? '').trim(),
+      appLockEnabled: prefs.getBool(_appLockEnabledKey) ?? false,
+      appLockPinSalt: prefs.getString(_appLockPinSaltKey) ?? '',
+      appLockPinHash: prefs.getString(_appLockPinHashKey) ?? '',
+      appLockBiometricEnabled:
+          prefs.getBool(_appLockBiometricEnabledKey) ?? false,
     );
   }
 
@@ -94,6 +135,15 @@ class CsacPreferences {
     } else {
       await prefs.setString(_serverUrlKey, serverUrl.trim());
     }
+    await prefs.setBool(_appLockEnabledKey, appLockEnabled);
+    if (appLockPinSalt.trim().isEmpty || appLockPinHash.trim().isEmpty) {
+      await prefs.remove(_appLockPinSaltKey);
+      await prefs.remove(_appLockPinHashKey);
+    } else {
+      await prefs.setString(_appLockPinSaltKey, appLockPinSalt.trim());
+      await prefs.setString(_appLockPinHashKey, appLockPinHash.trim());
+    }
+    await prefs.setBool(_appLockBiometricEnabledKey, appLockBiometricEnabled);
   }
 
   static ThemeMode _themeModeFromName(String? value) {
@@ -138,6 +188,30 @@ class CsacPreferences {
       }
     }
     return MessageTimeFormat.slash;
+  }
+}
+
+class AppLockPin {
+  const AppLockPin._();
+
+  static bool isValid(String pin) {
+    return RegExp(r'^\d{4,8}$').hasMatch(pin);
+  }
+
+  static String newSalt() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    return _toHex(bytes);
+  }
+
+  static String hash(String pin, String salt) {
+    final digest = Digest('SHA-256');
+    final input = Uint8List.fromList(utf8.encode('$salt:$pin'));
+    return _toHex(digest.process(input));
+  }
+
+  static String _toHex(Iterable<int> bytes) {
+    return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
   }
 }
 

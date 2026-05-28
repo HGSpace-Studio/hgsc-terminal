@@ -573,6 +573,300 @@ class ChatMessage {
   }
 }
 
+class EssenceStats {
+  const EssenceStats({
+    required this.type,
+    required this.total,
+    required this.categories,
+    required this.contributors,
+    this.remote = true,
+  });
+
+  final String type;
+  final int total;
+  final List<EssenceCategoryCount> categories;
+  final List<EssenceContributor> contributors;
+  final bool remote;
+
+  factory EssenceStats.fromJson(
+    Map<String, dynamic> json, {
+    String type = 'all',
+  }) {
+    final root =
+        firstMap(json, const ['stats', 'stat', 'data', 'result']) ?? json;
+    final categories = _parseEssenceCategories(root);
+    final contributors = _parseEssenceContributors(root);
+    final categoryTotal = categories.fold<int>(
+      0,
+      (sum, category) => sum + category.count,
+    );
+    final total = firstInt(root, const [
+      'total',
+      'total_count',
+      'count',
+      'essence_count',
+      'all_count',
+    ]);
+    return EssenceStats(
+      type: firstString(root, const ['type', 'range']).ifEmpty(type),
+      total: total > 0 ? total : categoryTotal,
+      categories: categories,
+      contributors: contributors,
+    );
+  }
+
+  factory EssenceStats.fromMessages(
+    Iterable<ChatMessage> messages, {
+    String type = 'local',
+  }) {
+    final categoryCounts = <String, int>{};
+    final contributorCounts = <int, _EssenceContributorAccumulator>{};
+    var total = 0;
+    for (final message in messages) {
+      total++;
+      final category = essenceCategoryForMessage(message);
+      categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
+      final key = message.senderId;
+      final existing = contributorCounts[key];
+      if (existing == null) {
+        contributorCounts[key] = _EssenceContributorAccumulator(
+          uid: message.senderId,
+          name: message.sender,
+          count: 1,
+        );
+      } else {
+        contributorCounts[key] = existing.copyWith(count: existing.count + 1);
+      }
+    }
+    return EssenceStats(
+      type: type,
+      total: total,
+      categories: _sortedEssenceCategories(categoryCounts),
+      contributors:
+          contributorCounts.values
+              .map(
+                (item) => EssenceContributor(
+                  uid: item.uid,
+                  name: item.name,
+                  count: item.count,
+                ),
+              )
+              .toList()
+            ..sort((a, b) => b.count.compareTo(a.count)),
+      remote: false,
+    );
+  }
+}
+
+class EssenceCategoryCount {
+  const EssenceCategoryCount({required this.category, required this.count});
+
+  final String category;
+  final int count;
+}
+
+class EssenceContributor {
+  const EssenceContributor({
+    required this.uid,
+    required this.name,
+    required this.count,
+    this.avatar = '',
+  });
+
+  final int uid;
+  final String name;
+  final int count;
+  final String avatar;
+}
+
+class _EssenceContributorAccumulator {
+  const _EssenceContributorAccumulator({
+    required this.uid,
+    required this.name,
+    required this.count,
+  });
+
+  final int uid;
+  final String name;
+  final int count;
+
+  _EssenceContributorAccumulator copyWith({int? count}) {
+    return _EssenceContributorAccumulator(
+      uid: uid,
+      name: name,
+      count: count ?? this.count,
+    );
+  }
+}
+
+String essenceCategoryForMessage(ChatMessage message) {
+  if (message.imageUrl.isNotEmpty) {
+    return 'image';
+  }
+  if (message.voiceUrl.isNotEmpty) {
+    return 'voice';
+  }
+  if (message.fileUrl.isNotEmpty) {
+    return 'file';
+  }
+  return 'text';
+}
+
+List<EssenceCategoryCount> _parseEssenceCategories(Map<String, dynamic> root) {
+  final counts = <String, int>{};
+  final rawMap = firstMap(root, const [
+    'category_counts',
+    'category_count',
+    'categories',
+    'type_counts',
+    'type_count',
+    'counts',
+    'by_type',
+  ]);
+  if (rawMap != null) {
+    for (final entry in rawMap.entries) {
+      final category = _normalizeEssenceCategory(entry.key);
+      final value = entry.value is Map
+          ? firstInt(Map<String, dynamic>.from(entry.value as Map), const [
+              'count',
+              'total',
+              'num',
+              'value',
+            ])
+          : asInt(entry.value);
+      if (value > 0) {
+        counts[category] = (counts[category] ?? 0) + value;
+      }
+    }
+  }
+  for (final key in const ['categories', 'category_list', 'type_list']) {
+    final value = root[key];
+    if (value is List) {
+      for (final item in value.whereType<Map>()) {
+        final row = Map<String, dynamic>.from(item);
+        final category = _normalizeEssenceCategory(
+          firstString(row, const ['category', 'type', 'name', 'label', 'key']),
+        );
+        final count = firstInt(row, const [
+          'count',
+          'total',
+          'num',
+          'value',
+          'essence_count',
+        ]);
+        if (count > 0) {
+          counts[category] = (counts[category] ?? 0) + count;
+        }
+      }
+    }
+  }
+  for (final entry in const <String, List<String>>{
+    'text': ['text_count', 'content_count', 'message_count'],
+    'image': ['image_count', 'img_count', 'picture_count'],
+    'voice': ['voice_count', 'audio_count'],
+    'file': ['file_count', 'attachment_count', 'document_count'],
+  }.entries) {
+    final count = firstInt(root, entry.value);
+    if (count > 0) {
+      counts[entry.key] = (counts[entry.key] ?? 0) + count;
+    }
+  }
+  return _sortedEssenceCategories(counts);
+}
+
+List<EssenceCategoryCount> _sortedEssenceCategories(Map<String, int> counts) {
+  const order = ['text', 'image', 'voice', 'file'];
+  return [
+    for (final key in order)
+      if ((counts[key] ?? 0) > 0)
+        EssenceCategoryCount(category: key, count: counts[key]!),
+    for (final entry in counts.entries)
+      if (!order.contains(entry.key) && entry.value > 0)
+        EssenceCategoryCount(category: entry.key, count: entry.value),
+  ];
+}
+
+List<EssenceContributor> _parseEssenceContributors(Map<String, dynamic> root) {
+  final rows = <Map<String, dynamic>>[];
+  for (final key in const [
+    'contributors',
+    'contributor_rank',
+    'contribution_rank',
+    'rank',
+    'ranking',
+    'rankings',
+    'top_users',
+    'users',
+  ]) {
+    final value = root[key];
+    if (value is List) {
+      rows.addAll(
+        value.whereType<Map>().map((item) => Map<String, dynamic>.from(item)),
+      );
+    }
+  }
+  final contributors = rows
+      .map((row) {
+        final uid = firstInt(row, const ['uid', 'user_id', 'from_uid', 'id']);
+        final name = firstString(row, const [
+          'nickname',
+          'name',
+          'username',
+          'user_name',
+        ]).ifEmpty(uid > 0 ? 'UID $uid' : 'Unknown');
+        return EssenceContributor(
+          uid: uid,
+          name: name,
+          avatar: normalizeApiUrl(asString(row['avatar'])),
+          count: firstInt(row, const [
+            'count',
+            'total',
+            'num',
+            'value',
+            'essence_count',
+            'contribution',
+          ]),
+        );
+      })
+      .where((item) => item.count > 0)
+      .toList();
+  contributors.sort((a, b) => b.count.compareTo(a.count));
+  return contributors;
+}
+
+String _normalizeEssenceCategory(String raw) {
+  final value = raw.trim().toLowerCase();
+  if (value.isEmpty) {
+    return 'text';
+  }
+  if (value.contains('image') ||
+      value.contains('img') ||
+      value.contains('picture') ||
+      value.contains('photo') ||
+      value.contains('图片')) {
+    return 'image';
+  }
+  if (value.contains('voice') ||
+      value.contains('audio') ||
+      value.contains('sound') ||
+      value.contains('语音')) {
+    return 'voice';
+  }
+  if (value.contains('file') ||
+      value.contains('attachment') ||
+      value.contains('document') ||
+      value.contains('文件')) {
+    return 'file';
+  }
+  if (value.contains('text') ||
+      value.contains('message') ||
+      value.contains('content') ||
+      value.contains('文本')) {
+    return 'text';
+  }
+  return value;
+}
+
 class ConversationMediaItem {
   const ConversationMediaItem({
     required this.conversation,

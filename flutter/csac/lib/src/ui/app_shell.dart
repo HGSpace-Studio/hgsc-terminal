@@ -7,13 +7,101 @@ class CsacMobileApp extends StatefulWidget {
   State<CsacMobileApp> createState() => _CsacMobileAppState();
 }
 
-class _CsacMobileAppState extends State<CsacMobileApp> {
+class _CsacMobileAppState extends State<CsacMobileApp>
+    with WidgetsBindingObserver {
   late final CsacAppState state;
+  bool locked = false;
+  bool wasBackgrounded = false;
+  bool appLockSessionUnlocked = false;
+  bool appLockStateSeen = false;
+  bool lastCanUseAppLock = false;
+  int appLockUserId = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     state = CsacAppState()..initialize();
+    state.addListener(handleStateChanged);
+  }
+
+  @override
+  void dispose() {
+    state.removeListener(handleStateChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    if (lifecycleState == AppLifecycleState.paused ||
+        lifecycleState == AppLifecycleState.hidden ||
+        lifecycleState == AppLifecycleState.inactive) {
+      wasBackgrounded = true;
+      if (canUseAppLock()) {
+        appLockSessionUnlocked = false;
+        if (!locked && mounted) {
+          setState(() => locked = true);
+        }
+      }
+      return;
+    }
+    if (lifecycleState == AppLifecycleState.resumed && wasBackgrounded) {
+      wasBackgrounded = false;
+      lockIfNeeded();
+    }
+  }
+
+  void handleStateChanged() {
+    final userId = state.user?.uid ?? 0;
+    if (userId != appLockUserId) {
+      appLockUserId = userId;
+      appLockSessionUnlocked = false;
+    }
+    if (!canUseAppLock()) {
+      if (locked) {
+        setState(() => locked = false);
+      }
+      appLockSessionUnlocked = false;
+      if (!state.bootstrapping && state.user != null) {
+        appLockStateSeen = true;
+      }
+      lastCanUseAppLock = false;
+      return;
+    }
+    if (!lastCanUseAppLock) {
+      if (appLockStateSeen) {
+        appLockSessionUnlocked = true;
+      }
+      appLockStateSeen = true;
+      lastCanUseAppLock = true;
+    }
+    if (!locked && !appLockSessionUnlocked) {
+      setState(() => locked = true);
+    }
+  }
+
+  bool canUseAppLock() {
+    return !state.bootstrapping &&
+        state.user != null &&
+        state.preferences.effectiveAppLockEnabled;
+  }
+
+  void lockIfNeeded() {
+    if (!mounted || locked || !canUseAppLock()) {
+      return;
+    }
+    appLockSessionUnlocked = false;
+    setState(() => locked = true);
+  }
+
+  void unlock() {
+    if (!mounted) {
+      return;
+    }
+    appLockSessionUnlocked = true;
+    appLockUserId = state.user?.uid ?? 0;
+    setState(() => locked = false);
   }
 
   @override
@@ -43,11 +131,19 @@ class _CsacMobileAppState extends State<CsacMobileApp> {
             Color(state.preferences.themeColorValue),
           ),
           themeMode: state.preferences.themeMode,
-          home: state.bootstrapping
-              ? SplashScreen(status: state.restoreStatus)
-              : state.user == null
-              ? LoginScreen(state: state)
-              : MainShell(state: state),
+          home: Stack(
+            children: [
+              state.bootstrapping
+                  ? SplashScreen(status: state.restoreStatus)
+                  : state.user == null
+                  ? LoginScreen(state: state)
+                  : MainShell(state: state),
+              if (locked && state.user != null)
+                Positioned.fill(
+                  child: AppLockScreen(state: state, onUnlocked: unlock),
+                ),
+            ],
+          ),
         );
       },
     );

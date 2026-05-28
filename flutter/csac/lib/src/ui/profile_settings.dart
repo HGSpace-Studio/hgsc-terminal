@@ -150,36 +150,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
   Future<void> editNickname() async {
     final current = widget.state.user?.nickname ?? '';
-    final controller = TextEditingController(text: current);
-    final strings = context.strings;
     final nickname = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(strings.text('Change nickname')),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 16,
-          textInputAction: TextInputAction.done,
-          decoration: InputDecoration(
-            labelText: strings.text('New nickname'),
-            border: const OutlineInputBorder(),
-          ),
-          onSubmitted: (value) => Navigator.of(context).pop(value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(strings.text('Cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: Text(strings.text('Save')),
-          ),
-        ],
-      ),
+      builder: (context) => _NicknameDialog(initialNickname: current),
     );
-    controller.dispose();
     if (nickname == null || !mounted) {
       return;
     }
@@ -249,79 +223,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 
   Future<void> changePassword() async {
-    final oldPassword = TextEditingController();
-    final newPassword = TextEditingController();
-    final confirmPassword = TextEditingController();
-    final strings = context.strings;
     final result = await showDialog<_PasswordChange>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(strings.text('Change password')),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: oldPassword,
-                obscureText: true,
-                textInputAction: TextInputAction.next,
-                decoration: InputDecoration(
-                  labelText: strings.text('Old password'),
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: newPassword,
-                obscureText: true,
-                textInputAction: TextInputAction.next,
-                decoration: InputDecoration(
-                  labelText: strings.text('New password'),
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: confirmPassword,
-                obscureText: true,
-                textInputAction: TextInputAction.done,
-                decoration: InputDecoration(
-                  labelText: strings.text('Confirm password'),
-                  border: const OutlineInputBorder(),
-                ),
-                onSubmitted: (_) => Navigator.of(context).pop(
-                  _PasswordChange(
-                    oldPassword.text,
-                    newPassword.text,
-                    confirmPassword.text,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(strings.text('Cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(
-              _PasswordChange(
-                oldPassword.text,
-                newPassword.text,
-                confirmPassword.text,
-              ),
-            ),
-            child: Text(strings.text('Save')),
-          ),
-        ],
-      ),
+      builder: (context) => const _PasswordChangeDialog(),
     );
-    oldPassword.dispose();
-    newPassword.dispose();
-    confirmPassword.dispose();
     if (result == null || !mounted) {
       return;
     }
@@ -487,6 +392,143 @@ class _PasswordChange {
   final String oldPassword;
   final String newPassword;
   final String confirmPassword;
+}
+
+class _NicknameDialog extends StatefulWidget {
+  const _NicknameDialog({required this.initialNickname});
+
+  final String initialNickname;
+
+  @override
+  State<_NicknameDialog> createState() => _NicknameDialogState();
+}
+
+class _NicknameDialogState extends State<_NicknameDialog> {
+  late final TextEditingController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = TextEditingController(text: widget.initialNickname);
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    Navigator.of(context).pop(controller.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return AlertDialog(
+      title: Text(strings.text('Change nickname')),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLength: 16,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(
+          labelText: strings.text('New nickname'),
+          border: const OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton(onPressed: submit, child: Text(strings.text('Save'))),
+      ],
+    );
+  }
+}
+
+class _PasswordChangeDialog extends StatefulWidget {
+  const _PasswordChangeDialog();
+
+  @override
+  State<_PasswordChangeDialog> createState() => _PasswordChangeDialogState();
+}
+
+class _PasswordChangeDialogState extends State<_PasswordChangeDialog> {
+  final oldPassword = TextEditingController();
+  final newPassword = TextEditingController();
+  final confirmPassword = TextEditingController();
+
+  @override
+  void dispose() {
+    oldPassword.dispose();
+    newPassword.dispose();
+    confirmPassword.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    Navigator.of(context).pop(
+      _PasswordChange(oldPassword.text, newPassword.text, confirmPassword.text),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return AlertDialog(
+      title: Text(strings.text('Change password')),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: oldPassword,
+                obscureText: true,
+                textInputAction: TextInputAction.next,
+                decoration: InputDecoration(
+                  labelText: strings.text('Old password'),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: newPassword,
+                obscureText: true,
+                textInputAction: TextInputAction.next,
+                decoration: InputDecoration(
+                  labelText: strings.text('New password'),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmPassword,
+                obscureText: true,
+                textInputAction: TextInputAction.done,
+                decoration: InputDecoration(
+                  labelText: strings.text('Confirm password'),
+                  border: const OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => submit(),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton(onPressed: submit, child: Text(strings.text('Save'))),
+      ],
+    );
+  }
 }
 
 class _ThemeColorOption {
@@ -934,6 +976,115 @@ class _LicenseNotice {
       packages.isEmpty ? 'Unknown package' : packages.join(', ');
 }
 
+class _PinPromptDialog extends StatefulWidget {
+  const _PinPromptDialog({
+    required this.title,
+    required this.label,
+    required this.confirm,
+  });
+
+  final String title;
+  final String label;
+  final bool confirm;
+
+  @override
+  State<_PinPromptDialog> createState() => _PinPromptDialogState();
+}
+
+class _PinPromptDialogState extends State<_PinPromptDialog> {
+  final pin = TextEditingController();
+  final pinConfirm = TextEditingController();
+  String? localError;
+
+  @override
+  void dispose() {
+    pin.dispose();
+    pinConfirm.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    final first = pin.text.trim();
+    if (!AppLockPin.isValid(first)) {
+      setState(() {
+        localError = context.strings.text('PIN must be 4-8 digits.');
+      });
+      return;
+    }
+    if (widget.confirm && first != pinConfirm.text.trim()) {
+      setState(() {
+        localError = context.strings.text('PINs do not match.');
+      });
+      return;
+    }
+    Navigator.of(context).pop(first);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return AlertDialog(
+      title: Text(strings.text(widget.title)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: pin,
+              autofocus: true,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              textInputAction: widget.confirm
+                  ? TextInputAction.next
+                  : TextInputAction.done,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(8),
+              ],
+              decoration: InputDecoration(
+                labelText: strings.text(widget.label),
+                helperText: strings.text('4-8 digits'),
+              ),
+              onSubmitted: widget.confirm ? null : (_) => submit(),
+            ),
+            if (widget.confirm) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: pinConfirm,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(8),
+                ],
+                decoration: InputDecoration(
+                  labelText: strings.text('Confirm PIN'),
+                ),
+                onSubmitted: (_) => submit(),
+              ),
+            ],
+            if (localError != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                localError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton(onPressed: submit, child: Text(strings.text('Save'))),
+      ],
+    );
+  }
+}
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
@@ -1116,6 +1267,153 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> logoutToLogin() async {
     await confirmLogout(context, widget.state);
+  }
+
+  Future<String?> promptPin({
+    required String title,
+    required String label,
+    bool confirm = false,
+  }) async {
+    return showDialog<String>(
+      context: context,
+      builder: (context) =>
+          _PinPromptDialog(title: title, label: label, confirm: confirm),
+    );
+  }
+
+  Future<bool> confirmCurrentAppLockPin() async {
+    final pin = await promptPin(
+      title: 'Enter current PIN',
+      label: 'Current PIN',
+    );
+    if (pin == null) {
+      return false;
+    }
+    if (widget.state.verifyAppLockPin(pin)) {
+      return true;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('Incorrect PIN.'))),
+      );
+    }
+    return false;
+  }
+
+  Future<void> enableAppLock() async {
+    final pin = await promptPin(
+      title: 'Set app lock PIN',
+      label: 'PIN',
+      confirm: true,
+    );
+    if (pin == null || !mounted) {
+      return;
+    }
+    await widget.state.enableAppLock(pin: pin, biometricEnabled: false);
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('App lock enabled.'))),
+      );
+    }
+  }
+
+  Future<void> changeAppLockPin() async {
+    if (!await confirmCurrentAppLockPin() || !mounted) {
+      return;
+    }
+    final pin = await promptPin(
+      title: 'Change app lock PIN',
+      label: 'New PIN',
+      confirm: true,
+    );
+    if (pin == null || !mounted) {
+      return;
+    }
+    await widget.state.enableAppLock(
+      pin: pin,
+      biometricEnabled: widget.state.preferences.appLockBiometricEnabled,
+    );
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('PIN updated.'))),
+      );
+    }
+  }
+
+  Future<void> disableAppLock() async {
+    if (!await confirmCurrentAppLockPin() || !mounted) {
+      return;
+    }
+    await widget.state.disableAppLock();
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('App lock disabled.'))),
+      );
+    }
+  }
+
+  Future<void> openAppLockSettings() async {
+    if (!widget.state.preferences.effectiveAppLockEnabled) {
+      await enableAppLock();
+      return;
+    }
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.fingerprint),
+                title: Text(context.strings.text('Biometric unlock')),
+                subtitle: Text(
+                  context.strings.text('Use device biometrics when available'),
+                ),
+                value: widget.state.preferences.appLockBiometricEnabled,
+                onChanged: (value) => Navigator.of(
+                  context,
+                ).pop(value ? 'biometricOn' : 'biometricOff'),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.pin_outlined),
+                title: Text(context.strings.text('Change PIN')),
+                onTap: () => Navigator.of(context).pop('changePin'),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.lock_open_outlined),
+                title: Text(context.strings.text('Disable app lock')),
+                onTap: () => Navigator.of(context).pop('disable'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || action == null) {
+      return;
+    }
+    switch (action) {
+      case 'biometricOn':
+      case 'biometricOff':
+        await widget.state.updateAppLockBiometric(action == 'biometricOn');
+        if (mounted) {
+          setState(() {});
+        }
+        break;
+      case 'changePin':
+        await changeAppLockPin();
+        break;
+      case 'disable':
+        await disableAppLock();
+        break;
+    }
   }
 
   Future<void> saveServerUrl() async {
@@ -1588,6 +1886,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onTap: chooseChatBackground,
                     ),
                   ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              elevation: 0,
+              child: _RoundedInkClip(
+                child: ListTile(
+                  leading: const Icon(Icons.lock_outline),
+                  title: Text(strings.text('App lock')),
+                  subtitle: Text(
+                    widget.state.preferences.effectiveAppLockEnabled
+                        ? strings.text('PIN required when returning to CsAC')
+                        : strings.text('Off'),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: openAppLockSettings,
                 ),
               ),
             ),

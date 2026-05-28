@@ -189,6 +189,42 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> enableAppLock({
+    required String pin,
+    required bool biometricEnabled,
+  }) async {
+    final salt = AppLockPin.newSalt();
+    preferences = preferences.copyWith(
+      appLockEnabled: true,
+      appLockPinSalt: salt,
+      appLockPinHash: AppLockPin.hash(pin, salt),
+      appLockBiometricEnabled: biometricEnabled,
+    );
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> disableAppLock() async {
+    preferences = preferences.copyWith(
+      appLockEnabled: false,
+      appLockPinSalt: '',
+      appLockPinHash: '',
+      appLockBiometricEnabled: false,
+    );
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateAppLockBiometric(bool enabled) async {
+    preferences = preferences.copyWith(appLockBiometricEnabled: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
+  bool verifyAppLockPin(String pin) {
+    return preferences.verifyAppLockPin(pin);
+  }
+
   Future<bool> updateServerUrl(String value) async {
     final normalizedUrl = value.trim().isEmpty
         ? ''
@@ -594,11 +630,19 @@ class CsacAppState extends ChangeNotifier {
     return cache.loadMessages(conversation);
   }
 
+  Future<List<ChatMessage>> loadAllCachedMessages(Conversation conversation) {
+    return cache.loadAllMessages(conversation);
+  }
+
   Future<List<ChatMessage>> loadCachedMessagesAround(
     Conversation conversation,
     int messageId,
   ) {
     return cache.loadMessagesAround(conversation, messageId);
+  }
+
+  Future<bool> hasCachedMessage(Conversation conversation, int messageId) {
+    return cache.hasMessage(conversation, messageId);
   }
 
   Future<List<MessageSearchResult>> searchMessages(
@@ -766,6 +810,10 @@ class CsacAppState extends ChangeNotifier {
 
   Future<List<ChatMessage>> loadEssenceMessages(int roomId) {
     return client.essenceMessages(roomId);
+  }
+
+  Future<EssenceStats> loadEssenceStats(int roomId, {String type = 'all'}) {
+    return client.essenceStats(roomId, type: type);
   }
 
   Future<List<ChatMessage>> syncMessages(
