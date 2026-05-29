@@ -6,6 +6,20 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'models.dart';
 
+class CsacLocalCacheStats {
+  const CsacLocalCacheStats({
+    required this.messageCount,
+    required this.conversationCount,
+    required this.localDeletedMessageCount,
+    required this.databaseBytes,
+  });
+
+  final int messageCount;
+  final int conversationCount;
+  final int localDeletedMessageCount;
+  final int databaseBytes;
+}
+
 class CsacLocalCache {
   Database? _db;
 
@@ -17,7 +31,7 @@ class CsacLocalCache {
     if (!directory.existsSync()) {
       directory.createSync(recursive: true);
     }
-    final file = File(p.join(directory.path, 'csac_cache.sqlite3'));
+    final file = await _databaseFile();
     final db = sqlite3.open(file.path);
     _db = db;
     _migrate(db);
@@ -41,6 +55,16 @@ class CsacLocalCache {
     db.execute('DELETE FROM messages');
     db.execute('DELETE FROM local_deleted_messages');
     db.execute('DELETE FROM conversations');
+  }
+
+  Future<CsacLocalCacheStats> stats() async {
+    final db = await _database();
+    return CsacLocalCacheStats(
+      messageCount: _countRows(db, 'messages'),
+      conversationCount: _countRows(db, 'conversations'),
+      localDeletedMessageCount: _countRows(db, 'local_deleted_messages'),
+      databaseBytes: await _databaseStorageBytes(),
+    );
   }
 
   Future<CsacUser?> loadUser() async {
@@ -648,6 +672,32 @@ class CsacLocalCache {
   Future<Database> _database() async {
     await open();
     return _db!;
+  }
+
+  Future<File> _databaseFile() async {
+    final directory = await getApplicationSupportDirectory();
+    return File(p.join(directory.path, 'csac_cache.sqlite3'));
+  }
+
+  Future<int> _databaseStorageBytes() async {
+    final file = await _databaseFile();
+    var total = 0;
+    for (final path in <String>[
+      file.path,
+      '${file.path}-wal',
+      '${file.path}-shm',
+    ]) {
+      final part = File(path);
+      if (part.existsSync()) {
+        total += await part.length();
+      }
+    }
+    return total;
+  }
+
+  int _countRows(Database db, String table) {
+    final rows = db.select('SELECT COUNT(*) AS count FROM $table');
+    return rows.first['count'] as int;
   }
 
   void _migrate(Database db) {

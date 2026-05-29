@@ -1,12 +1,37 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import 'api_client.dart';
 import 'l10n.dart';
 import 'local_cache.dart';
 import 'models.dart';
 import 'preferences.dart';
+
+class PerformanceCacheStats {
+  const PerformanceCacheStats({
+    required this.messageCount,
+    required this.conversationCount,
+    required this.localDeletedMessageCount,
+    required this.messageCacheBytes,
+    required this.imageCacheBytes,
+    required this.imageCacheEntries,
+    required this.logBytes,
+  });
+
+  final int messageCount;
+  final int conversationCount;
+  final int localDeletedMessageCount;
+  final int messageCacheBytes;
+  final int imageCacheBytes;
+  final int imageCacheEntries;
+  final int logBytes;
+
+  int get totalBytes => messageCacheBytes + imageCacheBytes + logBytes;
+}
 
 class CsacAppState extends ChangeNotifier {
   CsacAppState({CsacApiClient? client, CsacLocalCache? cache})
@@ -192,6 +217,15 @@ class CsacAppState extends ChangeNotifier {
   Future<void> updateReduceMotion(bool enabled) async {
     preferences = preferences.copyWith(reduceMotion: enabled);
     await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> enableLowPerformanceMode() async {
+    preferences = preferences.copyWith(reduceMotion: true);
+    await preferences.save();
+    PaintingBinding.instance.imageCache.maximumSize = 120;
+    PaintingBinding.instance.imageCache.maximumSizeBytes = 24 << 20;
+    await _clearImageCaches(resetBackground: false);
     notifyListeners();
   }
 
@@ -861,6 +895,119 @@ class CsacAppState extends ChangeNotifier {
     } catch (_) {
       // Keep the cache cleared even if the network refresh fails.
     }
+  }
+
+  Future<PerformanceCacheStats> loadPerformanceCacheStats() async {
+    final localStats = await cache.stats();
+    final imageCache = PaintingBinding.instance.imageCache;
+    final diskImageBytes = await _directoryBytes(await _backgroundDirectory());
+    final voiceBytes = await _temporaryFilesBytes(
+      (name) => name.startsWith('csac_voice_'),
+    );
+    final logBytes =
+        await _directoryBytes(await _logDirectory()) +
+        await _temporaryFilesBytes(_looksLikeLogFile);
+    return PerformanceCacheStats(
+      messageCount: localStats.messageCount,
+      conversationCount: localStats.conversationCount,
+      localDeletedMessageCount: localStats.localDeletedMessageCount,
+      messageCacheBytes: localStats.databaseBytes,
+      imageCacheBytes:
+          imageCache.currentSizeBytes + diskImageBytes + voiceBytes,
+      imageCacheEntries:
+          imageCache.currentSize +
+          imageCache.liveImageCount +
+          imageCache.pendingImageCount,
+      logBytes: logBytes,
+    );
+  }
+
+  Future<void> clearPerformanceCaches() async {
+    await clearLocalCache();
+    await _clearImageCaches(resetBackground: true);
+    await _clearLogCaches();
+  }
+
+  Future<void> _clearImageCaches({required bool resetBackground}) async {
+    final imageCache = PaintingBinding.instance.imageCache;
+    imageCache.clear();
+    imageCache.clearLiveImages();
+    await _deleteDirectoryContents(await _backgroundDirectory());
+    await _deleteTemporaryFiles((name) => name.startsWith('csac_voice_'));
+    if (resetBackground && preferences.chatBackgroundPath.trim().isNotEmpty) {
+      preferences = preferences.copyWith(chatBackgroundPath: '');
+      await preferences.save();
+      notifyListeners();
+    }
+  }
+
+  Future<void> _clearLogCaches() async {
+    await _deleteDirectoryContents(await _logDirectory());
+    await _deleteTemporaryFiles(_looksLikeLogFile);
+  }
+
+  Future<Directory> _backgroundDirectory() async {
+    final support = await getApplicationSupportDirectory();
+    return Directory(p.join(support.path, 'backgrounds'));
+  }
+
+  Future<Directory> _logDirectory() async {
+    final support = await getApplicationSupportDirectory();
+    return Directory(p.join(support.path, 'logs'));
+  }
+
+  Future<int> _directoryBytes(Directory directory) async {
+    if (!await directory.exists()) {
+      return 0;
+    }
+    var total = 0;
+    await for (final entity in directory.list(recursive: true)) {
+      if (entity is File) {
+        total += await entity.length();
+      }
+    }
+    return total;
+  }
+
+  Future<int> _temporaryFilesBytes(bool Function(String name) include) async {
+    final directory = await getTemporaryDirectory();
+    if (!await directory.exists()) {
+      return 0;
+    }
+    var total = 0;
+    await for (final entity in directory.list()) {
+      if (entity is File && include(p.basename(entity.path).toLowerCase())) {
+        total += await entity.length();
+      }
+    }
+    return total;
+  }
+
+  Future<void> _deleteDirectoryContents(Directory directory) async {
+    if (!await directory.exists()) {
+      return;
+    }
+    await for (final entity in directory.list(recursive: false)) {
+      await entity.delete(recursive: true);
+    }
+  }
+
+  Future<void> _deleteTemporaryFiles(bool Function(String name) include) async {
+    final directory = await getTemporaryDirectory();
+    if (!await directory.exists()) {
+      return;
+    }
+    await for (final entity in directory.list()) {
+      if (entity is File && include(p.basename(entity.path).toLowerCase())) {
+        await entity.delete();
+      }
+    }
+  }
+
+  bool _looksLikeLogFile(String name) {
+    return name.endsWith('.log') ||
+        name.endsWith('.log.txt') ||
+        name.startsWith('csac_log_');
   }
 
   Future<void> logout({bool keepLoginRecord = true}) async {

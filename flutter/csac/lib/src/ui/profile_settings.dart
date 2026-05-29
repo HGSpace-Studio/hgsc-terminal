@@ -538,6 +538,20 @@ class _ThemeColorOption {
   final Color color;
 }
 
+class _CacheMetric {
+  const _CacheMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.detail,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final String detail;
+}
+
 class _ThemeColorDot extends StatelessWidget {
   const _ThemeColorDot({required this.color, this.selected = false});
 
@@ -593,6 +607,59 @@ class _ThemeColorButton extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(4),
           child: _ThemeColorDot(color: option.color, selected: selected),
+        ),
+      ),
+    );
+  }
+}
+
+class _CacheMetricTile extends StatelessWidget {
+  const _CacheMetricTile({required this.metric});
+
+  final _CacheMetric metric;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 168,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerHighest.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colors.outlineVariant),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(metric.icon, size: 20, color: colors.primary),
+              const SizedBox(height: 10),
+              Text(
+                metric.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                metric.value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                metric.detail,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1106,6 +1173,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool clearing = false;
   bool refreshing = false;
   bool savingServer = false;
+  bool loadingPerformanceStats = false;
+  bool clearingPerformanceCaches = false;
+  bool enablingLowPerformanceMode = false;
+  PerformanceCacheStats? performanceStats;
   late bool developerOptionsExpanded;
 
   static const themeColorOptions = <_ThemeColorOption>[
@@ -1126,6 +1197,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     serverUrl = TextEditingController(text: widget.state.preferences.serverUrl);
     settingsSearch = TextEditingController()..addListener(handleSearchChanged);
     developerOptionsExpanded = widget.initialDeveloperOptionsExpanded;
+    unawaited(loadPerformanceStats());
   }
 
   @override
@@ -1207,6 +1279,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
         : context.strings.text('Custom background');
   }
 
+  String formatCacheBytes(int bytes) {
+    if (bytes <= 0) {
+      return '0 B';
+    }
+    const units = <String>['B', 'KB', 'MB', 'GB'];
+    var value = bytes.toDouble();
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    final decimals = value >= 10 || unit == 0 ? 0 : 1;
+    return '${value.toStringAsFixed(decimals)} ${units[unit]}';
+  }
+
+  List<_CacheMetric> performanceMetrics(PerformanceCacheStats stats) {
+    final strings = context.strings;
+    return [
+      _CacheMetric(
+        icon: Icons.forum_outlined,
+        label: strings.text('Message cache'),
+        value: formatCacheBytes(stats.messageCacheBytes),
+        detail: strings.format(
+          '{messages} messages, {conversations} conversations',
+          {
+            'messages': stats.messageCount,
+            'conversations': stats.conversationCount,
+          },
+        ),
+      ),
+      _CacheMetric(
+        icon: Icons.image_outlined,
+        label: strings.text('Image cache'),
+        value: formatCacheBytes(stats.imageCacheBytes),
+        detail: strings.format('{count} cached image entries', {
+          'count': stats.imageCacheEntries,
+        }),
+      ),
+      _CacheMetric(
+        icon: Icons.article_outlined,
+        label: strings.text('Log files'),
+        value: formatCacheBytes(stats.logBytes),
+        detail: strings.text('Local diagnostic files'),
+      ),
+    ];
+  }
+
+  Future<void> loadPerformanceStats({bool showError = false}) async {
+    if (!mounted || loadingPerformanceStats) {
+      return;
+    }
+    setState(() => loadingPerformanceStats = true);
+    try {
+      final stats = await widget.state.loadPerformanceCacheStats();
+      if (mounted) {
+        setState(() => performanceStats = stats);
+      }
+    } catch (err) {
+      if (!mounted || !showError) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.format('Load cache stats failed: {error}', {
+              'error': err,
+            }),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => loadingPerformanceStats = false);
+      }
+    }
+  }
+
   Future<void> refreshAll() async {
     setState(() => refreshing = true);
     try {
@@ -1263,6 +1412,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => clearing = true);
     try {
       await widget.state.clearLocalCache();
+      await loadPerformanceStats();
       if (!mounted) {
         return;
       }
@@ -1285,6 +1435,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) {
         setState(() => clearing = false);
+      }
+    }
+  }
+
+  Future<void> clearPerformanceCaches() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.strings.text('Clear performance caches?')),
+        content: Text(
+          context.strings.text(
+            'Message cache, image cache and log files will be removed. Your login session will be kept.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(context.strings.text('Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(context.strings.text('Clear')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    setState(() => clearingPerformanceCaches = true);
+    try {
+      await widget.state.clearPerformanceCaches();
+      await loadPerformanceStats();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.strings.text('Performance caches cleared.')),
+        ),
+      );
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.format('Clear cache failed: {error}', {
+              'error': err,
+            }),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => clearingPerformanceCaches = false);
+      }
+    }
+  }
+
+  Future<void> enableLowPerformanceMode() async {
+    setState(() => enablingLowPerformanceMode = true);
+    try {
+      await widget.state.enableLowPerformanceMode();
+      await loadPerformanceStats();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.strings.text('Low performance mode enabled.')),
+        ),
+      );
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.format('Save failed: {error}', {'error': err}),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => enablingLowPerformanceMode = false);
       }
     }
   }
@@ -1802,6 +2040,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final showData = settingMatches(query, [
       'Refresh app data',
       'Clear local cache',
+      'Performance and cache',
+      'Message cache',
+      'Image cache',
+      'Log files',
+      'Low performance mode',
       'Cache',
       'Cached conversations and message history',
     ]);
@@ -2031,6 +2274,126 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: _RoundedInkClip(
                   child: Column(
                     children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.speed_outlined,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    strings.text('Performance and cache'),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    performanceStats == null
+                                        ? strings.text(
+                                            'Measure local storage and memory cache',
+                                          )
+                                        : strings
+                                              .format('Total cache: {size}', {
+                                                'size': formatCacheBytes(
+                                                  performanceStats!.totalBytes,
+                                                ),
+                                              }),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: strings.text('Refresh'),
+                              onPressed: loadingPerformanceStats
+                                  ? null
+                                  : () => loadPerformanceStats(showError: true),
+                              icon: loadingPerformanceStats
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.refresh),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (performanceStats == null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          child: LinearProgressIndicator(
+                            minHeight: 2,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final metric in performanceMetrics(
+                                performanceStats!,
+                              ))
+                                _CacheMetricTile(metric: metric),
+                            ],
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: enablingLowPerformanceMode
+                                  ? null
+                                  : enableLowPerformanceMode,
+                              icon: enablingLowPerformanceMode
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.battery_saver_outlined),
+                              label: Text(strings.text('Low performance mode')),
+                            ),
+                            const SizedBox(height: 8),
+                            FilledButton.icon(
+                              onPressed: clearingPerformanceCaches
+                                  ? null
+                                  : clearPerformanceCaches,
+                              icon: clearingPerformanceCaches
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.auto_delete_outlined),
+                              label: Text(
+                                strings.text('Clear performance caches'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
                       ListTile(
                         leading: const Icon(Icons.sync),
                         title: Text(strings.text('Refresh app data')),
