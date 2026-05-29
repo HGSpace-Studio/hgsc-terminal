@@ -191,6 +191,12 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateFontStyle(CsacFontStyle style) async {
+    preferences = preferences.copyWith(fontStyle: style);
+    await preferences.save();
+    notifyListeners();
+  }
+
   Future<void> updateConversationSortMode(ConversationSortMode mode) async {
     preferences = preferences.copyWith(conversationSortMode: mode);
     if (mode == ConversationSortMode.latest) {
@@ -216,6 +222,12 @@ class CsacAppState extends ChangeNotifier {
 
   Future<void> updateReduceMotion(bool enabled) async {
     preferences = preferences.copyWith(reduceMotion: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateShowChatAvatars(bool enabled) async {
+    preferences = preferences.copyWith(showChatAvatars: enabled);
     await preferences.save();
     notifyListeners();
   }

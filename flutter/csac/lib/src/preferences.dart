@@ -14,6 +14,8 @@ enum ConversationSortMode { latest, type }
 
 enum MessageTimeFormat { slash, dash, compact, timeOnly }
 
+enum CsacFontStyle { system, serif, rounded, monospace }
+
 const defaultThemeColorValue = 0xff1f8a70;
 
 class CsacPreferences {
@@ -21,11 +23,13 @@ class CsacPreferences {
     this.themeMode = ThemeMode.system,
     this.themeColorValue = defaultThemeColorValue,
     this.language = CsacLanguage.zh,
+    this.fontStyle = CsacFontStyle.system,
     this.conversationSortMode = ConversationSortMode.latest,
     this.messageTimeFormat = MessageTimeFormat.slash,
     this.chatBackgroundPath = '',
     this.serverUrl = '',
     this.reduceMotion = false,
+    this.showChatAvatars = true,
     this.appLockEnabled = false,
     this.appLockPinSalt = '',
     this.appLockPinHash = '',
@@ -35,11 +39,13 @@ class CsacPreferences {
   static const _themeKey = 'csac.theme_mode';
   static const _themeColorKey = 'csac.theme_color';
   static const _languageKey = 'csac.language';
+  static const _fontStyleKey = 'csac.font_style';
   static const _conversationSortModeKey = 'csac.conversation_sort_mode';
   static const _messageTimeFormatKey = 'csac.message_time_format';
   static const _chatBackgroundPathKey = 'csac.chat_background_path';
   static const _serverUrlKey = 'csac.server_url';
   static const _reduceMotionKey = 'csac.reduce_motion';
+  static const _showChatAvatarsKey = 'csac.chat.show_avatars';
   static const _appLockEnabledKey = 'csac.app_lock.enabled';
   static const _appLockPinSaltKey = 'csac.app_lock.pin_salt';
   static const _appLockPinHashKey = 'csac.app_lock.pin_hash';
@@ -48,11 +54,13 @@ class CsacPreferences {
   final ThemeMode themeMode;
   final int themeColorValue;
   final CsacLanguage language;
+  final CsacFontStyle fontStyle;
   final ConversationSortMode conversationSortMode;
   final MessageTimeFormat messageTimeFormat;
   final String chatBackgroundPath;
   final String serverUrl;
   final bool reduceMotion;
+  final bool showChatAvatars;
   final bool appLockEnabled;
   final String appLockPinSalt;
   final String appLockPinHash;
@@ -74,11 +82,13 @@ class CsacPreferences {
     ThemeMode? themeMode,
     int? themeColorValue,
     CsacLanguage? language,
+    CsacFontStyle? fontStyle,
     ConversationSortMode? conversationSortMode,
     MessageTimeFormat? messageTimeFormat,
     String? chatBackgroundPath,
     String? serverUrl,
     bool? reduceMotion,
+    bool? showChatAvatars,
     bool? appLockEnabled,
     String? appLockPinSalt,
     String? appLockPinHash,
@@ -88,11 +98,13 @@ class CsacPreferences {
       themeMode: themeMode ?? this.themeMode,
       themeColorValue: themeColorValue ?? this.themeColorValue,
       language: language ?? this.language,
+      fontStyle: fontStyle ?? this.fontStyle,
       conversationSortMode: conversationSortMode ?? this.conversationSortMode,
       messageTimeFormat: messageTimeFormat ?? this.messageTimeFormat,
       chatBackgroundPath: chatBackgroundPath ?? this.chatBackgroundPath,
       serverUrl: serverUrl ?? this.serverUrl,
       reduceMotion: reduceMotion ?? this.reduceMotion,
+      showChatAvatars: showChatAvatars ?? this.showChatAvatars,
       appLockEnabled: appLockEnabled ?? this.appLockEnabled,
       appLockPinSalt: appLockPinSalt ?? this.appLockPinSalt,
       appLockPinHash: appLockPinHash ?? this.appLockPinHash,
@@ -107,6 +119,7 @@ class CsacPreferences {
       themeMode: _themeModeFromName(prefs.getString(_themeKey)),
       themeColorValue: _themeColorFromPrefs(prefs),
       language: _languageFromName(prefs.getString(_languageKey)),
+      fontStyle: _fontStyleFromName(prefs.getString(_fontStyleKey)),
       conversationSortMode: _conversationSortModeFromName(
         prefs.getString(_conversationSortModeKey),
       ),
@@ -116,6 +129,7 @@ class CsacPreferences {
       chatBackgroundPath: prefs.getString(_chatBackgroundPathKey) ?? '',
       serverUrl: (prefs.getString(_serverUrlKey) ?? '').trim(),
       reduceMotion: prefs.getBool(_reduceMotionKey) ?? false,
+      showChatAvatars: prefs.getBool(_showChatAvatarsKey) ?? true,
       appLockEnabled: prefs.getBool(_appLockEnabledKey) ?? false,
       appLockPinSalt: prefs.getString(_appLockPinSaltKey) ?? '',
       appLockPinHash: prefs.getString(_appLockPinHashKey) ?? '',
@@ -129,6 +143,7 @@ class CsacPreferences {
     await prefs.setString(_themeKey, themeMode.name);
     await prefs.setInt(_themeColorKey, themeColorValue);
     await prefs.setString(_languageKey, language.name);
+    await prefs.setString(_fontStyleKey, fontStyle.name);
     await prefs.setString(_conversationSortModeKey, conversationSortMode.name);
     await prefs.setString(_messageTimeFormatKey, messageTimeFormat.name);
     if (chatBackgroundPath.trim().isEmpty) {
@@ -142,6 +157,7 @@ class CsacPreferences {
       await prefs.setString(_serverUrlKey, serverUrl.trim());
     }
     await prefs.setBool(_reduceMotionKey, reduceMotion);
+    await prefs.setBool(_showChatAvatarsKey, showChatAvatars);
     await prefs.setBool(_appLockEnabledKey, appLockEnabled);
     if (appLockPinSalt.trim().isEmpty || appLockPinHash.trim().isEmpty) {
       await prefs.remove(_appLockPinSaltKey);
@@ -177,6 +193,15 @@ class CsacPreferences {
       }
     }
     return CsacLanguage.zh;
+  }
+
+  static CsacFontStyle _fontStyleFromName(String? value) {
+    for (final style in CsacFontStyle.values) {
+      if (style.name == value) {
+        return style;
+      }
+    }
+    return CsacFontStyle.system;
   }
 
   static ConversationSortMode _conversationSortModeFromName(String? value) {

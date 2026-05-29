@@ -1,9 +1,14 @@
 part of '../../main.dart';
 
 class MainShell extends StatefulWidget {
-  const MainShell({super.key, required this.state});
+  const MainShell({
+    super.key,
+    required this.state,
+    this.suppressInitialTextInput = true,
+  });
 
   final CsacAppState state;
+  final bool suppressInitialTextInput;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -14,6 +19,8 @@ class _MainShellState extends State<MainShell> {
   int lastUnreadChats = 0;
   Conversation? selectedConversation;
   Timer? timer;
+  Timer? initialFocusGuardTimer;
+  bool initialFocusGuardActive = true;
 
   @override
   void initState() {
@@ -23,6 +30,34 @@ class _MainShellState extends State<MainShell> {
       const Duration(seconds: 12),
       (_) => refreshHomeWithHint(),
     );
+    if (widget.suppressInitialTextInput) {
+      dismissInitialTextInput();
+    } else {
+      initialFocusGuardActive = false;
+    }
+  }
+
+  void dismissInitialTextInput() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      hideTextInput();
+      initialFocusGuardTimer = Timer(const Duration(milliseconds: 430), () {
+        if (!mounted) {
+          return;
+        }
+        hideTextInput();
+        setState(() => initialFocusGuardActive = false);
+      });
+    });
+  }
+
+  void hideTextInput() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (Platform.isIOS) {
+      unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
+    }
   }
 
   int totalUnreadChats() {
@@ -77,6 +112,7 @@ class _MainShellState extends State<MainShell> {
   @override
   void dispose() {
     timer?.cancel();
+    initialFocusGuardTimer?.cancel();
     super.dispose();
   }
 
@@ -107,8 +143,9 @@ class _MainShellState extends State<MainShell> {
       NoticeCenterScreen(state: widget.state),
       ProfileScreen(state: widget.state),
     ];
+    Widget shell;
     if (wide) {
-      return Scaffold(
+      shell = Scaffold(
         body: SafeArea(
           child: Row(
             children: [
@@ -180,55 +217,64 @@ class _MainShellState extends State<MainShell> {
           ),
         ),
       );
+    } else {
+      shell = Scaffold(
+        body: _BottomTabSwitcher(index: index, children: pages),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: index,
+          onDestinationSelected: (value) {
+            setState(() => index = value);
+            if (value == 0) {
+              widget.state.loadConversations();
+            }
+            if (value == 2) {
+              widget.state.refreshNotificationCounts();
+            }
+          },
+          destinations: [
+            NavigationDestination(
+              icon: _BadgeIcon(
+                icon: Icons.chat_bubble_outline,
+                count: unreadChats,
+              ),
+              selectedIcon: _BadgeIcon(
+                icon: Icons.chat_bubble,
+                count: unreadChats,
+              ),
+              label: context.strings.text('Chats'),
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.manage_search_outlined),
+              selectedIcon: const Icon(Icons.manage_search),
+              label: context.strings.text('Search'),
+            ),
+            NavigationDestination(
+              icon: _BadgeIcon(
+                icon: Icons.notifications_none,
+                count: noticeCount,
+              ),
+              selectedIcon: _BadgeIcon(
+                icon: Icons.notifications,
+                count: noticeCount,
+              ),
+              label: context.strings.text('Notices'),
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.person_outline),
+              selectedIcon: const Icon(Icons.person),
+              label: context.strings.text('Me'),
+            ),
+          ],
+        ),
+      );
     }
-    return Scaffold(
-      body: _BottomTabSwitcher(index: index, children: pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (value) {
-          setState(() => index = value);
-          if (value == 0) {
-            widget.state.loadConversations();
-          }
-          if (value == 2) {
-            widget.state.refreshNotificationCounts();
-          }
-        },
-        destinations: [
-          NavigationDestination(
-            icon: _BadgeIcon(
-              icon: Icons.chat_bubble_outline,
-              count: unreadChats,
-            ),
-            selectedIcon: _BadgeIcon(
-              icon: Icons.chat_bubble,
-              count: unreadChats,
-            ),
-            label: context.strings.text('Chats'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.manage_search_outlined),
-            selectedIcon: const Icon(Icons.manage_search),
-            label: context.strings.text('Search'),
-          ),
-          NavigationDestination(
-            icon: _BadgeIcon(
-              icon: Icons.notifications_none,
-              count: noticeCount,
-            ),
-            selectedIcon: _BadgeIcon(
-              icon: Icons.notifications,
-              count: noticeCount,
-            ),
-            label: context.strings.text('Notices'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.person_outline),
-            selectedIcon: const Icon(Icons.person),
-            label: context.strings.text('Me'),
-          ),
-        ],
-      ),
+    if (!initialFocusGuardActive) {
+      return shell;
+    }
+    return Focus(
+      descendantsAreFocusable: false,
+      descendantsAreTraversable: false,
+      child: shell,
     );
   }
 }

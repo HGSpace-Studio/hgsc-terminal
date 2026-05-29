@@ -412,6 +412,7 @@ class ChatMessage {
     required this.senderId,
     required this.sender,
     required this.body,
+    this.senderAvatar = '',
     this.time = '',
     this.timeSortValue = 0,
     this.imageUrl = '',
@@ -430,6 +431,7 @@ class ChatMessage {
   final int senderId;
   final String sender;
   final String body;
+  final String senderAvatar;
   final String time;
   final int timeSortValue;
   final String imageUrl;
@@ -448,6 +450,7 @@ class ChatMessage {
     int? senderId,
     String? sender,
     String? body,
+    String? senderAvatar,
     String? time,
     int? timeSortValue,
     String? imageUrl,
@@ -466,6 +469,7 @@ class ChatMessage {
       senderId: senderId ?? this.senderId,
       sender: sender ?? this.sender,
       body: body ?? this.body,
+      senderAvatar: senderAvatar ?? this.senderAvatar,
       time: time ?? this.time,
       timeSortValue: timeSortValue ?? this.timeSortValue,
       imageUrl: imageUrl ?? this.imageUrl,
@@ -557,6 +561,14 @@ class ChatMessage {
           ? 'UID $senderId'
           : firstString(json, const ['nickname', 'sender_name']),
       body: body,
+      senderAvatar: normalizeApiUrl(
+        firstString(json, const [
+          'avatar',
+          'sender_avatar',
+          'user_avatar',
+          'from_avatar',
+        ]),
+      ),
       time: readableTimestamp(rawTime),
       timeSortValue: timestampForSort(rawTime),
       imageUrl: image,

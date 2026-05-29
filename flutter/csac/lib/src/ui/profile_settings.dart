@@ -1247,6 +1247,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  String get fontStyleLabel {
+    return fontStyleLabelFor(context, widget.state.preferences.fontStyle);
+  }
+
   String get themeColorLabel {
     final selected = themeColorOptions.firstWhere(
       (option) =>
@@ -1854,6 +1858,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> chooseFontStyle() async {
+    final selected = await showModalBottomSheet<CsacFontStyle>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final style in CsacFontStyle.values)
+                ListTile(
+                  leading: widget.state.preferences.fontStyle == style
+                      ? const Icon(Icons.check)
+                      : const SizedBox(width: 24),
+                  title: Text(
+                    fontStyleLabelFor(context, style),
+                    style: TextStyle(
+                      fontFamily: fontFamilyForStyle(style),
+                      fontFamilyFallback: fontFamilyFallbackForStyle(style),
+                    ),
+                  ),
+                  subtitle: Text(
+                    fontStyleDescriptionFor(context, style),
+                    style: TextStyle(
+                      fontFamily: fontFamilyForStyle(style),
+                      fontFamilyFallback: fontFamilyFallbackForStyle(style),
+                    ),
+                  ),
+                  onTap: () => Navigator.of(context).pop(style),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      await widget.state.updateFontStyle(selected);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
   Future<void> chooseConversationSortMode() async {
     final selected = await showModalBottomSheet<ConversationSortMode>(
       context: context,
@@ -2028,10 +2075,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Theme',
       'Theme color',
       'Language',
+      'Font style',
+      'Font',
+      'Typography',
       'Conversation sorting',
       'Message time format',
       'Chat background',
       'Background',
+      'Show chat avatars',
+      'Avatar',
       'Reduce motion',
       'Animation',
       'Motion',
@@ -2209,6 +2261,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const Divider(height: 1),
                       ListTile(
+                        leading: const Icon(Icons.text_fields),
+                        title: Text(strings.text('Font style')),
+                        subtitle: Text(fontStyleLabel),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: chooseFontStyle,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
                         leading: const Icon(Icons.sort),
                         title: Text(strings.text('Conversation sorting')),
                         subtitle: Text(conversationSortLabel),
@@ -2230,6 +2290,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         subtitle: Text(chatBackgroundLabel),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: chooseChatBackground,
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.account_circle_outlined),
+                        title: Text(strings.text('Show chat avatars')),
+                        subtitle: Text(
+                          strings.text(
+                            'Display sender avatars beside message bubbles',
+                          ),
+                        ),
+                        value: widget.state.preferences.showChatAvatars,
+                        onChanged: widget.state.updateShowChatAvatars,
                       ),
                       const Divider(height: 1),
                       SwitchListTile(

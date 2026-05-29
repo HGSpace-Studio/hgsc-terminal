@@ -58,6 +58,45 @@ String messageTimeFormatExampleFor(MessageTimeFormat format) {
   }
 }
 
+String fontStyleLabelFor(BuildContext context, CsacFontStyle style) {
+  final strings = context.strings;
+  switch (style) {
+    case CsacFontStyle.system:
+      return strings.text('Default system');
+    case CsacFontStyle.serif:
+      return strings.text('Serif');
+    case CsacFontStyle.rounded:
+      return strings.text('Rounded');
+    case CsacFontStyle.monospace:
+      return strings.text('Monospace');
+  }
+}
+
+String fontStyleDescriptionFor(BuildContext context, CsacFontStyle style) {
+  final strings = context.strings;
+  switch (style) {
+    case CsacFontStyle.system:
+      return strings.text('Use the platform default font');
+    case CsacFontStyle.serif:
+      return strings.text('More book-like text');
+    case CsacFontStyle.rounded:
+      return strings.text('Softer iOS-style rounded text');
+    case CsacFontStyle.monospace:
+      return strings.text('Fixed-width terminal-like text');
+  }
+}
+
+String pickedImageFileName(XFile picked, ImageSource source) {
+  final name = picked.name.trim();
+  final extension = p.extension(name).toLowerCase();
+  if (name.isNotEmpty && extension.isNotEmpty) {
+    return name;
+  }
+  final fallbackExtension = extension.isEmpty ? '.jpg' : extension;
+  final prefix = source == ImageSource.camera ? 'csac_photo' : 'csac_image';
+  return '${prefix}_${DateTime.now().millisecondsSinceEpoch}$fallbackExtension';
+}
+
 Future<String> persistChatBackground(XFile picked) async {
   final support = await getApplicationSupportDirectory();
   final directory = Directory(p.join(support.path, 'backgrounds'));

@@ -125,10 +125,12 @@ class _CsacMobileAppState extends State<CsacMobileApp>
           theme: buildCsacTheme(
             Brightness.light,
             Color(state.preferences.themeColorValue),
+            state.preferences.fontStyle,
           ),
           darkTheme: buildCsacTheme(
             Brightness.dark,
             Color(state.preferences.themeColorValue),
+            state.preferences.fontStyle,
           ),
           themeMode: state.preferences.themeMode,
           home: _MotionPreference(
@@ -149,6 +151,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
                       : MainShell(
                           key: const ValueKey<String>('main'),
                           state: state,
+                          suppressInitialTextInput: !locked && !canUseAppLock(),
                         ),
                 ),
                 if (locked && state.user != null)
@@ -218,12 +221,23 @@ class _StartupTransition extends StatelessWidget {
   }
 }
 
-ThemeData buildCsacTheme(Brightness brightness, Color seedColor) {
+ThemeData buildCsacTheme(
+  Brightness brightness,
+  Color seedColor,
+  CsacFontStyle fontStyle,
+) {
   final scheme = ColorScheme.fromSeed(
     seedColor: seedColor,
     brightness: brightness,
   );
-  final base = ThemeData(colorScheme: scheme, useMaterial3: true);
+  final fontFamily = fontFamilyForStyle(fontStyle);
+  final fontFamilyFallback = fontFamilyFallbackForStyle(fontStyle);
+  final base = ThemeData(
+    colorScheme: scheme,
+    useMaterial3: true,
+    fontFamily: fontFamily,
+    fontFamilyFallback: fontFamilyFallback,
+  );
   return base.copyWith(
     scaffoldBackgroundColor: scheme.surface,
     canvasColor: scheme.surface,
@@ -292,6 +306,43 @@ ThemeData buildCsacTheme(Brightness brightness, Color seedColor) {
       ),
     ),
   );
+}
+
+String? fontFamilyForStyle(CsacFontStyle style) {
+  switch (style) {
+    case CsacFontStyle.system:
+      return null;
+    case CsacFontStyle.serif:
+      return Platform.isIOS || Platform.isMacOS ? 'Times New Roman' : 'serif';
+    case CsacFontStyle.rounded:
+      return Platform.isIOS || Platform.isMacOS ? 'SF Pro Rounded' : null;
+    case CsacFontStyle.monospace:
+      return Platform.isIOS || Platform.isMacOS ? 'Menlo' : 'monospace';
+  }
+}
+
+List<String>? fontFamilyFallbackForStyle(CsacFontStyle style) {
+  switch (style) {
+    case CsacFontStyle.system:
+      return null;
+    case CsacFontStyle.serif:
+      return const <String>[
+        'Times New Roman',
+        'Songti SC',
+        'Noto Serif CJK SC',
+        'serif',
+      ];
+    case CsacFontStyle.rounded:
+      return const <String>[
+        'SF Pro Rounded',
+        'PingFang SC',
+        'Microsoft YaHei UI',
+        'Roboto',
+        'sans-serif',
+      ];
+    case CsacFontStyle.monospace:
+      return const <String>['Menlo', 'Cascadia Mono', 'Consolas', 'monospace'];
+  }
 }
 
 class SplashScreen extends StatelessWidget {
