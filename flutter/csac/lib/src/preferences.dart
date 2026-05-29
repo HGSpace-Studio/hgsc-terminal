@@ -226,29 +226,83 @@ class ConversationDraftStore {
   const ConversationDraftStore._();
 
   static const _draftPrefix = 'csac.draft.';
+  static final changes = ValueNotifier<int>(0);
 
   static String _key(Conversation conversation) {
     return '$_draftPrefix${conversation.type.name}:${conversation.id}';
   }
 
-  static Future<String> load(Conversation conversation) async {
+  static Future<ConversationDraft> load(Conversation conversation) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_key(conversation)) ?? '';
+    final raw = prefs.getString(_key(conversation));
+    if (raw == null || raw.isEmpty) {
+      return ConversationDraft.empty;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return ConversationDraft.fromJson(decoded);
+      }
+    } catch (_) {}
+    return ConversationDraft(text: raw);
   }
 
-  static Future<void> save(Conversation conversation, String text) async {
+  static Future<Map<String, ConversationDraft>> loadAll() async {
     final prefs = await SharedPreferences.getInstance();
-    final normalized = text.trimRight();
-    if (normalized.trim().isEmpty) {
+    final drafts = <String, ConversationDraft>{};
+    for (final key in prefs.getKeys()) {
+      if (!key.startsWith(_draftPrefix)) {
+        continue;
+      }
+      final raw = prefs.getString(key);
+      if (raw == null || raw.isEmpty) {
+        continue;
+      }
+      ConversationDraft draft;
+      try {
+        final decoded = jsonDecode(raw);
+        draft = decoded is Map<String, dynamic>
+            ? ConversationDraft.fromJson(decoded)
+            : ConversationDraft(text: raw);
+      } catch (_) {
+        draft = ConversationDraft(text: raw);
+      }
+      if (draft.hasContent) {
+        drafts[key.substring(_draftPrefix.length)] = draft;
+      }
+    }
+    return drafts;
+  }
+
+  static Future<void> save(
+    Conversation conversation,
+    String text, {
+    ChatMessage? replyTarget,
+  }) async {
+    return saveDraft(
+      conversation,
+      ConversationDraft.fromParts(text: text, replyTarget: replyTarget),
+    );
+  }
+
+  static Future<void> saveDraft(
+    Conversation conversation,
+    ConversationDraft draft,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!draft.hasContent) {
       await prefs.remove(_key(conversation));
+      _notifyChanged();
       return;
     }
-    await prefs.setString(_key(conversation), normalized);
+    await prefs.setString(_key(conversation), jsonEncode(draft.toJson()));
+    _notifyChanged();
   }
 
   static Future<void> clear(Conversation conversation) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key(conversation));
+    _notifyChanged();
   }
 
   static Future<void> clearAll() async {
@@ -260,7 +314,216 @@ class ConversationDraftStore {
     for (final key in keys) {
       await prefs.remove(key);
     }
+    if (keys.isNotEmpty) {
+      _notifyChanged();
+    }
   }
+
+  static void _notifyChanged() {
+    changes.value = changes.value + 1;
+  }
+}
+
+class ConversationLocalPreference {
+  const ConversationLocalPreference({
+    this.pinned = false,
+    this.muted = false,
+    this.archived = false,
+  });
+
+  static const defaults = ConversationLocalPreference();
+
+  final bool pinned;
+  final bool muted;
+  final bool archived;
+
+  bool get isDefault => !pinned && !muted && !archived;
+
+  ConversationLocalPreference copyWith({
+    bool? pinned,
+    bool? muted,
+    bool? archived,
+  }) {
+    return ConversationLocalPreference(
+      pinned: pinned ?? this.pinned,
+      muted: muted ?? this.muted,
+      archived: archived ?? this.archived,
+    );
+  }
+
+  factory ConversationLocalPreference.fromJson(Map<String, dynamic> json) {
+    return ConversationLocalPreference(
+      pinned: json['pinned'] == true,
+      muted: json['muted'] == true,
+      archived: json['archived'] == true,
+    );
+  }
+
+  Map<String, Object> toJson() {
+    return <String, Object>{
+      'pinned': pinned,
+      'muted': muted,
+      'archived': archived,
+    };
+  }
+}
+
+class ConversationPreferenceStore {
+  const ConversationPreferenceStore._();
+
+  static const _prefix = 'csac.conversation_pref.';
+  static final changes = ValueNotifier<int>(0);
+
+  static String keyFor(Conversation conversation) {
+    return '${conversation.type.name}:${conversation.id}';
+  }
+
+  static String _storageKey(Conversation conversation) {
+    return '$_prefix${keyFor(conversation)}';
+  }
+
+  static Future<Map<String, ConversationLocalPreference>> loadAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    final result = <String, ConversationLocalPreference>{};
+    for (final key in prefs.getKeys()) {
+      if (!key.startsWith(_prefix)) {
+        continue;
+      }
+      final raw = prefs.getString(key);
+      if (raw == null || raw.isEmpty) {
+        continue;
+      }
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) {
+          final value = ConversationLocalPreference.fromJson(decoded);
+          if (!value.isDefault) {
+            result[key.substring(_prefix.length)] = value;
+          }
+        }
+      } catch (_) {}
+    }
+    return result;
+  }
+
+  static Future<ConversationLocalPreference> load(
+    Conversation conversation,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_storageKey(conversation));
+    if (raw == null || raw.isEmpty) {
+      return ConversationLocalPreference.defaults;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return ConversationLocalPreference.fromJson(decoded);
+      }
+    } catch (_) {}
+    return ConversationLocalPreference.defaults;
+  }
+
+  static Future<void> update(
+    Conversation conversation,
+    ConversationLocalPreference Function(ConversationLocalPreference current)
+    change,
+  ) async {
+    final current = await load(conversation);
+    await save(conversation, change(current));
+  }
+
+  static Future<void> save(
+    Conversation conversation,
+    ConversationLocalPreference value,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value.isDefault) {
+      await prefs.remove(_storageKey(conversation));
+    } else {
+      await prefs.setString(_storageKey(conversation), jsonEncode(value));
+    }
+    _notifyChanged();
+  }
+
+  static void _notifyChanged() {
+    changes.value = changes.value + 1;
+  }
+}
+
+class ConversationDraft {
+  const ConversationDraft({
+    this.text = '',
+    this.replyMessageId = 0,
+    this.replySender = '',
+    this.replyBody = '',
+  });
+
+  static const empty = ConversationDraft();
+
+  final String text;
+  final int replyMessageId;
+  final String replySender;
+  final String replyBody;
+
+  bool get hasReply => replyMessageId > 0;
+  bool get hasContent => text.trim().isNotEmpty || hasReply;
+
+  String get previewText {
+    final normalized = text.trim();
+    if (normalized.isNotEmpty) {
+      return normalized;
+    }
+    if (hasReply) {
+      final body = replyBody.trim();
+      final sender = replySender.trim();
+      if (body.isEmpty) {
+        return sender.isEmpty ? '#$replyMessageId' : sender;
+      }
+      return sender.isEmpty ? body : '$sender: $body';
+    }
+    return '';
+  }
+
+  factory ConversationDraft.fromParts({
+    required String text,
+    ChatMessage? replyTarget,
+  }) {
+    final reply = replyTarget;
+    return ConversationDraft(
+      text: text.trimRight(),
+      replyMessageId: reply?.id ?? 0,
+      replySender: reply?.sender ?? '',
+      replyBody: reply == null ? '' : compactDraftText(reply.body),
+    );
+  }
+
+  factory ConversationDraft.fromJson(Map<String, dynamic> json) {
+    return ConversationDraft(
+      text: '${json['text'] ?? ''}'.trimRight(),
+      replyMessageId: json['replyMessageId'] is int
+          ? json['replyMessageId'] as int
+          : int.tryParse('${json['replyMessageId'] ?? ''}') ?? 0,
+      replySender: '${json['replySender'] ?? ''}',
+      replyBody: '${json['replyBody'] ?? ''}',
+    );
+  }
+
+  Map<String, Object> toJson() {
+    return <String, Object>{
+      'text': text.trimRight(),
+      'replyMessageId': replyMessageId,
+      'replySender': replySender,
+      'replyBody': replyBody,
+    };
+  }
+}
+
+String compactDraftText(String text, {int max = 96}) {
+  final value = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (value.length <= max) {
+    return value;
+  }
+  return '${value.substring(0, max - 3)}...';
 }
 
 class ChatHintStore {

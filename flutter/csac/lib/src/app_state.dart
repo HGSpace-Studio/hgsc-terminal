@@ -374,6 +374,16 @@ class CsacAppState extends ChangeNotifier {
     activeConversation = conversation;
   }
 
+  Future<void> updateConversationLocalPreference(
+    Conversation conversation,
+    ConversationLocalPreference Function(ConversationLocalPreference current)
+    change,
+  ) async {
+    await ConversationPreferenceStore.update(conversation, change);
+    conversations = _sortConversations(conversations);
+    notifyListeners();
+  }
+
   Future<void> loadConversations() async {
     try {
       await syncConversations();

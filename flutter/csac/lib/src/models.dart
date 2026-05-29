@@ -921,6 +921,8 @@ class GroupMember {
     required this.uid,
     required this.name,
     this.username = '',
+    this.nickname = '',
+    this.remark = '',
     this.avatar = '',
     this.role = '',
     this.onlineStatus = '',
@@ -931,6 +933,8 @@ class GroupMember {
   final int uid;
   final String name;
   final String username;
+  final String nickname;
+  final String remark;
   final String avatar;
   final String role;
   final String onlineStatus;
@@ -943,6 +947,20 @@ class GroupMember {
       if (roleLabel.isNotEmpty) roleLabel,
       if (onlineStatus.isNotEmpty) onlineStatus,
     ].join(' | ');
+  }
+
+  String get searchableText {
+    return [
+      name,
+      nickname,
+      remark,
+      username,
+      role,
+      roleLabel,
+      onlineStatus,
+      '$uid',
+      'UID $uid',
+    ].where((value) => value.trim().isNotEmpty).join(' | ').toLowerCase();
   }
 
   String get roleLabel {
@@ -973,6 +991,8 @@ class GroupMember {
         orElse: () => 'UID $uid',
       ),
       username: username,
+      nickname: nickname,
+      remark: remark,
       avatar: normalizeApiUrl(asString(json['avatar'])),
       role: firstString(json, const [
         'role',

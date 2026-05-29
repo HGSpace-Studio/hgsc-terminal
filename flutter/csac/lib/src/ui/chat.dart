@@ -169,7 +169,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     timer?.cancel();
     draftTimer?.cancel();
-    unawaited(ConversationDraftStore.save(widget.conversation, input.text));
+    unawaited(saveDraftNow());
     if (widget.state.isActiveConversation(widget.conversation)) {
       widget.state.setActiveConversation(null);
     }
@@ -266,9 +266,24 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     applyingDraft = true;
     input
-      ..text = draft
-      ..selection = TextSelection.collapsed(offset: draft.length);
+      ..text = draft.text
+      ..selection = TextSelection.collapsed(offset: draft.text.length);
     applyingDraft = false;
+    if (draft.hasReply) {
+      final cachedReply = messages.where((item) {
+        return item.id == draft.replyMessageId;
+      }).firstOrNull;
+      setState(() {
+        replyTarget =
+            cachedReply ??
+            ChatMessage(
+              id: draft.replyMessageId,
+              senderId: 0,
+              sender: draft.replySender,
+              body: draft.replyBody,
+            );
+      });
+    }
   }
 
   void scheduleDraftSave() {
@@ -277,8 +292,16 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     draftTimer?.cancel();
     draftTimer = Timer(const Duration(milliseconds: 450), () {
-      unawaited(ConversationDraftStore.save(widget.conversation, input.text));
+      unawaited(saveDraftNow());
     });
+  }
+
+  Future<void> saveDraftNow() {
+    return ConversationDraftStore.save(
+      widget.conversation,
+      input.text,
+      replyTarget: replyTarget,
+    );
   }
 
   void handleInputChanged() {
@@ -570,6 +593,7 @@ class _ChatScreenState extends State<ChatScreen> {
       mentionTargets.clear();
       error = null;
     });
+    unawaited(saveDraftNow());
     scrollToEnd();
     unawaited(performPendingSend(pending.localId));
   }
@@ -621,6 +645,7 @@ class _ChatScreenState extends State<ChatScreen> {
         mentionTargets.clear();
         error = null;
       });
+      unawaited(saveDraftNow());
       scrollToEnd();
       unawaited(performPendingSend(pending.localId));
     } finally {
@@ -671,6 +696,7 @@ class _ChatScreenState extends State<ChatScreen> {
         mentionTargets.clear();
         error = null;
       });
+      unawaited(saveDraftNow());
       scrollToEnd();
       unawaited(performPendingSend(pending.localId));
     } catch (err) {
@@ -812,10 +838,12 @@ class _ChatScreenState extends State<ChatScreen> {
       replyTarget = null;
       mentionTargets.clear();
     });
+    unawaited(saveDraftNow());
   }
 
   void setReplyTarget(ChatMessage message) {
     setState(() => replyTarget = message);
+    unawaited(saveDraftNow());
     inputFocus.requestFocus();
   }
 
@@ -1846,8 +1874,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                 child: _ComposeTargetsBar(
                                   replyTarget: replyTarget,
                                   mentions: mentionTargets,
-                                  onClearReply: () =>
-                                      setState(() => replyTarget = null),
+                                  onClearReply: () {
+                                    setState(() => replyTarget = null);
+                                    unawaited(saveDraftNow());
+                                  },
                                   onClearMentions: () =>
                                       setState(() => mentionTargets.clear()),
                                 ),

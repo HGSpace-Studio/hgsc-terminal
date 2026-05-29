@@ -16,6 +16,7 @@ class ConversationDetailScreen extends StatefulWidget {
 }
 
 class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
+  final memberSearch = TextEditingController();
   UserProfile? user;
   GroupProfile? group;
   List<GroupMember> members = const <GroupMember>[];
@@ -54,7 +55,14 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   @override
   void initState() {
     super.initState();
+    memberSearch.addListener(() => setState(() {}));
     load();
+  }
+
+  @override
+  void dispose() {
+    memberSearch.dispose();
+    super.dispose();
   }
 
   Future<void> load() async {
@@ -579,6 +587,33 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     );
   }
 
+  void openPrivateChatForMember(GroupMember member) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChatScreen(
+          state: widget.state,
+          conversation: Conversation(
+            type: ConversationType.private,
+            id: member.uid,
+            name: member.name,
+            avatar: member.avatar,
+            subtitle: member.subtitle,
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<GroupMember> filteredMembers(TextEditingController controller) {
+    final query = controller.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return members;
+    }
+    return members
+        .where((member) => member.searchableText.contains(query))
+        .toList();
+  }
+
   Widget infoRow(IconData icon, String title, String value) {
     if (value.trim().isEmpty) {
       return const SizedBox.shrink();
@@ -601,6 +636,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   Widget buildGroupProfile(GroupProfile profile) {
     final strings = context.strings;
     final canManageGroup = canManageCurrentGroup;
+    final visibleMembers = filteredMembers(memberSearch);
+    final memberQuery = memberSearch.text.trim();
     return RefreshIndicator(
       onRefresh: load,
       child: ListView(
@@ -725,10 +762,31 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             ],
           ),
           const SizedBox(height: 8),
+          TextField(
+            controller: memberSearch,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: strings.text(
+                'Search members by nickname, UID or remark',
+              ),
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: memberQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: strings.text('Clear'),
+                      onPressed: memberSearch.clear,
+                      icon: const Icon(Icons.close),
+                    ),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
           if (members.isEmpty)
             _EmptyPanel(message: strings.text('No members.'))
+          else if (visibleMembers.isEmpty)
+            _EmptyPanel(message: strings.text('No matching members.'))
           else
-            for (final member in members)
+            for (final member in visibleMembers)
               Card(
                 elevation: 0,
                 margin: const EdgeInsets.symmetric(vertical: 4),
@@ -758,12 +816,27 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                       ),
                     ),
                     trailing: canManageGroup
-                        ? IconButton(
-                            tooltip: strings.text('Manage'),
-                            onPressed: () => showMemberActions(member),
-                            icon: const Icon(Icons.more_vert),
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: strings.text('Open private chat'),
+                                onPressed: () =>
+                                    openPrivateChatForMember(member),
+                                icon: const Icon(Icons.chat_bubble_outline),
+                              ),
+                              IconButton(
+                                tooltip: strings.text('Manage'),
+                                onPressed: () => showMemberActions(member),
+                                icon: const Icon(Icons.more_vert),
+                              ),
+                            ],
                           )
-                        : null,
+                        : IconButton(
+                            tooltip: strings.text('Open private chat'),
+                            onPressed: () => openPrivateChatForMember(member),
+                            icon: const Icon(Icons.chat_bubble_outline),
+                          ),
                   ),
                 ),
               ),
@@ -829,6 +902,7 @@ class GroupManagementScreen extends StatefulWidget {
 }
 
 class _GroupManagementScreenState extends State<GroupManagementScreen> {
+  final memberSearch = TextEditingController();
   late GroupProfile group;
   late List<GroupMember> members;
   List<GroupApplication> applications = const <GroupApplication>[];
@@ -869,7 +943,14 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
     super.initState();
     group = widget.group;
     members = widget.initialMembers;
+    memberSearch.addListener(() => setState(() {}));
     load();
+  }
+
+  @override
+  void dispose() {
+    memberSearch.dispose();
+    super.dispose();
   }
 
   Future<void> load() async {
@@ -1224,6 +1305,33 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
     }
   }
 
+  void openPrivateChatForMember(GroupMember member) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChatScreen(
+          state: widget.state,
+          conversation: Conversation(
+            type: ConversationType.private,
+            id: member.uid,
+            name: member.name,
+            avatar: member.avatar,
+            subtitle: member.subtitle,
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<GroupMember> filteredMembers() {
+    final query = memberSearch.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return members;
+    }
+    return members
+        .where((member) => member.searchableText.contains(query))
+        .toList();
+  }
+
   Future<void> resetInviteCode() async {
     final ok = await confirm(
       context.strings.text('Reset invite code?'),
@@ -1387,6 +1495,8 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
   Widget build(BuildContext context) {
     final strings = context.strings;
     final colors = Theme.of(context).colorScheme;
+    final visibleMembers = filteredMembers();
+    final memberQuery = memberSearch.text.trim();
     return Scaffold(
       appBar: AppBar(
         title: Text(strings.text('Group management')),
@@ -1596,45 +1706,78 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                     const SizedBox(height: 20),
                     sectionTitle(strings.text('Members'), '${members.length}'),
                     const SizedBox(height: 8),
-                    for (final member in members)
-                      Card(
-                        elevation: 0,
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        child: _RoundedInkClip(
-                          child: ListTile(
-                            leading: _Avatar(
-                              url: member.avatar,
-                              fallback: Icons.person_rounded,
-                              heroTag: userAvatarHeroTag(
-                                member.uid,
-                                'group-management-${group.id}',
+                    TextField(
+                      controller: memberSearch,
+                      textInputAction: TextInputAction.search,
+                      decoration: InputDecoration(
+                        hintText: strings.text(
+                          'Search members by nickname, UID or remark',
+                        ),
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: memberQuery.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: strings.text('Clear'),
+                                onPressed: memberSearch.clear,
+                                icon: const Icon(Icons.close),
                               ),
-                            ),
-                            title: Text(member.name),
-                            subtitle: member.subtitle.isEmpty
-                                ? Text('UID ${member.uid}')
-                                : Text(member.subtitle),
-                            onTap: () => openUserProfile(
-                              context,
-                              widget.state,
-                              member.uid,
-                              group: group,
-                              member: member,
-                              avatarHeroTag: userAvatarHeroTag(
-                                member.uid,
-                                'group-management-${group.id}',
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (visibleMembers.isEmpty)
+                      _EmptyPanel(message: strings.text('No matching members.'))
+                    else
+                      for (final member in visibleMembers)
+                        Card(
+                          elevation: 0,
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          child: _RoundedInkClip(
+                            child: ListTile(
+                              leading: _Avatar(
+                                url: member.avatar,
+                                fallback: Icons.person_rounded,
+                                heroTag: userAvatarHeroTag(
+                                  member.uid,
+                                  'group-management-${group.id}',
+                                ),
                               ),
-                            ),
-                            trailing: IconButton(
-                              tooltip: strings.text('Manage'),
-                              onPressed: acting
-                                  ? null
-                                  : () => showMemberActions(member),
-                              icon: const Icon(Icons.more_vert),
+                              title: Text(member.name),
+                              subtitle: member.subtitle.isEmpty
+                                  ? Text('UID ${member.uid}')
+                                  : Text(member.subtitle),
+                              onTap: () => openUserProfile(
+                                context,
+                                widget.state,
+                                member.uid,
+                                group: group,
+                                member: member,
+                                avatarHeroTag: userAvatarHeroTag(
+                                  member.uid,
+                                  'group-management-${group.id}',
+                                ),
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: strings.text('Open private chat'),
+                                    onPressed: () =>
+                                        openPrivateChatForMember(member),
+                                    icon: const Icon(Icons.chat_bubble_outline),
+                                  ),
+                                  IconButton(
+                                    tooltip: strings.text('Manage'),
+                                    onPressed: acting
+                                        ? null
+                                        : () => showMemberActions(member),
+                                    icon: const Icon(Icons.more_vert),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     if (currentUserIsOwner) ...[
                       const SizedBox(height: 20),
                       sectionTitle(strings.text('Owner actions')),

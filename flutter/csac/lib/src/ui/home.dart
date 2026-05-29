@@ -428,16 +428,28 @@ class ConversationScreen extends StatefulWidget {
 class _ConversationScreenState extends State<ConversationScreen> {
   final search = TextEditingController();
   late final ScrollController conversationsScroll;
+  Map<String, ConversationDraft> drafts = const <String, ConversationDraft>{};
+  Map<String, ConversationLocalPreference> conversationPrefs =
+      const <String, ConversationLocalPreference>{};
   bool refreshing = false;
+  bool showArchived = false;
 
   @override
   void initState() {
     super.initState();
     conversationsScroll = _desktopSmoothScrollController();
+    ConversationDraftStore.changes.addListener(handleDraftsChanged);
+    ConversationPreferenceStore.changes.addListener(handlePreferencesChanged);
+    unawaited(loadDrafts());
+    unawaited(loadConversationPrefs());
   }
 
   @override
   void dispose() {
+    ConversationDraftStore.changes.removeListener(handleDraftsChanged);
+    ConversationPreferenceStore.changes.removeListener(
+      handlePreferencesChanged,
+    );
     conversationsScroll.dispose();
     search.dispose();
     super.dispose();
@@ -447,10 +459,164 @@ class _ConversationScreenState extends State<ConversationScreen> {
     setState(() => refreshing = true);
     try {
       await widget.state.loadConversations();
+      await loadDrafts();
+      await loadConversationPrefs();
     } finally {
       if (mounted) {
         setState(() => refreshing = false);
       }
+    }
+  }
+
+  Future<void> loadDrafts() async {
+    final loaded = await ConversationDraftStore.loadAll();
+    if (mounted) {
+      setState(() => drafts = loaded);
+    }
+  }
+
+  void handleDraftsChanged() {
+    unawaited(loadDrafts());
+  }
+
+  Future<void> loadConversationPrefs() async {
+    final loaded = await ConversationPreferenceStore.loadAll();
+    if (mounted) {
+      setState(() {
+        conversationPrefs = loaded;
+        if (!loaded.values.any((value) => value.archived)) {
+          showArchived = false;
+        }
+      });
+    }
+  }
+
+  void handlePreferencesChanged() {
+    unawaited(loadConversationPrefs());
+  }
+
+  String draftKey(Conversation conversation) {
+    return ConversationPreferenceStore.keyFor(conversation);
+  }
+
+  ConversationLocalPreference localPref(Conversation conversation) {
+    return conversationPrefs[draftKey(conversation)] ??
+        ConversationLocalPreference.defaults;
+  }
+
+  List<Conversation> visibleConversations(String query) {
+    final searched = query.isEmpty
+        ? widget.state.conversations
+        : widget.state.conversations.where((conversation) {
+            final target =
+                '${conversation.name} ${conversation.subtitle} ${conversation.searchText}'
+                    .toLowerCase();
+            return target.contains(query);
+          }).toList();
+    final visible = searched
+        .where(
+          (conversation) => localPref(conversation).archived == showArchived,
+        )
+        .toList();
+    visible.sort((a, b) {
+      final aPref = localPref(a);
+      final bPref = localPref(b);
+      if (aPref.pinned != bPref.pinned) {
+        return aPref.pinned ? -1 : 1;
+      }
+      return searched.indexOf(a).compareTo(searched.indexOf(b));
+    });
+    return visible;
+  }
+
+  Future<void> updateLocalPreference(
+    Conversation conversation,
+    ConversationLocalPreference Function(ConversationLocalPreference current)
+    change,
+  ) async {
+    await widget.state.updateConversationLocalPreference(conversation, change);
+    await loadConversationPrefs();
+  }
+
+  Future<void> showConversationActions(Conversation conversation) async {
+    final pref = localPref(conversation);
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(
+                  pref.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                ),
+                title: Text(
+                  context.strings.text(
+                    pref.pinned ? 'Unpin conversation' : 'Pin conversation',
+                  ),
+                ),
+                onTap: () => Navigator.of(context).pop('pin'),
+              ),
+              ListTile(
+                leading: Icon(
+                  pref.muted
+                      ? Icons.notifications_active_outlined
+                      : Icons.notifications_off_outlined,
+                ),
+                title: Text(
+                  context.strings.text(
+                    pref.muted ? 'Unmute conversation' : 'Mute conversation',
+                  ),
+                ),
+                onTap: () => Navigator.of(context).pop('mute'),
+              ),
+              ListTile(
+                leading: Icon(
+                  pref.archived
+                      ? Icons.unarchive_outlined
+                      : Icons.archive_outlined,
+                ),
+                title: Text(
+                  context.strings.text(
+                    pref.archived
+                        ? 'Unarchive conversation'
+                        : 'Archive conversation',
+                  ),
+                ),
+                onTap: () => Navigator.of(context).pop('archive'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || selected == null) {
+      return;
+    }
+    switch (selected) {
+      case 'pin':
+        await updateLocalPreference(
+          conversation,
+          (current) => current.copyWith(pinned: !current.pinned),
+        );
+        break;
+      case 'mute':
+        await updateLocalPreference(
+          conversation,
+          (current) => current.copyWith(muted: !current.muted),
+        );
+        break;
+      case 'archive':
+        await updateLocalPreference(
+          conversation,
+          (current) => current.copyWith(
+            archived: !current.archived,
+            pinned: current.archived ? current.pinned : false,
+          ),
+        );
+        break;
     }
   }
 
@@ -504,14 +670,10 @@ class _ConversationScreenState extends State<ConversationScreen> {
     final user = widget.state.user;
     final strings = context.strings;
     final query = search.text.trim().toLowerCase();
-    final conversations = query.isEmpty
-        ? widget.state.conversations
-        : widget.state.conversations.where((conversation) {
-            final target =
-                '${conversation.name} ${conversation.subtitle} ${conversation.searchText}'
-                    .toLowerCase();
-            return target.contains(query);
-          }).toList();
+    final conversations = visibleConversations(query);
+    final archivedCount = widget.state.conversations
+        .where((conversation) => localPref(conversation).archived)
+        .length;
     final content = RefreshIndicator(
       onRefresh: refresh,
       child: ListView(
@@ -603,22 +765,60 @@ class _ConversationScreenState extends State<ConversationScreen> {
               ),
             ),
           ),
+          if (archivedCount > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+              child: SegmentedButton<bool>(
+                segments: [
+                  ButtonSegment<bool>(
+                    value: false,
+                    icon: const Icon(Icons.chat_bubble_outline),
+                    label: Text(strings.text('Active')),
+                  ),
+                  ButtonSegment<bool>(
+                    value: true,
+                    icon: const Icon(Icons.archive_outlined),
+                    label: Text(
+                      strings.format('Archived ({count})', {
+                        'count': archivedCount,
+                      }),
+                    ),
+                  ),
+                ],
+                selected: {showArchived},
+                onSelectionChanged: (selection) {
+                  setState(() => showArchived = selection.first);
+                },
+              ),
+            ),
           if (widget.state.conversations.isEmpty)
             _EmptyPanel(message: strings.text('No conversations yet.'))
           else if (conversations.isEmpty)
-            _EmptyPanel(message: strings.text('No matching conversations.'))
+            _EmptyPanel(
+              message: strings.text(
+                showArchived
+                    ? 'No archived conversations.'
+                    : query.isEmpty
+                    ? 'No active conversations.'
+                    : 'No matching conversations.',
+              ),
+            )
           else
             for (final entry in conversations.indexed)
               _MotionListItem(
                 index: entry.$1,
                 child: _ConversationTile(
                   conversation: entry.$2,
+                  draft: drafts[draftKey(entry.$2)],
+                  preference: localPref(entry.$2),
                   selected:
                       widget.selectedConversation?.type == entry.$2.type &&
                       widget.selectedConversation?.id == entry.$2.id,
+                  onLongPress: () => showConversationActions(entry.$2),
                   onTap: () async {
                     if (widget.onConversationSelected != null) {
                       widget.onConversationSelected!(entry.$2);
+                      unawaited(loadDrafts());
                       return;
                     }
                     await Navigator.of(context).push(
@@ -703,47 +903,117 @@ class _ConversationTile extends StatelessWidget {
   const _ConversationTile({
     required this.conversation,
     required this.onTap,
+    required this.onLongPress,
+    this.draft,
+    this.preference = ConversationLocalPreference.defaults,
     this.selected = false,
   });
 
   final Conversation conversation;
+  final ConversationDraft? draft;
+  final ConversationLocalPreference preference;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final isGroup = conversation.type == ConversationType.group;
     final colors = Theme.of(context).colorScheme;
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.symmetric(vertical: 5),
-      color: selected ? colors.secondaryContainer : null,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: _RoundedInkClip(
-        child: ListTile(
-          selected: selected,
-          selectedColor: colors.onSecondaryContainer,
-          selectedTileColor: colors.secondaryContainer,
-          onTap: onTap,
-          leading: _ConversationAvatarHero(
-            conversation: conversation,
-            radius: 22,
+    final draft = this.draft;
+    final hasDraft = draft != null && draft.hasContent;
+    final fallbackSubtitle = conversation.subtitle.isEmpty
+        ? context.strings.text(isGroup ? 'Group chat' : 'Private chat')
+        : conversation.subtitle;
+    final subtitleText = hasDraft
+        ? context.strings.format('Draft: {text}', {
+            'text': compactDraftText(draft.previewText, max: 72),
+          })
+        : fallbackSubtitle;
+    return GestureDetector(
+      onSecondaryTap: onLongPress,
+      child: Card(
+        elevation: 0,
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        color: selected ? colors.secondaryContainer : null,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: _RoundedInkClip(
+          child: ListTile(
+            selected: selected,
+            selectedColor: colors.onSecondaryContainer,
+            selectedTileColor: colors.secondaryContainer,
+            onTap: onTap,
+            onLongPress: onLongPress,
+            leading: _ConversationAvatarHero(
+              conversation: conversation,
+              radius: 22,
+            ),
+            title: Row(
+              children: [
+                if (preference.pinned) ...[
+                  Icon(Icons.push_pin, size: 15, color: colors.primary),
+                  const SizedBox(width: 4),
+                ],
+                Expanded(
+                  child: _ConversationTitleHero(
+                    conversation: conversation,
+                    enabled: !selected,
+                  ),
+                ),
+              ],
+            ),
+            subtitle: Text(
+              subtitleText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: hasDraft ? TextStyle(color: colors.primary) : null,
+            ),
+            trailing: conversation.unreadCount > 0
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (preference.muted) ...[
+                        Icon(
+                          Icons.notifications_off_outlined,
+                          size: 18,
+                          color: colors.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Badge(
+                        backgroundColor: preference.muted
+                            ? colors.surfaceContainerHighest
+                            : null,
+                        textColor: preference.muted
+                            ? colors.onSurfaceVariant
+                            : null,
+                        label: Text('${conversation.unreadCount}'),
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (preference.muted)
+                        Icon(
+                          Icons.notifications_off_outlined,
+                          size: 18,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      if (preference.archived) ...[
+                        if (preference.muted) const SizedBox(width: 8),
+                        Icon(
+                          Icons.archive_outlined,
+                          size: 18,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                      const Icon(Icons.chevron_right),
+                    ],
+                  ),
           ),
-          title: _ConversationTitleHero(
-            conversation: conversation,
-            enabled: !selected,
-          ),
-          subtitle: Text(
-            conversation.subtitle.isEmpty
-                ? context.strings.text(isGroup ? 'Group chat' : 'Private chat')
-                : conversation.subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: conversation.unreadCount > 0
-              ? Badge(label: Text('${conversation.unreadCount}'))
-              : const Icon(Icons.chevron_right),
         ),
       ),
     );
