@@ -505,29 +505,32 @@ class _ConversationScreenState extends State<ConversationScreen> {
           else if (conversations.isEmpty)
             _EmptyPanel(message: strings.text('No matching conversations.'))
           else
-            for (final conversation in conversations)
-              _ConversationTile(
-                conversation: conversation,
-                selected:
-                    widget.selectedConversation?.type == conversation.type &&
-                    widget.selectedConversation?.id == conversation.id,
-                onTap: () async {
-                  if (widget.onConversationSelected != null) {
-                    widget.onConversationSelected!(conversation);
-                    return;
-                  }
-                  await Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => ChatScreen(
-                        state: widget.state,
-                        conversation: conversation,
+            for (final entry in conversations.indexed)
+              _MotionListItem(
+                index: entry.$1,
+                child: _ConversationTile(
+                  conversation: entry.$2,
+                  selected:
+                      widget.selectedConversation?.type == entry.$2.type &&
+                      widget.selectedConversation?.id == entry.$2.id,
+                  onTap: () async {
+                    if (widget.onConversationSelected != null) {
+                      widget.onConversationSelected!(entry.$2);
+                      return;
+                    }
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ChatScreen(
+                          state: widget.state,
+                          conversation: entry.$2,
+                        ),
                       ),
-                    ),
-                  );
-                  if (mounted) {
-                    refresh();
-                  }
-                },
+                    );
+                    if (mounted) {
+                      refresh();
+                    }
+                  },
+                ),
               ),
         ],
       ),

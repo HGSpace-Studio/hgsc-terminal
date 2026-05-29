@@ -178,21 +178,26 @@ class _MentionNoticesPageState extends State<MentionNoticesPage> {
           if (loading) const LinearProgressIndicator(minHeight: 2),
           if (error != null) _InlineError(message: error!, onRetry: load),
           if (!loading && bundle.hasOnlySummary)
-            _MentionSummaryCard(
-              bundle: bundle,
-              onMarkRead: markSummaryRead,
-              onClear: clearSummary,
+            _MotionListItem(
+              child: _MentionSummaryCard(
+                bundle: bundle,
+                onMarkRead: markSummaryRead,
+                onClear: clearSummary,
+              ),
             )
           else if (!loading && bundle.items.isEmpty)
             _EmptyPanel(message: strings.text('No mentions or replies.'))
           else
-            for (final notice in bundle.items)
-              _MentionNoticeTile(
-                notice: notice,
-                preferences: widget.state.preferences,
-                onTap: () => openMention(notice),
-                onMarkRead: () => markRead(notice),
-                onClear: () => clearNotice(notice),
+            for (final entry in bundle.items.indexed)
+              _MotionListItem(
+                index: entry.$1,
+                child: _MentionNoticeTile(
+                  notice: entry.$2,
+                  preferences: widget.state.preferences,
+                  onTap: () => openMention(entry.$2),
+                  onMarkRead: () => markRead(entry.$2),
+                  onClear: () => clearNotice(entry.$2),
+                ),
               ),
         ],
       ),
@@ -421,43 +426,50 @@ class _FriendChangeNoticesPageState extends State<FriendChangeNoticesPage> {
           if (!loading && notices.isEmpty)
             _EmptyPanel(message: strings.text('No friend changes.'))
           else
-            for (final notice in notices)
-              Card(
-                elevation: 0,
-                margin: const EdgeInsets.symmetric(vertical: 5),
-                child: _RoundedInkClip(
-                  child: ListTile(
-                    onTap: notice.uid > 0
-                        ? () =>
-                              openUserProfile(context, widget.state, notice.uid)
-                        : null,
-                    leading: _Avatar(
-                      url: notice.avatar,
-                      fallback: Icons.manage_accounts_outlined,
-                    ),
-                    title: Text(
-                      notice.displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: notice.isRead
-                            ? FontWeight.w500
-                            : FontWeight.w800,
+            for (final entry in notices.indexed)
+              _MotionListItem(
+                index: entry.$1,
+                child: Card(
+                  elevation: 0,
+                  margin: const EdgeInsets.symmetric(vertical: 5),
+                  child: _RoundedInkClip(
+                    child: ListTile(
+                      onTap: entry.$2.uid > 0
+                          ? () => openUserProfile(
+                              context,
+                              widget.state,
+                              entry.$2.uid,
+                            )
+                          : null,
+                      leading: _Avatar(
+                        url: entry.$2.avatar,
+                        fallback: Icons.manage_accounts_outlined,
                       ),
+                      title: Text(
+                        entry.$2.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: entry.$2.isRead
+                              ? FontWeight.w500
+                              : FontWeight.w800,
+                        ),
+                      ),
+                      subtitle: Text(
+                        [
+                          if (entry.$2.username.isNotEmpty)
+                            '@${entry.$2.username}',
+                          if (entry.$2.kind.isNotEmpty) entry.$2.kind,
+                          if (entry.$2.time.isNotEmpty) entry.$2.time,
+                          entry.$2.content.replaceAll('\n', ' '),
+                        ].where((part) => part.trim().isNotEmpty).join(' | '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: entry.$2.uid > 0
+                          ? const Icon(Icons.chevron_right)
+                          : null,
                     ),
-                    subtitle: Text(
-                      [
-                        if (notice.username.isNotEmpty) '@${notice.username}',
-                        if (notice.kind.isNotEmpty) notice.kind,
-                        if (notice.time.isNotEmpty) notice.time,
-                        notice.content.replaceAll('\n', ' '),
-                      ].where((part) => part.trim().isNotEmpty).join(' | '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: notice.uid > 0
-                        ? const Icon(Icons.chevron_right)
-                        : null,
                   ),
                 ),
               ),
@@ -638,42 +650,49 @@ class _NoticesPageState extends State<NoticesPage> {
           if (!loading && notices.isEmpty)
             _EmptyPanel(message: strings.text('No notices.'))
           else
-            for (final notice in notices)
-              Card(
-                elevation: 0,
-                margin: const EdgeInsets.symmetric(vertical: 5),
-                child: ListTile(
-                  onTap: () => openNotice(notice),
-                  leading: Icon(
-                    notice.isRead
-                        ? Icons.mark_email_read_outlined
-                        : Icons.mark_email_unread_outlined,
-                  ),
-                  title: Text(
-                    notice.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: notice.isRead
-                          ? FontWeight.w500
-                          : FontWeight.w800,
+            for (final entry in notices.indexed)
+              _MotionListItem(
+                index: entry.$1,
+                child: Card(
+                  elevation: 0,
+                  margin: const EdgeInsets.symmetric(vertical: 5),
+                  child: _RoundedInkClip(
+                    child: ListTile(
+                      onTap: () => openNotice(entry.$2),
+                      leading: Icon(
+                        entry.$2.isRead
+                            ? Icons.mark_email_read_outlined
+                            : Icons.mark_email_unread_outlined,
+                      ),
+                      title: Text(
+                        entry.$2.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: entry.$2.isRead
+                              ? FontWeight.w500
+                              : FontWeight.w800,
+                        ),
+                      ),
+                      subtitle: Text(
+                        [
+                          if (entry.$2.time.isNotEmpty) entry.$2.time,
+                          entry.$2.content.replaceAll('\n', ' '),
+                        ].join(' | '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: entry.$2.isRead
+                          ? const Icon(Icons.chevron_right)
+                          : IconButton(
+                              tooltip: strings.text('Mark read'),
+                              onPressed: acting
+                                  ? null
+                                  : () => markOneRead(entry.$2),
+                              icon: const Icon(Icons.done),
+                            ),
                     ),
                   ),
-                  subtitle: Text(
-                    [
-                      if (notice.time.isNotEmpty) notice.time,
-                      notice.content.replaceAll('\n', ' '),
-                    ].join(' | '),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: notice.isRead
-                      ? const Icon(Icons.chevron_right)
-                      : IconButton(
-                          tooltip: strings.text('Mark read'),
-                          onPressed: acting ? null : () => markOneRead(notice),
-                          icon: const Icon(Icons.done),
-                        ),
                 ),
               ),
         ],

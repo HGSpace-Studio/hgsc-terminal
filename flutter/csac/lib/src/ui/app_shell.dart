@@ -133,11 +133,22 @@ class _CsacMobileAppState extends State<CsacMobileApp>
           themeMode: state.preferences.themeMode,
           home: Stack(
             children: [
-              state.bootstrapping
-                  ? SplashScreen(status: state.restoreStatus)
-                  : state.user == null
-                  ? LoginScreen(state: state)
-                  : MainShell(state: state),
+              _StartupTransition(
+                child: state.bootstrapping
+                    ? SplashScreen(
+                        key: const ValueKey<String>('bootstrap'),
+                        status: state.restoreStatus,
+                      )
+                    : state.user == null
+                    ? LoginScreen(
+                        key: const ValueKey<String>('login'),
+                        state: state,
+                      )
+                    : MainShell(
+                        key: const ValueKey<String>('main'),
+                        state: state,
+                      ),
+              ),
               if (locked && state.user != null)
                 Positioned.fill(
                   child: AppLockScreen(state: state, onUnlocked: unlock),
@@ -146,6 +157,56 @@ class _CsacMobileAppState extends State<CsacMobileApp>
           ),
         );
       },
+    );
+  }
+}
+
+class _StartupTransition extends StatelessWidget {
+  const _StartupTransition({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: 360.ms,
+      reverseDuration: 240.ms,
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: (currentChild, previousChildren) {
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            ...previousChildren,
+            if (currentChild != null) currentChild,
+          ],
+        );
+      },
+      transitionBuilder: (child, animation) {
+        final fade = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        final slide =
+            Tween<Offset>(
+              begin: const Offset(0, 0.035),
+              end: Offset.zero,
+            ).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            );
+        final scale = Tween<double>(begin: 0.985, end: 1).animate(
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+        );
+        return FadeTransition(
+          opacity: fade,
+          child: SlideTransition(
+            position: slide,
+            child: ScaleTransition(scale: scale, child: child),
+          ),
+        );
+      },
+      child: child,
     );
   }
 }

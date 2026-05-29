@@ -101,7 +101,11 @@ class _ConversationMediaScreenState extends State<ConversationMediaScreen> {
 
   Future<void> openItem(ConversationMediaItem item) async {
     if (item.kind == ConversationMediaKind.image) {
-      showImagePreview(context, item.url);
+      showImagePreview(
+        context,
+        item.url,
+        heroTag: conversationMediaHeroTag(item),
+      );
       return;
     }
     final opened = await launchUrl(
@@ -299,11 +303,14 @@ class _ConversationMediaScreenState extends State<ConversationMediaScreen> {
                           return ListView.builder(
                             padding: const EdgeInsets.fromLTRB(12, 6, 12, 18),
                             itemCount: items.length,
-                            itemBuilder: (context, index) => _MediaListTile(
-                              item: items[index],
-                              preferences: widget.state.preferences,
-                              onOpen: () => openItem(items[index]),
-                              onMore: () => showActions(items[index]),
+                            itemBuilder: (context, index) => _MotionListItem(
+                              index: index,
+                              child: _MediaListTile(
+                                item: items[index],
+                                preferences: widget.state.preferences,
+                                onOpen: () => openItem(items[index]),
+                                onMore: () => showActions(items[index]),
+                              ),
                             ),
                           );
                         }
@@ -320,11 +327,14 @@ class _ConversationMediaScreenState extends State<ConversationMediaScreen> {
                                 childAspectRatio: 1.05,
                               ),
                           itemCount: items.length,
-                          itemBuilder: (context, index) => _MediaGridTile(
-                            item: items[index],
-                            preferences: widget.state.preferences,
-                            onOpen: () => openItem(items[index]),
-                            onMore: () => showActions(items[index]),
+                          itemBuilder: (context, index) => _MotionListItem(
+                            index: index,
+                            child: _MediaGridTile(
+                              item: items[index],
+                              preferences: widget.state.preferences,
+                              onOpen: () => openItem(items[index]),
+                              onMore: () => showActions(items[index]),
+                            ),
                           ),
                         );
                       },
@@ -382,7 +392,10 @@ class _MediaListTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 5),
       child: _RoundedInkClip(
         child: ListTile(
-          leading: _MediaThumbnail(item: item),
+          leading: _MediaThumbnail(
+            item: item,
+            heroTag: conversationMediaHeroTag(item),
+          ),
           title: Text(
             item.displayTitle,
             maxLines: 1,
@@ -440,7 +453,11 @@ class _MediaGridTile extends StatelessWidget {
               child: Container(
                 width: double.infinity,
                 color: colors.surfaceContainerHighest,
-                child: _MediaThumbnail(item: item, large: true),
+                child: _MediaThumbnail(
+                  item: item,
+                  large: true,
+                  heroTag: conversationMediaHeroTag(item),
+                ),
               ),
             ),
             Padding(
@@ -486,28 +503,33 @@ class _MediaGridTile extends StatelessWidget {
 }
 
 class _MediaThumbnail extends StatelessWidget {
-  const _MediaThumbnail({required this.item, this.large = false});
+  const _MediaThumbnail({required this.item, this.large = false, this.heroTag});
 
   final ConversationMediaItem item;
   final bool large;
+  final Object? heroTag;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final size = large ? double.infinity : 48.0;
     if (item.kind == ConversationMediaKind.image) {
+      final image = Image.network(
+        item.url,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) =>
+            _MediaFallbackIcon(icon: Icons.broken_image_outlined, large: large),
+      );
       return ClipRRect(
         borderRadius: BorderRadius.circular(large ? 0 : 8),
-        child: Image.network(
-          item.url,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _MediaFallbackIcon(
-            icon: Icons.broken_image_outlined,
-            large: large,
-          ),
-        ),
+        child: heroTag == null
+            ? image
+            : Hero(
+                tag: heroTag!,
+                child: Material(type: MaterialType.transparency, child: image),
+              ),
       );
     }
     final icon = item.kind == ConversationMediaKind.voice
@@ -530,6 +552,10 @@ class _MediaThumbnail extends StatelessWidget {
       child: Icon(icon, color: foreground, size: large ? 56 : 26),
     );
   }
+}
+
+String conversationMediaHeroTag(ConversationMediaItem item) {
+  return 'media-image:${item.message.id}:${item.url}';
 }
 
 class _MediaFallbackIcon extends StatelessWidget {

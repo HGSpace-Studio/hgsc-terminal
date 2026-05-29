@@ -1,49 +1,56 @@
 part of '../../main.dart';
 
 class _MessageImage extends StatelessWidget {
-  const _MessageImage({required this.url, this.onTap});
+  const _MessageImage({required this.url, this.heroTag, this.onTap});
 
   final String url;
+  final Object? heroTag;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final image = Image.network(
+      url,
+      width: 260,
+      height: 180,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          width: 260,
+          height: 120,
+          color: colors.surfaceContainerHighest,
+          alignment: Alignment.center,
+          child: Icon(
+            Icons.broken_image_outlined,
+            size: 42,
+            color: colors.onSurfaceVariant,
+          ),
+        );
+      },
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) {
+          return child;
+        }
+        return Container(
+          width: 260,
+          height: 120,
+          alignment: Alignment.center,
+          child: const CircularProgressIndicator(strokeWidth: 2),
+        );
+      },
+    );
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          url,
-          width: 260,
-          height: 180,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              width: 260,
-              height: 120,
-              color: colors.surfaceContainerHighest,
-              alignment: Alignment.center,
-              child: Icon(
-                Icons.broken_image_outlined,
-                size: 42,
-                color: colors.onSurfaceVariant,
+        child: heroTag == null
+            ? image
+            : Hero(
+                tag: heroTag!,
+                child: Material(type: MaterialType.transparency, child: image),
               ),
-            );
-          },
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) {
-              return child;
-            }
-            return Container(
-              width: 260,
-              height: 120,
-              alignment: Alignment.center,
-              child: const CircularProgressIndicator(strokeWidth: 2),
-            );
-          },
-        ),
       ),
     );
   }
@@ -123,29 +130,62 @@ class _ImageCaptionDialogState extends State<_ImageCaptionDialog> {
   }
 }
 
-void showImagePreview(BuildContext context, String url) {
-  final strings = context.strings;
-  showDialog<void>(
-    context: context,
-    builder: (context) {
-      return Dialog.fullscreen(
+void showImagePreview(BuildContext context, String url, {Object? heroTag}) {
+  Navigator.of(context).push(
+    PageRouteBuilder<void>(
+      opaque: false,
+      barrierColor: Colors.black,
+      transitionDuration: 260.ms,
+      reverseTransitionDuration: 220.ms,
+      pageBuilder: (_, animation, _) =>
+          _ImagePreviewRoute(url: url, heroTag: heroTag, animation: animation),
+    ),
+  );
+}
+
+class _ImagePreviewRoute extends StatelessWidget {
+  const _ImagePreviewRoute({
+    required this.url,
+    required this.animation,
+    this.heroTag,
+  });
+
+  final String url;
+  final Object? heroTag;
+  final Animation<double> animation;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final image = Image.network(
+      url,
+      fit: BoxFit.contain,
+      errorBuilder: (_, _, _) => const Icon(
+        Icons.broken_image_outlined,
+        size: 64,
+        color: Colors.white70,
+      ),
+    );
+    return FadeTransition(
+      opacity: animation,
+      child: Scaffold(
         backgroundColor: Colors.black,
-        child: SafeArea(
+        body: SafeArea(
           child: Stack(
             children: [
               Center(
                 child: InteractiveViewer(
                   minScale: 0.7,
                   maxScale: 5,
-                  child: Image.network(
-                    url,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const Icon(
-                      Icons.broken_image_outlined,
-                      size: 64,
-                      color: Colors.white70,
-                    ),
-                  ),
+                  child: heroTag == null
+                      ? image
+                      : Hero(
+                          tag: heroTag!,
+                          child: Material(
+                            type: MaterialType.transparency,
+                            child: image,
+                          ),
+                        ),
                 ),
               ),
               Positioned(
@@ -194,9 +234,9 @@ void showImagePreview(BuildContext context, String url) {
             ],
           ),
         ),
-      );
-    },
-  );
+      ),
+    );
+  }
 }
 
 Future<void> downloadImage(BuildContext context, String url) async {

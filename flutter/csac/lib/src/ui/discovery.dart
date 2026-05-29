@@ -740,10 +740,13 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
                   itemCount: results.length,
                   itemBuilder: (context, index) {
                     final result = results[index];
-                    return _SearchResultTile(
-                      result: result,
-                      preferences: widget.state.preferences,
-                      onTap: () => openResult(result),
+                    return _MotionListItem(
+                      index: index,
+                      child: _SearchResultTile(
+                        result: result,
+                        preferences: widget.state.preferences,
+                        onTap: () => openResult(result),
+                      ),
                     );
                   },
                 ),
@@ -803,41 +806,47 @@ class _SearchResultTile extends StatelessWidget {
     return Card(
       elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 5),
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: isGroup
-              ? colors.secondaryContainer
-              : colors.primaryContainer,
-          child: Icon(
-            isGroup ? Icons.groups_rounded : Icons.person_rounded,
-            color: isGroup
-                ? colors.onSecondaryContainer
-                : colors.onPrimaryContainer,
-          ),
-        ),
-        title: Text(
-          result.conversation.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${message.sender}${time.isEmpty ? '' : ' · $time'}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+      child: _RoundedInkClip(
+        child: ListTile(
+          onTap: onTap,
+          leading: CircleAvatar(
+            backgroundColor: isGroup
+                ? colors.secondaryContainer
+                : colors.primaryContainer,
+            child: Icon(
+              isGroup ? Icons.groups_rounded : Icons.person_rounded,
+              color: isGroup
+                  ? colors.onSecondaryContainer
+                  : colors.onPrimaryContainer,
             ),
-            const SizedBox(height: 2),
-            Text(result.snippet, maxLines: 2, overflow: TextOverflow.ellipsis),
-          ],
+          ),
+          title: Text(
+            result.conversation.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${message.sender}${time.isEmpty ? '' : ' · $time'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                result.snippet,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+          trailing: message.imageUrl.isNotEmpty
+              ? const Icon(Icons.image_outlined)
+              : message.isEssence
+              ? const Icon(Icons.star_outline)
+              : const Icon(Icons.chevron_right),
         ),
-        trailing: message.imageUrl.isNotEmpty
-            ? const Icon(Icons.image_outlined)
-            : message.isEssence
-            ? const Icon(Icons.star_outline)
-            : const Icon(Icons.chevron_right),
       ),
     );
   }

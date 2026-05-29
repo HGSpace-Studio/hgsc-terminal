@@ -46,6 +46,52 @@ class _RoundedInkClip extends StatelessWidget {
   }
 }
 
+class _MotionListItem extends StatelessWidget {
+  const _MotionListItem({required this.child, this.index = 0});
+
+  final Widget child;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    final delay = Duration(milliseconds: math.min(index * 26, 220).toInt());
+    return child
+        .animate(delay: delay)
+        .fadeIn(duration: 180.ms, curve: Curves.easeOutCubic)
+        .slideY(
+          begin: 0.055,
+          end: 0,
+          duration: 260.ms,
+          curve: Curves.easeOutCubic,
+        )
+        .scale(
+          begin: const Offset(0.985, 0.985),
+          end: const Offset(1, 1),
+          duration: 300.ms,
+          curve: Curves.easeOutBack,
+        );
+  }
+}
+
+class _MotionPane extends StatelessWidget {
+  const _MotionPane({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return child
+        .animate()
+        .fadeIn(duration: 180.ms, curve: Curves.easeOutCubic)
+        .slideY(
+          begin: 0.035,
+          end: 0,
+          duration: 260.ms,
+          curve: Curves.easeOutCubic,
+        );
+  }
+}
+
 Future<void> openUserProfile(
   BuildContext context,
   CsacAppState state,

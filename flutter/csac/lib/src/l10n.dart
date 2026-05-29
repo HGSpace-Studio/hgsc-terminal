@@ -399,6 +399,7 @@ const _zh = <String, String>{
   'Jump to {count} unread messages': '跳转到 {count} 条未读消息',
   'Jump to bottom': '跳转到底部',
   'Sending...': '发送中...',
+  'Sent': '已发送',
   'Send failed': '发送失败',
   'Retry send': '重试发送',
   'Cancel selection': '取消多选',
