@@ -7,20 +7,26 @@ class UserProfileScreen extends StatefulWidget {
     required this.uid,
     this.group,
     this.member,
+    this.avatarHeroTag,
   });
 
   final CsacAppState state;
   final int uid;
   final GroupProfile? group;
   final GroupMember? member;
+  final Object? avatarHeroTag;
 
   @override
   State<UserProfileScreen> createState() => _UserProfileScreenState();
 }
 
 class _UserProfileScreenState extends State<UserProfileScreen> {
+  static const _profileHeaderExpandedHeight = 286.0;
+
   UserProfile? profile;
   List<CommonGroup> commonGroups = const <CommonGroup>[];
+  late final ScrollController profileScroll;
+  Timer? profileHeaderSnapTimer;
   bool loading = true;
   bool acting = false;
   String? error;
@@ -39,7 +45,77 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   @override
   void initState() {
     super.initState();
+    profileScroll = _desktopSmoothScrollController();
     load();
+  }
+
+  @override
+  void dispose() {
+    profileHeaderSnapTimer?.cancel();
+    profileScroll.dispose();
+    super.dispose();
+  }
+
+  bool handleProfileScrollEnd(ScrollEndNotification notification) {
+    if (notification.depth == 0 && profile != null) {
+      scheduleProfileHeaderSnap();
+    }
+    return false;
+  }
+
+  void scheduleProfileHeaderSnap() {
+    profileHeaderSnapTimer?.cancel();
+    profileHeaderSnapTimer = Timer(const Duration(milliseconds: 70), () {
+      if (mounted) {
+        snapProfileHeader();
+      }
+    });
+  }
+
+  void snapProfileHeader() {
+    if (!profileScroll.hasClients || profile == null) {
+      return;
+    }
+    final position = profileScroll.position;
+    final maxSnapOffset = math.min(
+      _profileHeaderExpandedHeight - kToolbarHeight,
+      position.maxScrollExtent,
+    );
+    if (maxSnapOffset <= 0) {
+      return;
+    }
+    final current = position.pixels.clamp(0.0, maxSnapOffset).toDouble();
+    if (current <= 2 || current >= maxSnapOffset - 2) {
+      return;
+    }
+    final progress = current / maxSnapOffset;
+    final target = progress < 0.48 ? 0.0 : maxSnapOffset;
+    if ((position.pixels - target).abs() < 1) {
+      return;
+    }
+    if (_MotionPreference.reduceOf(context)) {
+      position.jumpTo(target);
+      return;
+    }
+    position.animateTo(
+      target,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget buildProfileScrollView({
+    required List<Widget> slivers,
+    ScrollPhysics? physics,
+  }) {
+    return NotificationListener<ScrollEndNotification>(
+      onNotification: handleProfileScrollEnd,
+      child: CustomScrollView(
+        controller: profileScroll,
+        physics: physics,
+        slivers: slivers,
+      ),
+    );
   }
 
   Future<void> load() async {
@@ -357,222 +433,553 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     final loaded = profile;
     final member = widget.member;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(strings.text('User profile')),
-        actions: [
-          IconButton(
-            tooltip: strings.text('Refresh'),
-            onPressed: loading ? null : load,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: loading
-            ? const Center(child: CircularProgressIndicator())
-            : error != null
-            ? _InlineError(message: error!, onRetry: load)
-            : loaded == null
-            ? _EmptyPanel(message: strings.text('User not found.'))
-            : RefreshIndicator(
-                onRefresh: load,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                  children: [
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: _Avatar(
-                        url: loaded.avatar,
-                        fallback: Icons.person_rounded,
-                      ),
-                      title: Text(loaded.displayName),
-                      subtitle: Text(
-                        loaded.subtitle.isEmpty
-                            ? 'UID ${loaded.uid}'
-                            : loaded.subtitle,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Card(
-                      elevation: 0,
-                      child: Column(
-                        children: [
-                          infoRow(
-                            Icons.tag,
-                            strings.text('UID'),
-                            '${loaded.uid}',
+      body: loading
+          ? buildProfileScrollView(
+              slivers: [
+                _UserProfileHeaderSliver(
+                  title: strings.text('User profile'),
+                  loading: loading,
+                  onRefresh: null,
+                ),
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ],
+            )
+          : error != null
+          ? buildProfileScrollView(
+              slivers: [
+                _UserProfileHeaderSliver(
+                  title: strings.text('User profile'),
+                  loading: loading,
+                  onRefresh: load,
+                ),
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _InlineError(message: error!, onRetry: load),
+                ),
+              ],
+            )
+          : loaded == null
+          ? buildProfileScrollView(
+              slivers: [
+                _UserProfileHeaderSliver(
+                  title: strings.text('User profile'),
+                  loading: loading,
+                  onRefresh: load,
+                ),
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _EmptyPanel(message: strings.text('User not found.')),
+                ),
+              ],
+            )
+          : RefreshIndicator(
+              onRefresh: load,
+              child: buildProfileScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  _UserProfileHeaderSliver(
+                    title: loaded.displayName,
+                    profile: loaded,
+                    avatarHeroTag: widget.avatarHeroTag,
+                    loading: loading,
+                    onRefresh: load,
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                    sliver: SliverList.list(
+                      children: [
+                        Card(
+                          elevation: 0,
+                          child: Column(
+                            children: [
+                              infoRow(
+                                Icons.tag,
+                                strings.text('UID'),
+                                '${loaded.uid}',
+                              ),
+                              infoRow(
+                                Icons.badge_outlined,
+                                strings.text('Username'),
+                                loaded.username,
+                              ),
+                              infoRow(
+                                Icons.person_outline,
+                                strings.text('Nickname'),
+                                loaded.nickname,
+                              ),
+                              infoRow(
+                                Icons.edit_note,
+                                strings.text('Remark'),
+                                loaded.remark,
+                              ),
+                              infoRow(
+                                Icons.circle_outlined,
+                                strings.text('Online'),
+                                loaded.onlineStatus,
+                              ),
+                              if (member != null)
+                                infoRow(
+                                  Icons.admin_panel_settings_outlined,
+                                  strings.text('Group role'),
+                                  member.roleLabel,
+                                ),
+                            ],
                           ),
-                          infoRow(
-                            Icons.badge_outlined,
-                            strings.text('Username'),
-                            loaded.username,
-                          ),
-                          infoRow(
-                            Icons.person_outline,
-                            strings.text('Nickname'),
-                            loaded.nickname,
-                          ),
-                          infoRow(
-                            Icons.edit_note,
-                            strings.text('Remark'),
-                            loaded.remark,
-                          ),
-                          infoRow(
-                            Icons.circle_outlined,
-                            strings.text('Online'),
-                            loaded.onlineStatus,
-                          ),
-                          if (member != null)
-                            infoRow(
-                              Icons.admin_panel_settings_outlined,
-                              strings.text('Group role'),
-                              member.roleLabel,
+                        ),
+                        if (!isSelf) ...[
+                          const SizedBox(height: 12),
+                          Card(
+                            elevation: 0,
+                            child: Column(
+                              children: [
+                                if (loaded.isFriend)
+                                  actionTile(
+                                    icon: Icons.chat_bubble_outline,
+                                    title: strings.text('Open private chat'),
+                                    onTap: () => openPrivateChat(loaded),
+                                  ),
+                                if (loaded.isFriend) const Divider(height: 1),
+                                if (loaded.isFriend)
+                                  actionTile(
+                                    icon: Icons.edit_note,
+                                    title: strings.text('Edit remark'),
+                                    onTap: () => editRemark(loaded),
+                                  ),
+                                if (loaded.isFriend) const Divider(height: 1),
+                                if (!loaded.isFriend && loaded.canAddFriend)
+                                  actionTile(
+                                    icon: Icons.person_add_alt,
+                                    title: strings.text('Add friend'),
+                                    onTap: () => addFriend(loaded),
+                                  ),
+                                if (!loaded.isFriend && !loaded.canAddFriend)
+                                  actionTile(
+                                    icon: Icons.person_add_disabled_outlined,
+                                    title: strings.text('Cannot add friend'),
+                                    onTap: null,
+                                  ),
+                                if (!loaded.isFriend) const Divider(height: 1),
+                                if (!loaded.isFriend && !loaded.canAddFriend)
+                                  actionTile(
+                                    icon: Icons.restore,
+                                    title: strings.text('Recover friend'),
+                                    onTap: () => recoverFriend(loaded),
+                                  ),
+                                if (!loaded.isFriend && !loaded.canAddFriend)
+                                  const Divider(height: 1),
+                                actionTile(
+                                  icon: Icons.person_remove_outlined,
+                                  title: strings.text('Delete friend'),
+                                  color: colors.error,
+                                  onTap: loaded.isFriend
+                                      ? () => deleteFriend(loaded)
+                                      : null,
+                                ),
+                                const Divider(height: 1),
+                                actionTile(
+                                  icon: Icons.block,
+                                  title: strings.text('Block friend'),
+                                  color: colors.error,
+                                  onTap: loaded.isFriend
+                                      ? () => blockFriend(loaded)
+                                      : null,
+                                ),
+                                const Divider(height: 1),
+                                actionTile(
+                                  icon: Icons.flag_outlined,
+                                  title: strings.text('Report user'),
+                                  color: colors.error,
+                                  onTap: () => openReport(loaded),
+                                ),
+                              ],
                             ),
+                          ),
+                        ],
+                        if (canManageMember) ...[
+                          const SizedBox(height: 20),
+                          Text(
+                            strings.text('Group member actions'),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 8),
+                          Card(
+                            elevation: 0,
+                            child: Column(
+                              children: [
+                                actionTile(
+                                  icon: Icons.volume_off_outlined,
+                                  title: strings.text('Mute 10 minutes'),
+                                  onTap: () => memberAction('mute10'),
+                                ),
+                                const Divider(height: 1),
+                                actionTile(
+                                  icon: Icons.volume_up_outlined,
+                                  title: strings.text('Unmute'),
+                                  onTap: () => memberAction('unmute'),
+                                ),
+                                const Divider(height: 1),
+                                actionTile(
+                                  icon: Icons.admin_panel_settings_outlined,
+                                  title: strings.text('Set admin'),
+                                  onTap: () => memberAction('admin'),
+                                ),
+                                const Divider(height: 1),
+                                actionTile(
+                                  icon: Icons.remove_moderator_outlined,
+                                  title: strings.text('Remove admin'),
+                                  onTap: () => memberAction('removeAdmin'),
+                                ),
+                                const Divider(height: 1),
+                                actionTile(
+                                  icon: Icons.person_remove_outlined,
+                                  title: strings.text('Kick member'),
+                                  color: colors.error,
+                                  onTap: () => memberAction('kick'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (commonGroups.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          Text(
+                            strings.text('Common groups'),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 8),
+                          for (final group in commonGroups)
+                            Card(
+                              elevation: 0,
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              child: ListTile(
+                                leading: const Icon(Icons.groups_outlined),
+                                title: Text(group.name),
+                                subtitle: group.subtitle.isEmpty
+                                    ? null
+                                    : Text(group.subtitle),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () => openCommonGroup(group),
+                              ),
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
+class _UserProfileHeaderSliver extends StatelessWidget {
+  const _UserProfileHeaderSliver({
+    required this.title,
+    this.profile,
+    this.avatarHeroTag,
+    required this.loading,
+    required this.onRefresh,
+  });
+
+  final String title;
+  final UserProfile? profile;
+  final Object? avatarHeroTag;
+  final bool loading;
+  final Future<void> Function()? onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
+    final loaded = profile;
+    final hasProfile = loaded != null;
+    final expandedHeight = hasProfile ? 286.0 : 112.0;
+    return SliverAppBar(
+      pinned: true,
+      stretch: !_MotionPreference.reduceOf(context),
+      expandedHeight: expandedHeight,
+      backgroundColor: hasProfile ? colors.primary : colors.surface,
+      foregroundColor: hasProfile ? Colors.white : colors.onSurface,
+      title: hasProfile ? const SizedBox.shrink() : Text(title),
+      titleSpacing: hasProfile ? 0 : null,
+      actions: [
+        IconButton(
+          tooltip: strings.text('Refresh'),
+          onPressed: loading || onRefresh == null
+              ? null
+              : () => unawaited(onRefresh!()),
+          icon: const Icon(Icons.refresh),
+        ),
+      ],
+      flexibleSpace: hasProfile
+          ? _UserProfileHeaderSpace(
+              title: title,
+              profile: loaded,
+              avatarHeroTag: avatarHeroTag,
+              expandedHeight: expandedHeight,
+            )
+          : null,
+    );
+  }
+}
+
+class _UserProfileHeaderSpace extends StatelessWidget {
+  const _UserProfileHeaderSpace({
+    required this.title,
+    required this.profile,
+    required this.avatarHeroTag,
+    required this.expandedHeight,
+  });
+
+  final String title;
+  final UserProfile profile;
+  final Object? avatarHeroTag;
+  final double expandedHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final topPadding = MediaQuery.paddingOf(context).top;
+    final reduceMotion = _MotionPreference.reduceOf(context);
+    final colors = Theme.of(context).colorScheme;
+    final subtitle = profile.subtitle.isEmpty
+        ? 'UID ${profile.uid}'
+        : profile.subtitle;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final minHeight = topPadding + kToolbarHeight;
+        final expansion = _unit(
+          (constraints.maxHeight - minHeight) / (expandedHeight - minHeight),
+        );
+        final collapse = 1 - expansion;
+        final avatarShrink = reduceMotion
+            ? collapse
+            : _profileHeaderInterval(
+                collapse,
+                begin: 0.04,
+                end: 0.92,
+                curve: Curves.easeInOutCubic,
+              );
+        final avatarMove = reduceMotion
+            ? collapse
+            : _profileHeaderInterval(
+                collapse,
+                begin: 0.02,
+                end: 0.98,
+                curve: Curves.easeInOutCubic,
+              );
+        final textMove = reduceMotion
+            ? collapse
+            : _profileHeaderInterval(
+                collapse,
+                begin: 0.08,
+                end: 0.96,
+                curve: Curves.easeInOutCubic,
+              );
+        final textScale = reduceMotion
+            ? collapse
+            : _profileHeaderInterval(
+                collapse,
+                begin: 0,
+                end: 0.84,
+                curve: Curves.easeOutCubic,
+              );
+        final subtitleOpacity = reduceMotion
+            ? expansion
+            : 1 -
+                  _profileHeaderInterval(
+                    collapse,
+                    begin: 0.10,
+                    end: 0.52,
+                    curve: Curves.easeOutCubic,
+                  );
+        final avatarRadius = ui.lerpDouble(52, 17, avatarShrink)!;
+        final collapsedLeft = Navigator.of(context).canPop() ? 56.0 : 20.0;
+        const expandedLeft = 20.0;
+        final avatarLeft = ui.lerpDouble(
+          expandedLeft,
+          collapsedLeft,
+          avatarMove,
+        )!;
+        final collapsedCenterY = topPadding + kToolbarHeight / 2;
+        final expandedCenterY = expandedHeight - 78;
+        final avatarCenterY = ui.lerpDouble(
+          expandedCenterY,
+          collapsedCenterY,
+          avatarMove,
+        )!;
+        final avatarTop = avatarCenterY - avatarRadius;
+        final collapsedTitleLeft = collapsedLeft + 34 + 12;
+        const expandedTitleLeft = expandedLeft + 104 + 18;
+        final titleLeft = ui.lerpDouble(
+          expandedTitleLeft,
+          collapsedTitleLeft,
+          textMove,
+        )!;
+        final collapsedTitleTop = topPadding + (kToolbarHeight - 24) / 2;
+        final expandedTitleTop = expandedCenterY - 28;
+        final titleTop = ui.lerpDouble(
+          expandedTitleTop,
+          collapsedTitleTop,
+          textMove,
+        )!;
+        final titleWidth = math.max(
+          96.0,
+          constraints.maxWidth - titleLeft - 58,
+        );
+        final titleScale = ui.lerpDouble(1.22, 1.0, textScale)!;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            _ProfileHeaderBackdrop(profile: profile),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.18),
+                    colors.primary.withValues(alpha: 0.50),
+                    Colors.black.withValues(alpha: 0.58),
+                  ],
+                  stops: const [0, 0.48, 1],
+                ),
+              ),
+            ),
+            Positioned(
+              left: avatarLeft,
+              top: avatarTop,
+              child: _Avatar(
+                url: profile.avatar,
+                fallback: Icons.person_rounded,
+                radius: avatarRadius,
+                heroTag: avatarHeroTag,
+                backgroundColor: Colors.white.withValues(alpha: 0.24),
+                foregroundColor: Colors.white,
+              ),
+            ),
+            Positioned(
+              left: titleLeft,
+              top: titleTop,
+              width: titleWidth,
+              child: Transform.scale(
+                scale: titleScale,
+                alignment: Alignment.centerLeft,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        shadows: const [
+                          Shadow(
+                            blurRadius: 12,
+                            color: Colors.black45,
+                            offset: Offset(0, 1),
+                          ),
                         ],
                       ),
                     ),
-                    if (!isSelf) ...[
-                      const SizedBox(height: 12),
-                      Card(
-                        elevation: 0,
-                        child: Column(
-                          children: [
-                            if (loaded.isFriend)
-                              actionTile(
-                                icon: Icons.chat_bubble_outline,
-                                title: strings.text('Open private chat'),
-                                onTap: () => openPrivateChat(loaded),
-                              ),
-                            if (loaded.isFriend) const Divider(height: 1),
-                            if (loaded.isFriend)
-                              actionTile(
-                                icon: Icons.edit_note,
-                                title: strings.text('Edit remark'),
-                                onTap: () => editRemark(loaded),
-                              ),
-                            if (loaded.isFriend) const Divider(height: 1),
-                            if (!loaded.isFriend && loaded.canAddFriend)
-                              actionTile(
-                                icon: Icons.person_add_alt,
-                                title: strings.text('Add friend'),
-                                onTap: () => addFriend(loaded),
-                              ),
-                            if (!loaded.isFriend && !loaded.canAddFriend)
-                              actionTile(
-                                icon: Icons.person_add_disabled_outlined,
-                                title: strings.text('Cannot add friend'),
-                                onTap: null,
-                              ),
-                            if (!loaded.isFriend) const Divider(height: 1),
-                            if (!loaded.isFriend && !loaded.canAddFriend)
-                              actionTile(
-                                icon: Icons.restore,
-                                title: strings.text('Recover friend'),
-                                onTap: () => recoverFriend(loaded),
-                              ),
-                            if (!loaded.isFriend && !loaded.canAddFriend)
-                              const Divider(height: 1),
-                            actionTile(
-                              icon: Icons.person_remove_outlined,
-                              title: strings.text('Delete friend'),
-                              color: colors.error,
-                              onTap: loaded.isFriend
-                                  ? () => deleteFriend(loaded)
-                                  : null,
-                            ),
-                            const Divider(height: 1),
-                            actionTile(
-                              icon: Icons.block,
-                              title: strings.text('Block friend'),
-                              color: colors.error,
-                              onTap: loaded.isFriend
-                                  ? () => blockFriend(loaded)
-                                  : null,
-                            ),
-                            const Divider(height: 1),
-                            actionTile(
-                              icon: Icons.flag_outlined,
-                              title: strings.text('Report user'),
-                              color: colors.error,
-                              onTap: () => openReport(loaded),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    if (canManageMember) ...[
-                      const SizedBox(height: 20),
-                      Text(
-                        strings.text('Group member actions'),
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 8),
-                      Card(
-                        elevation: 0,
-                        child: Column(
-                          children: [
-                            actionTile(
-                              icon: Icons.volume_off_outlined,
-                              title: strings.text('Mute 10 minutes'),
-                              onTap: () => memberAction('mute10'),
-                            ),
-                            const Divider(height: 1),
-                            actionTile(
-                              icon: Icons.volume_up_outlined,
-                              title: strings.text('Unmute'),
-                              onTap: () => memberAction('unmute'),
-                            ),
-                            const Divider(height: 1),
-                            actionTile(
-                              icon: Icons.admin_panel_settings_outlined,
-                              title: strings.text('Set admin'),
-                              onTap: () => memberAction('admin'),
-                            ),
-                            const Divider(height: 1),
-                            actionTile(
-                              icon: Icons.remove_moderator_outlined,
-                              title: strings.text('Remove admin'),
-                              onTap: () => memberAction('removeAdmin'),
-                            ),
-                            const Divider(height: 1),
-                            actionTile(
-                              icon: Icons.person_remove_outlined,
-                              title: strings.text('Kick member'),
-                              color: colors.error,
-                              onTap: () => memberAction('kick'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    if (commonGroups.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      Text(
-                        strings.text('Common groups'),
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 8),
-                      for (final group in commonGroups)
-                        Card(
-                          elevation: 0,
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          child: ListTile(
-                            leading: const Icon(Icons.groups_outlined),
-                            title: Text(group.name),
-                            subtitle: group.subtitle.isEmpty
-                                ? null
-                                : Text(group.subtitle),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => openCommonGroup(group),
+                    IgnorePointer(
+                      child: Opacity(
+                        opacity: subtitleOpacity,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.84),
+                                  shadows: const [
+                                    Shadow(
+                                      blurRadius: 10,
+                                      color: Colors.black38,
+                                      offset: Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
                           ),
                         ),
-                    ],
+                      ),
+                    ),
                   ],
                 ),
               ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+double _unit(double value) {
+  return value.clamp(0.0, 1.0).toDouble();
+}
+
+double _profileHeaderCurve(double value, Curve curve) {
+  return curve.transform(_unit(value));
+}
+
+double _profileHeaderInterval(
+  double value, {
+  required double begin,
+  required double end,
+  required Curve curve,
+}) {
+  if (end <= begin) {
+    return _profileHeaderCurve(value, curve);
+  }
+  return curve.transform(_unit((value - begin) / (end - begin)));
+}
+
+class _ProfileHeaderBackdrop extends StatelessWidget {
+  const _ProfileHeaderBackdrop({required this.profile});
+
+  final UserProfile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final fallback = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [colors.primary, colors.tertiary, colors.secondary],
+        ),
       ),
+    );
+    if (profile.avatar.isEmpty) {
+      return fallback;
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        fallback,
+        ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Transform.scale(
+            scale: 1.08,
+            child: Image.network(
+              profile.avatar,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

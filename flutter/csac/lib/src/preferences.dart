@@ -25,6 +25,7 @@ class CsacPreferences {
     this.messageTimeFormat = MessageTimeFormat.slash,
     this.chatBackgroundPath = '',
     this.serverUrl = '',
+    this.reduceMotion = false,
     this.appLockEnabled = false,
     this.appLockPinSalt = '',
     this.appLockPinHash = '',
@@ -38,6 +39,7 @@ class CsacPreferences {
   static const _messageTimeFormatKey = 'csac.message_time_format';
   static const _chatBackgroundPathKey = 'csac.chat_background_path';
   static const _serverUrlKey = 'csac.server_url';
+  static const _reduceMotionKey = 'csac.reduce_motion';
   static const _appLockEnabledKey = 'csac.app_lock.enabled';
   static const _appLockPinSaltKey = 'csac.app_lock.pin_salt';
   static const _appLockPinHashKey = 'csac.app_lock.pin_hash';
@@ -50,6 +52,7 @@ class CsacPreferences {
   final MessageTimeFormat messageTimeFormat;
   final String chatBackgroundPath;
   final String serverUrl;
+  final bool reduceMotion;
   final bool appLockEnabled;
   final String appLockPinSalt;
   final String appLockPinHash;
@@ -75,6 +78,7 @@ class CsacPreferences {
     MessageTimeFormat? messageTimeFormat,
     String? chatBackgroundPath,
     String? serverUrl,
+    bool? reduceMotion,
     bool? appLockEnabled,
     String? appLockPinSalt,
     String? appLockPinHash,
@@ -88,6 +92,7 @@ class CsacPreferences {
       messageTimeFormat: messageTimeFormat ?? this.messageTimeFormat,
       chatBackgroundPath: chatBackgroundPath ?? this.chatBackgroundPath,
       serverUrl: serverUrl ?? this.serverUrl,
+      reduceMotion: reduceMotion ?? this.reduceMotion,
       appLockEnabled: appLockEnabled ?? this.appLockEnabled,
       appLockPinSalt: appLockPinSalt ?? this.appLockPinSalt,
       appLockPinHash: appLockPinHash ?? this.appLockPinHash,
@@ -110,6 +115,7 @@ class CsacPreferences {
       ),
       chatBackgroundPath: prefs.getString(_chatBackgroundPathKey) ?? '',
       serverUrl: (prefs.getString(_serverUrlKey) ?? '').trim(),
+      reduceMotion: prefs.getBool(_reduceMotionKey) ?? false,
       appLockEnabled: prefs.getBool(_appLockEnabledKey) ?? false,
       appLockPinSalt: prefs.getString(_appLockPinSaltKey) ?? '',
       appLockPinHash: prefs.getString(_appLockPinHashKey) ?? '',
@@ -135,6 +141,7 @@ class CsacPreferences {
     } else {
       await prefs.setString(_serverUrlKey, serverUrl.trim());
     }
+    await prefs.setBool(_reduceMotionKey, reduceMotion);
     await prefs.setBool(_appLockEnabledKey, appLockEnabled);
     if (appLockPinSalt.trim().isEmpty || appLockPinHash.trim().isEmpty) {
       await prefs.remove(_appLockPinSaltKey);
@@ -253,6 +260,22 @@ class ConversationDraftStore {
     for (final key in keys) {
       await prefs.remove(key);
     }
+  }
+}
+
+class ChatHintStore {
+  const ChatHintStore._();
+
+  static const _seenKey = 'csac.chat_hint.seen';
+
+  static Future<bool> isSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_seenKey) ?? false;
+  }
+
+  static Future<void> markSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_seenKey, true);
   }
 }
 

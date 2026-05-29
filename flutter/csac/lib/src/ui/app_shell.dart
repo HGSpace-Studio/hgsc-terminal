@@ -131,29 +131,32 @@ class _CsacMobileAppState extends State<CsacMobileApp>
             Color(state.preferences.themeColorValue),
           ),
           themeMode: state.preferences.themeMode,
-          home: Stack(
-            children: [
-              _StartupTransition(
-                child: state.bootstrapping
-                    ? SplashScreen(
-                        key: const ValueKey<String>('bootstrap'),
-                        status: state.restoreStatus,
-                      )
-                    : state.user == null
-                    ? LoginScreen(
-                        key: const ValueKey<String>('login'),
-                        state: state,
-                      )
-                    : MainShell(
-                        key: const ValueKey<String>('main'),
-                        state: state,
-                      ),
-              ),
-              if (locked && state.user != null)
-                Positioned.fill(
-                  child: AppLockScreen(state: state, onUnlocked: unlock),
+          home: _MotionPreference(
+            reduceMotion: state.preferences.reduceMotion,
+            child: Stack(
+              children: [
+                _StartupTransition(
+                  child: state.bootstrapping
+                      ? SplashScreen(
+                          key: const ValueKey<String>('bootstrap'),
+                          status: state.restoreStatus,
+                        )
+                      : state.user == null
+                      ? LoginScreen(
+                          key: const ValueKey<String>('login'),
+                          state: state,
+                        )
+                      : MainShell(
+                          key: const ValueKey<String>('main'),
+                          state: state,
+                        ),
                 ),
-            ],
+                if (locked && state.user != null)
+                  Positioned.fill(
+                    child: AppLockScreen(state: state, onUnlocked: unlock),
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -168,9 +171,10 @@ class _StartupTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reduceMotion = _MotionPreference.reduceOf(context);
     return AnimatedSwitcher(
-      duration: 360.ms,
-      reverseDuration: 240.ms,
+      duration: reduceMotion ? Duration.zero : 360.ms,
+      reverseDuration: reduceMotion ? Duration.zero : 240.ms,
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
       layoutBuilder: (currentChild, previousChildren) {
@@ -183,6 +187,9 @@ class _StartupTransition extends StatelessWidget {
         );
       },
       transitionBuilder: (child, animation) {
+        if (reduceMotion) {
+          return child;
+        }
         final fade = CurvedAnimation(
           parent: animation,
           curve: Curves.easeOutCubic,

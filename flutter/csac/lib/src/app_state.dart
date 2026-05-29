@@ -189,6 +189,12 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateReduceMotion(bool enabled) async {
+    preferences = preferences.copyWith(reduceMotion: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
   Future<void> enableAppLock({
     required String pin,
     required bool biometricEnabled,

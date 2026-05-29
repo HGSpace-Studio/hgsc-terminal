@@ -182,7 +182,7 @@ class _MainShellState extends State<MainShell> {
       );
     }
     return Scaffold(
-      body: IndexedStack(index: index, children: pages),
+      body: _BottomTabSwitcher(index: index, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) {
@@ -228,6 +228,100 @@ class _MainShellState extends State<MainShell> {
             label: context.strings.text('Me'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BottomTabSwitcher extends StatefulWidget {
+  const _BottomTabSwitcher({required this.index, required this.children});
+
+  final int index;
+  final List<Widget> children;
+
+  @override
+  State<_BottomTabSwitcher> createState() => _BottomTabSwitcherState();
+}
+
+class _BottomTabSwitcherState extends State<_BottomTabSwitcher>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController controller;
+  int previousIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    previousIndex = widget.index;
+    controller = AnimationController(duration: 280.ms, vsync: this)..value = 1;
+  }
+
+  @override
+  void didUpdateWidget(covariant _BottomTabSwitcher oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index != widget.index) {
+      previousIndex = oldWidget.index;
+      controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = _MotionPreference.reduceOf(context);
+    if (reduceMotion) {
+      return IndexedStack(index: widget.index, children: widget.children);
+    }
+    final forward = widget.index >= previousIndex;
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final curved = Curves.easeOutCubic.transform(controller.value);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            for (var i = 0; i < widget.children.length; i++)
+              _buildPage(i, curved, forward),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPage(int pageIndex, double progress, bool forward) {
+    final active = pageIndex == widget.index;
+    final outgoing = pageIndex == previousIndex && pageIndex != widget.index;
+    final direction = forward ? 1.0 : -1.0;
+    final offset = active
+        ? Offset(0.06 * direction * (1 - progress), 0)
+        : outgoing
+        ? Offset(-0.04 * direction * progress, 0)
+        : Offset.zero;
+    final opacity = active
+        ? progress
+        : outgoing
+        ? 1 - progress
+        : pageIndex == widget.index
+        ? 1.0
+        : 0.0;
+    return Offstage(
+      offstage: !active && !outgoing,
+      child: TickerMode(
+        enabled: active,
+        child: IgnorePointer(
+          ignoring: !active,
+          child: Opacity(
+            opacity: opacity.clamp(0.0, 1.0),
+            child: FractionalTranslation(
+              translation: offset,
+              child: widget.children[pageIndex],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -333,10 +427,18 @@ class ConversationScreen extends StatefulWidget {
 
 class _ConversationScreenState extends State<ConversationScreen> {
   final search = TextEditingController();
+  late final ScrollController conversationsScroll;
   bool refreshing = false;
 
   @override
+  void initState() {
+    super.initState();
+    conversationsScroll = _desktopSmoothScrollController();
+  }
+
+  @override
   void dispose() {
+    conversationsScroll.dispose();
     search.dispose();
     super.dispose();
   }
@@ -413,6 +515,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
     final content = RefreshIndicator(
       onRefresh: refresh,
       child: ListView(
+        controller: conversationsScroll,
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
         children: [
           Padding(
@@ -623,29 +726,13 @@ class _ConversationTile extends StatelessWidget {
           selectedColor: colors.onSecondaryContainer,
           selectedTileColor: colors.secondaryContainer,
           onTap: onTap,
-          leading: CircleAvatar(
+          leading: _ConversationAvatarHero(
+            conversation: conversation,
             radius: 22,
-            backgroundColor: conversation.avatar.isEmpty
-                ? isGroup
-                      ? colors.secondaryContainer
-                      : colors.primaryContainer
-                : null,
-            backgroundImage: conversation.avatar.isEmpty
-                ? null
-                : NetworkImage(conversation.avatar),
-            child: conversation.avatar.isEmpty
-                ? Icon(
-                    isGroup ? Icons.groups_rounded : Icons.person_rounded,
-                    color: isGroup
-                        ? colors.onSecondaryContainer
-                        : colors.onPrimaryContainer,
-                  )
-                : null,
           ),
-          title: Text(
-            conversation.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          title: _ConversationTitleHero(
+            conversation: conversation,
+            enabled: !selected,
           ),
           subtitle: Text(
             conversation.subtitle.isEmpty

@@ -737,6 +737,10 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                     leading: _Avatar(
                       url: member.avatar,
                       fallback: Icons.person_rounded,
+                      heroTag: userAvatarHeroTag(
+                        member.uid,
+                        'conversation-detail-${profile.id}',
+                      ),
                     ),
                     title: Text(member.name),
                     subtitle: member.subtitle.isEmpty
@@ -748,6 +752,10 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                       member.uid,
                       group: profile,
                       member: member,
+                      avatarHeroTag: userAvatarHeroTag(
+                        member.uid,
+                        'conversation-detail-${profile.id}',
+                      ),
                     ),
                     trailing: canManageGroup
                         ? IconButton(
@@ -770,6 +778,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       return UserProfileScreen(
         state: widget.state,
         uid: widget.conversation.id,
+        avatarHeroTag: conversationAvatarHeroTag(widget.conversation),
       );
     }
     final title = widget.conversation.type == ConversationType.group
@@ -1502,6 +1511,10 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                                   leading: _Avatar(
                                     url: application.avatar,
                                     fallback: Icons.person_rounded,
+                                    heroTag: userAvatarHeroTag(
+                                      application.uid,
+                                      'group-applications-${group.id}',
+                                    ),
                                   ),
                                   title: Text(application.nickname),
                                   subtitle: Text(
@@ -1517,6 +1530,10 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                                     widget.state,
                                     application.uid,
                                     group: group,
+                                    avatarHeroTag: userAvatarHeroTag(
+                                      application.uid,
+                                      'group-applications-${group.id}',
+                                    ),
                                   ),
                                 ),
                                 if (application.content.isNotEmpty ||
@@ -1588,6 +1605,10 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                             leading: _Avatar(
                               url: member.avatar,
                               fallback: Icons.person_rounded,
+                              heroTag: userAvatarHeroTag(
+                                member.uid,
+                                'group-management-${group.id}',
+                              ),
                             ),
                             title: Text(member.name),
                             subtitle: member.subtitle.isEmpty
@@ -1599,6 +1620,10 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                               member.uid,
                               group: group,
                               member: member,
+                              avatarHeroTag: userAvatarHeroTag(
+                                member.uid,
+                                'group-management-${group.id}',
+                              ),
                             ),
                             trailing: IconButton(
                               tooltip: strings.text('Manage'),

@@ -1101,6 +1101,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController serverUrl;
+  late final TextEditingController settingsSearch;
+  late final ScrollController settingsScroll;
   bool clearing = false;
   bool refreshing = false;
   bool savingServer = false;
@@ -1120,14 +1122,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    settingsScroll = _desktopSmoothScrollController();
     serverUrl = TextEditingController(text: widget.state.preferences.serverUrl);
+    settingsSearch = TextEditingController()..addListener(handleSearchChanged);
     developerOptionsExpanded = widget.initialDeveloperOptionsExpanded;
   }
 
   @override
   void dispose() {
+    settingsSearch.removeListener(handleSearchChanged);
+    settingsSearch.dispose();
     serverUrl.dispose();
+    settingsScroll.dispose();
     super.dispose();
+  }
+
+  void handleSearchChanged() {
+    setState(() {});
+  }
+
+  bool settingMatches(String query, Iterable<String> keywords) {
+    if (query.isEmpty) {
+      return true;
+    }
+    final lowerQuery = query.toLowerCase();
+    final strings = context.strings;
+    return keywords.any((keyword) {
+      final translated = strings.text(keyword).toLowerCase();
+      return keyword.toLowerCase().contains(lowerQuery) ||
+          translated.contains(lowerQuery);
+    });
   }
 
   String get themeLabel {
@@ -1746,292 +1770,398 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final user = widget.state.user;
     final strings = context.strings;
+    final query = settingsSearch.text.trim().toLowerCase();
+    final showAccount = settingMatches(query, [
+      'Account settings',
+      'Username',
+      'Nickname',
+      'Avatar',
+      'UID',
+      'Profile',
+    ]);
+    final showInfo = settingMatches(query, [
+      'App information',
+      'Open-source licenses',
+      'Version',
+      'Source code',
+      'License',
+    ]);
+    final showAppearance = settingMatches(query, [
+      'Theme',
+      'Theme color',
+      'Language',
+      'Conversation sorting',
+      'Message time format',
+      'Chat background',
+      'Background',
+      'Reduce motion',
+      'Animation',
+      'Motion',
+    ]);
+    final showLock = settingMatches(query, ['App lock', 'PIN', 'Security']);
+    final showData = settingMatches(query, [
+      'Refresh app data',
+      'Clear local cache',
+      'Cache',
+      'Cached conversations and message history',
+    ]);
+    final showDeveloper = settingMatches(query, [
+      'Developer options',
+      'CsAC server address',
+      'Server',
+      'Default server',
+    ]);
+    final showLogout = settingMatches(query, [
+      'Logout',
+      'Clear session and return to login',
+      'Session',
+    ]);
+    final hasMatches =
+        showAccount ||
+        showInfo ||
+        showAppearance ||
+        showLock ||
+        showData ||
+        showDeveloper ||
+        showLogout;
     return Scaffold(
       appBar: AppBar(title: Text(strings.text('Settings'))),
       body: SafeArea(
         child: ListView(
+          controller: settingsScroll,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
-            Card(
-              elevation: 0,
-              child: _RoundedInkClip(
-                child: ListTile(
-                  leading: _Avatar(
-                    url: user?.avatar ?? '',
-                    fallback: Icons.person_rounded,
+            TextField(
+              controller: settingsSearch,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: strings.text('Search settings'),
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: strings.text('Clear'),
+                        onPressed: settingsSearch.clear,
+                        icon: const Icon(Icons.close),
+                      ),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (showAccount) ...[
+              Card(
+                elevation: 0,
+                child: _RoundedInkClip(
+                  child: ListTile(
+                    leading: _Avatar(
+                      url: user?.avatar ?? '',
+                      fallback: Icons.person_rounded,
+                    ),
+                    title: Text(
+                      user?.nickname ?? strings.text('Not logged in'),
+                    ),
+                    subtitle: Text(
+                      [
+                        if (user?.username.isNotEmpty == true)
+                          '@${user!.username}',
+                        if (user != null) 'UID ${user.uid}',
+                      ].join(' | '),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: user == null
+                        ? null
+                        : () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    AccountSettingsScreen(state: widget.state),
+                              ),
+                            );
+                          },
                   ),
-                  title: Text(user?.nickname ?? strings.text('Not logged in')),
-                  subtitle: Text(
-                    [
-                      if (user?.username.isNotEmpty == true)
-                        '@${user!.username}',
-                      if (user != null) 'UID ${user.uid}',
-                    ].join(' | '),
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: user == null
-                      ? null
-                      : () {
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (showInfo) ...[
+              Card(
+                elevation: 0,
+                child: _RoundedInkClip(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.info_outline),
+                        title: Text(strings.text('App information')),
+                        subtitle: const _AppInfoSubtitle(),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  AccountSettingsScreen(state: widget.state),
+                              builder: (_) => const AppInfoScreen(),
                             ),
                           );
                         },
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 0,
-              child: _RoundedInkClip(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.info_outline),
-                      title: Text(strings.text('App information')),
-                      subtitle: const _AppInfoSubtitle(),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const AppInfoScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.article_outlined),
-                      title: Text(strings.text('Open-source licenses')),
-                      subtitle: Text(
-                        strings.text('View licenses for included libraries'),
                       ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const OpenSourceLicensesScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.article_outlined),
+                        title: Text(strings.text('Open-source licenses')),
+                        subtitle: Text(
+                          strings.text('View licenses for included libraries'),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const OpenSourceLicensesScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 0,
-              child: _RoundedInkClip(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.dark_mode_outlined),
-                      title: Text(strings.text('Theme')),
-                      subtitle: Text(themeLabel),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: chooseTheme,
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.palette_outlined),
-                      title: Text(strings.text('Theme color')),
-                      subtitle: Text(themeColorLabel),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _ThemeColorDot(
-                            color: Color(
-                              widget.state.preferences.themeColorValue,
+              const SizedBox(height: 12),
+            ],
+            if (showAppearance) ...[
+              Card(
+                elevation: 0,
+                child: _RoundedInkClip(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.dark_mode_outlined),
+                        title: Text(strings.text('Theme')),
+                        subtitle: Text(themeLabel),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: chooseTheme,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.palette_outlined),
+                        title: Text(strings.text('Theme color')),
+                        subtitle: Text(themeColorLabel),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _ThemeColorDot(
+                              color: Color(
+                                widget.state.preferences.themeColorValue,
+                              ),
                             ),
+                            const SizedBox(width: 12),
+                            const Icon(Icons.chevron_right),
+                          ],
+                        ),
+                        onTap: chooseThemeColor,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.translate),
+                        title: Text(strings.text('Language')),
+                        subtitle: Text(languageLabel),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: chooseLanguage,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.sort),
+                        title: Text(strings.text('Conversation sorting')),
+                        subtitle: Text(conversationSortLabel),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: chooseConversationSortMode,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.schedule_outlined),
+                        title: Text(strings.text('Message time format')),
+                        subtitle: Text(messageTimeFormatLabel),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: chooseMessageTimeFormat,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.wallpaper_outlined),
+                        title: Text(strings.text('Chat background')),
+                        subtitle: Text(chatBackgroundLabel),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: chooseChatBackground,
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.motion_photos_off_outlined),
+                        title: Text(strings.text('Reduce motion')),
+                        subtitle: Text(
+                          strings.text(
+                            'Use simpler transitions and fewer decorative animations',
                           ),
-                          const SizedBox(width: 12),
-                          const Icon(Icons.chevron_right),
+                        ),
+                        value: widget.state.preferences.reduceMotion,
+                        onChanged: widget.state.updateReduceMotion,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (showLock) ...[
+              Card(
+                elevation: 0,
+                child: _RoundedInkClip(
+                  child: ListTile(
+                    leading: const Icon(Icons.lock_outline),
+                    title: Text(strings.text('App lock')),
+                    subtitle: Text(
+                      widget.state.preferences.effectiveAppLockEnabled
+                          ? strings.text('PIN required when returning to CsAC')
+                          : strings.text('Off'),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: openAppLockSettings,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (showData) ...[
+              Card(
+                elevation: 0,
+                child: _RoundedInkClip(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.sync),
+                        title: Text(strings.text('Refresh app data')),
+                        subtitle: Text(
+                          strings.text('Reload conversations and counters'),
+                        ),
+                        trailing: refreshing
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.chevron_right),
+                        onTap: refreshing ? null : refreshAll,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.cleaning_services_outlined),
+                        title: Text(strings.text('Clear local cache')),
+                        subtitle: Text(
+                          strings.text(
+                            'Remove cached conversations and message history',
+                          ),
+                        ),
+                        trailing: clearing
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.chevron_right),
+                        onTap: clearing ? null : clearCache,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (showDeveloper) ...[
+              Card(
+                elevation: 0,
+                child: _RoundedInkClip(
+                  child: ExpansionTile(
+                    initiallyExpanded: developerOptionsExpanded,
+                    onExpansionChanged: (value) {
+                      setState(() => developerOptionsExpanded = value);
+                    },
+                    leading: const Icon(Icons.developer_mode_outlined),
+                    title: Text(strings.text('Developer options')),
+                    subtitle: Text(
+                      strings.format('Current server: {server}', {
+                        'server':
+                            widget.state.preferences.serverUrl.trim().isEmpty
+                            ? strings.text('Default server')
+                            : widget.state.preferences.serverUrl.trim(),
+                      }),
+                    ),
+                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    children: [
+                      TextField(
+                        controller: serverUrl,
+                        keyboardType: TextInputType.url,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) {
+                          if (!savingServer) {
+                            saveServerUrl();
+                          }
+                        },
+                        decoration: InputDecoration(
+                          labelText: strings.text('CsAC server address'),
+                          hintText: '192.168.1.10:8080',
+                          helperText: strings.text(
+                            'Leave empty to use the default server.',
+                          ),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OverflowBar(
+                        alignment: MainAxisAlignment.end,
+                        spacing: 12,
+                        overflowSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: savingServer ? null : resetServerUrl,
+                            icon: const Icon(Icons.restart_alt),
+                            label: Text(strings.text('Reset to default')),
+                          ),
+                          FilledButton.icon(
+                            onPressed: savingServer ? null : saveServerUrl,
+                            icon: savingServer
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_outlined),
+                            label: Text(strings.text('Apply server')),
+                          ),
                         ],
                       ),
-                      onTap: chooseThemeColor,
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.translate),
-                      title: Text(strings.text('Language')),
-                      subtitle: Text(languageLabel),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: chooseLanguage,
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.sort),
-                      title: Text(strings.text('Conversation sorting')),
-                      subtitle: Text(conversationSortLabel),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: chooseConversationSortMode,
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.schedule_outlined),
-                      title: Text(strings.text('Message time format')),
-                      subtitle: Text(messageTimeFormatLabel),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: chooseMessageTimeFormat,
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.wallpaper_outlined),
-                      title: Text(strings.text('Chat background')),
-                      subtitle: Text(chatBackgroundLabel),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: chooseChatBackground,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 0,
-              child: _RoundedInkClip(
-                child: ListTile(
-                  leading: const Icon(Icons.lock_outline),
-                  title: Text(strings.text('App lock')),
-                  subtitle: Text(
-                    widget.state.preferences.effectiveAppLockEnabled
-                        ? strings.text('PIN required when returning to CsAC')
-                        : strings.text('Off'),
+                    ],
                   ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: openAppLockSettings,
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 0,
-              child: _RoundedInkClip(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.sync),
-                      title: Text(strings.text('Refresh app data')),
-                      subtitle: Text(
-                        strings.text('Reload conversations and counters'),
-                      ),
-                      trailing: refreshing
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.chevron_right),
-                      onTap: refreshing ? null : refreshAll,
+              const SizedBox(height: 12),
+            ],
+            if (showLogout) ...[
+              Card(
+                elevation: 0,
+                child: _RoundedInkClip(
+                  child: ListTile(
+                    leading: const Icon(Icons.logout),
+                    title: Text(strings.text('Logout')),
+                    subtitle: Text(
+                      strings.text('Clear session and return to login'),
                     ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.cleaning_services_outlined),
-                      title: Text(strings.text('Clear local cache')),
-                      subtitle: Text(
-                        strings.text(
-                          'Remove cached conversations and message history',
-                        ),
-                      ),
-                      trailing: clearing
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.chevron_right),
-                      onTap: clearing ? null : clearCache,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 0,
-              child: _RoundedInkClip(
-                child: ExpansionTile(
-                  initiallyExpanded: developerOptionsExpanded,
-                  onExpansionChanged: (value) {
-                    setState(() => developerOptionsExpanded = value);
-                  },
-                  leading: const Icon(Icons.developer_mode_outlined),
-                  title: Text(strings.text('Developer options')),
-                  subtitle: Text(
-                    strings.format('Current server: {server}', {
-                      'server':
-                          widget.state.preferences.serverUrl.trim().isEmpty
-                          ? strings.text('Default server')
-                          : widget.state.preferences.serverUrl.trim(),
-                    }),
+                    onTap: logoutToLogin,
                   ),
-                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  children: [
-                    TextField(
-                      controller: serverUrl,
-                      keyboardType: TextInputType.url,
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) {
-                        if (!savingServer) {
-                          saveServerUrl();
-                        }
-                      },
-                      decoration: InputDecoration(
-                        labelText: strings.text('CsAC server address'),
-                        hintText: '192.168.1.10:8080',
-                        helperText: strings.text(
-                          'Leave empty to use the default server.',
-                        ),
-                        border: const OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    OverflowBar(
-                      alignment: MainAxisAlignment.end,
-                      spacing: 12,
-                      overflowSpacing: 8,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: savingServer ? null : resetServerUrl,
-                          icon: const Icon(Icons.restart_alt),
-                          label: Text(strings.text('Reset to default')),
-                        ),
-                        FilledButton.icon(
-                          onPressed: savingServer ? null : saveServerUrl,
-                          icon: savingServer
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.save_outlined),
-                          label: Text(strings.text('Apply server')),
-                        ),
-                      ],
-                    ),
-                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 0,
-              child: _RoundedInkClip(
-                child: ListTile(
-                  leading: const Icon(Icons.logout),
-                  title: Text(strings.text('Logout')),
-                  subtitle: Text(
-                    strings.text('Clear session and return to login'),
-                  ),
-                  onTap: logoutToLogin,
-                ),
-              ),
-            ),
+            ],
+            if (!hasMatches)
+              _EmptyPanel(message: strings.text('No matching settings.')),
           ],
         ),
       ),
