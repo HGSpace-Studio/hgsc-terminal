@@ -1,14 +1,9 @@
 part of '../../main.dart';
 
 class MainShell extends StatefulWidget {
-  const MainShell({
-    super.key,
-    required this.state,
-    this.suppressInitialTextInput = true,
-  });
+  const MainShell({super.key, required this.state});
 
   final CsacAppState state;
-  final bool suppressInitialTextInput;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -19,8 +14,6 @@ class _MainShellState extends State<MainShell> {
   int lastUnreadChats = 0;
   Conversation? selectedConversation;
   Timer? timer;
-  Timer? initialFocusGuardTimer;
-  bool initialFocusGuardActive = true;
 
   @override
   void initState() {
@@ -30,31 +23,6 @@ class _MainShellState extends State<MainShell> {
       const Duration(seconds: 12),
       (_) => refreshHomeWithHint(),
     );
-    if (widget.suppressInitialTextInput) {
-      dismissInitialTextInput();
-    } else {
-      initialFocusGuardActive = false;
-    }
-  }
-
-  void dismissInitialTextInput() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      hideTextInput();
-      initialFocusGuardTimer = Timer(const Duration(milliseconds: 430), () {
-        if (!mounted) {
-          return;
-        }
-        hideTextInput();
-        setState(() => initialFocusGuardActive = false);
-      });
-    });
-  }
-
-  void hideTextInput() {
-    _hidePlatformTextInput();
   }
 
   int totalUnreadChats() {
@@ -109,7 +77,6 @@ class _MainShellState extends State<MainShell> {
   @override
   void dispose() {
     timer?.cancel();
-    initialFocusGuardTimer?.cancel();
     super.dispose();
   }
 
@@ -265,14 +232,7 @@ class _MainShellState extends State<MainShell> {
         ),
       );
     }
-    if (!initialFocusGuardActive) {
-      return shell;
-    }
-    return Focus(
-      descendantsAreFocusable: false,
-      descendantsAreTraversable: false,
-      child: shell,
-    );
+    return shell;
   }
 }
 
@@ -317,7 +277,16 @@ class _BottomTabSwitcherState extends State<_BottomTabSwitcher>
   Widget build(BuildContext context) {
     final reduceMotion = _MotionPreference.reduceOf(context);
     if (reduceMotion) {
-      return IndexedStack(index: widget.index, children: widget.children);
+      return IndexedStack(
+        index: widget.index,
+        children: [
+          for (var i = 0; i < widget.children.length; i++)
+            _FocusableTabPage(
+              active: i == widget.index,
+              child: widget.children[i],
+            ),
+        ],
+      );
     }
     final forward = widget.index >= previousIndex;
     return AnimatedBuilder(
@@ -351,21 +320,41 @@ class _BottomTabSwitcherState extends State<_BottomTabSwitcher>
         : pageIndex == widget.index
         ? 1.0
         : 0.0;
-    return Offstage(
-      offstage: !active && !outgoing,
-      child: TickerMode(
-        enabled: active,
-        child: IgnorePointer(
-          ignoring: !active,
-          child: Opacity(
-            opacity: opacity.clamp(0.0, 1.0),
-            child: FractionalTranslation(
-              translation: offset,
-              child: widget.children[pageIndex],
+    return _FocusableTabPage(
+      active: active,
+      child: Offstage(
+        offstage: !active && !outgoing,
+        child: TickerMode(
+          enabled: active,
+          child: IgnorePointer(
+            ignoring: !active,
+            child: Opacity(
+              opacity: opacity.clamp(0.0, 1.0),
+              child: FractionalTranslation(
+                translation: offset,
+                child: widget.children[pageIndex],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _FocusableTabPage extends StatelessWidget {
+  const _FocusableTabPage({required this.active, required this.child});
+
+  final bool active;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return FocusScope(
+      canRequestFocus: active,
+      descendantsAreFocusable: active,
+      descendantsAreTraversable: active,
+      child: child,
     );
   }
 }

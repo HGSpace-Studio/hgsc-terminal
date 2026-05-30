@@ -323,6 +323,13 @@ const _zh = <String, String>{
   'Image cache': '图片缓存',
   'Log files': '日志文件',
   'Local diagnostic files': '本地诊断文件',
+  'App logs': '应用日志',
+  'View app logs': '查看应用日志',
+  'View local diagnostic logs': '查看本地诊断日志',
+  'No app logs found.': '未找到应用日志。',
+  'This log is empty.': '这个日志为空。',
+  'Log copied.': '日志已复制。',
+  'Showing the latest part of this log.': '正在显示这个日志的最新部分。',
   '{messages} messages, {conversations} conversations':
       '{messages} 条消息，{conversations} 个会话',
   '{count} cached image entries': '{count} 个图片缓存项',

@@ -348,6 +348,22 @@ class CsacLocalCache {
     return rows.first['last_id'] as int;
   }
 
+  Future<int> oldestMessageId(Conversation conversation) async {
+    final db = await _database();
+    final rows = db.select(
+      '''
+      SELECT COALESCE(MIN(id), 0) AS first_id
+      FROM messages
+      WHERE conversation_type = ? AND conversation_id = ?
+      ''',
+      [_conversationTypeName(conversation.type), conversation.id],
+    );
+    if (rows.isEmpty) {
+      return 0;
+    }
+    return rows.first['first_id'] as int;
+  }
+
   Future<List<MessageSearchResult>> searchMessages(
     String query,
     SearchScope scope, {
@@ -401,6 +417,11 @@ class CsacLocalCache {
         m.sender_id,
         m.sender,
         m.body,
+        m.sender_avatar,
+        m.message_type,
+        m.is_read,
+        m.member_level,
+        m.member_title,
         m.time,
         m.image_url,
         m.voice_url,
@@ -908,10 +929,10 @@ class CsacLocalCache {
   }
 
   ChatMessage _messageFromRow(Row row) {
-    final imageUrl = row['image_url'] as String;
-    final voiceUrl = row['voice_url'] as String;
-    final fileUrl = row['file_url'] as String;
-    var body = row['body'] as String;
+    final imageUrl = asString(row['image_url']);
+    final voiceUrl = asString(row['voice_url']);
+    final fileUrl = asString(row['file_url']);
+    var body = asString(row['body']);
     if (imageUrl.isNotEmpty &&
         (body.startsWith('[image]') || looksLikeImagePath(body))) {
       body = '[image]';
@@ -924,27 +945,27 @@ class CsacLocalCache {
     }
     final time = readableTimestamp(row['time']);
     return ChatMessage(
-      id: row['id'] as int,
-      senderId: row['sender_id'] as int,
-      sender: row['sender'] as String,
+      id: asInt(row['id']),
+      senderId: asInt(row['sender_id']),
+      sender: asString(row['sender']),
       body: body,
-      senderAvatar: row['sender_avatar'] as String,
-      messageType: row['message_type'] as int,
-      isRead: (row['is_read'] as int) != 0,
-      memberLevel: row['member_level'] as int,
-      memberTitle: row['member_title'] as String,
+      senderAvatar: asString(row['sender_avatar']),
+      messageType: asInt(row['message_type']).ifZero(1),
+      isRead: asBool(row['is_read']),
+      memberLevel: asInt(row['member_level']),
+      memberTitle: asString(row['member_title']),
       time: time,
       timeSortValue: timestampForSort(row['time']),
       imageUrl: imageUrl,
       voiceUrl: voiceUrl,
-      voiceDuration: row['voice_duration'] as int,
+      voiceDuration: asInt(row['voice_duration']),
       fileUrl: fileUrl,
-      fileName: row['file_name'] as String,
-      canRecall: (row['can_recall'] as int) != 0,
-      isRecalled: (row['is_recalled'] as int) != 0,
-      isEssence: (row['is_essence'] as int) != 0,
-      isMentioned: (row['is_mentioned'] as int) != 0,
-      replyTo: row['reply_to'] as int,
+      fileName: asString(row['file_name']),
+      canRecall: asBool(row['can_recall']),
+      isRecalled: asBool(row['is_recalled']),
+      isEssence: asBool(row['is_essence']),
+      isMentioned: asBool(row['is_mentioned']),
+      replyTo: asInt(row['reply_to']),
     );
   }
 

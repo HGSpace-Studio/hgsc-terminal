@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -31,6 +32,20 @@ class PerformanceCacheStats {
   final int logBytes;
 
   int get totalBytes => messageCacheBytes + imageCacheBytes + logBytes;
+}
+
+class AppLogFile {
+  const AppLogFile({
+    required this.path,
+    required this.name,
+    required this.bytes,
+    required this.modified,
+  });
+
+  final String path;
+  final String name;
+  final int bytes;
+  final DateTime modified;
 }
 
 class CsacAppState extends ChangeNotifier {
@@ -759,6 +774,30 @@ class CsacAppState extends ChangeNotifier {
     return cache.loadMessagesAround(conversation, messageId);
   }
 
+  Future<List<ChatMessage>> loadMessagesAroundFromNetwork(
+    Conversation conversation,
+    ChatMessage target, {
+    int before = 80,
+    int after = 80,
+  }) async {
+    final beforeMessages = await client.messages(
+      conversation,
+      beforeId: target.id,
+      limit: before,
+    );
+    final afterMessages = await client.messages(
+      conversation,
+      afterId: target.id,
+      limit: after,
+    );
+    final window = mergeChatMessages(beforeMessages, <ChatMessage>[
+      target,
+      ...afterMessages,
+    ]);
+    await cache.saveMessages(conversation, window);
+    return cache.filterLocallyDeletedMessages(conversation, window);
+  }
+
   Future<bool> hasCachedMessage(Conversation conversation, int messageId) {
     return cache.hasMessage(conversation, messageId);
   }
@@ -988,6 +1027,26 @@ class CsacAppState extends ChangeNotifier {
     return cache.filterLocallyDeletedMessages(conversation, loaded);
   }
 
+  Future<List<ChatMessage>> loadOlderMessages(
+    Conversation conversation, {
+    int beforeId = 0,
+    int limit = 80,
+  }) async {
+    final baseline = beforeId > 0
+        ? beforeId
+        : await cache.oldestMessageId(conversation);
+    if (baseline <= 0) {
+      return const <ChatMessage>[];
+    }
+    final loaded = await client.messages(
+      conversation,
+      beforeId: baseline,
+      limit: limit,
+    );
+    await cache.saveMessages(conversation, loaded);
+    return cache.filterLocallyDeletedMessages(conversation, loaded);
+  }
+
   Future<List<ChatMessage>> loadMessagesFromNetwork(
     Conversation conversation,
   ) async {
@@ -1000,7 +1059,7 @@ class CsacAppState extends ChangeNotifier {
   Future<List<ChatMessage>> reloadMessagesFromNetwork(
     Conversation conversation,
   ) {
-    return loadMessagesFromNetwork(conversation);
+    return syncMessages(conversation);
   }
 
   Future<void> clearLocalCache() async {
@@ -1045,6 +1104,60 @@ class CsacAppState extends ChangeNotifier {
     await clearLocalCache();
     await _clearImageCaches(resetBackground: true);
     await _clearLogCaches();
+  }
+
+  Future<List<AppLogFile>> loadAppLogFiles() async {
+    final files = <AppLogFile>[];
+    await _collectLogFiles(await _logDirectory(), files, recursive: true);
+    await _collectLogFiles(await getTemporaryDirectory(), files);
+    final byPath = <String, AppLogFile>{
+      for (final file in files) file.path: file,
+    };
+    final sorted = byPath.values.toList()
+      ..sort((a, b) => b.modified.compareTo(a.modified));
+    return sorted;
+  }
+
+  Future<String> readAppLogFile(
+    AppLogFile log, {
+    int maxBytes = 256 * 1024,
+  }) async {
+    final file = File(log.path);
+    if (!await file.exists()) {
+      return '';
+    }
+    final length = await file.length();
+    final start = length > maxBytes ? length - maxBytes : 0;
+    final stream = file.openRead(start);
+    return utf8.decode(
+      await stream.expand((chunk) => chunk).toList(),
+      allowMalformed: true,
+    );
+  }
+
+  Future<void> _collectLogFiles(
+    Directory directory,
+    List<AppLogFile> files, {
+    bool recursive = false,
+  }) async {
+    if (!await directory.exists()) {
+      return;
+    }
+    await for (final entity in directory.list(recursive: recursive)) {
+      if (entity is! File ||
+          !_looksLikeLogFile(p.basename(entity.path).toLowerCase())) {
+        continue;
+      }
+      final stat = await entity.stat();
+      files.add(
+        AppLogFile(
+          path: entity.path,
+          name: p.basename(entity.path),
+          bytes: stat.size,
+          modified: stat.modified,
+        ),
+      );
+    }
   }
 
   Future<void> _clearImageCaches({required bool resetBackground}) async {

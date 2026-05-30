@@ -15,10 +15,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   bool appLockSessionUnlocked = false;
   bool appLockStateSeen = false;
   bool lastCanUseAppLock = false;
-  bool lastBootstrapping = true;
-  int lastTextInputSuppressUserId = 0;
   int appLockUserId = 0;
-  int startupTextInputSuppressToken = 0;
 
   @override
   void initState() {
@@ -57,15 +54,6 @@ class _CsacMobileAppState extends State<CsacMobileApp>
 
   void handleStateChanged() {
     final userId = state.user?.uid ?? 0;
-    final enteredAfterBootstrap = lastBootstrapping && !state.bootstrapping;
-    final switchedUser =
-        !state.bootstrapping && userId != lastTextInputSuppressUserId;
-    if (enteredAfterBootstrap || switchedUser) {
-      startupTextInputSuppressToken += 1;
-      _hidePlatformTextInput();
-    }
-    lastBootstrapping = state.bootstrapping;
-    lastTextInputSuppressUserId = userId;
     if (userId != appLockUserId) {
       appLockUserId = userId;
       appLockSessionUnlocked = false;
@@ -147,35 +135,29 @@ class _CsacMobileAppState extends State<CsacMobileApp>
           themeMode: state.preferences.themeMode,
           home: _MotionPreference(
             reduceMotion: state.preferences.reduceMotion,
-            child: _StartupTextInputSuppressor(
-              enabled: !state.bootstrapping && !locked,
-              token: startupTextInputSuppressToken,
-              child: Stack(
-                children: [
-                  _StartupTransition(
-                    child: state.bootstrapping
-                        ? SplashScreen(
-                            key: const ValueKey<String>('bootstrap'),
-                            status: state.restoreStatus,
-                          )
-                        : state.user == null
-                        ? LoginScreen(
-                            key: const ValueKey<String>('login'),
-                            state: state,
-                          )
-                        : MainShell(
-                            key: const ValueKey<String>('main'),
-                            state: state,
-                            suppressInitialTextInput:
-                                !locked && !canUseAppLock(),
-                          ),
+            child: Stack(
+              children: [
+                _StartupTransition(
+                  child: state.bootstrapping
+                      ? SplashScreen(
+                          key: const ValueKey<String>('bootstrap'),
+                          status: state.restoreStatus,
+                        )
+                      : state.user == null
+                      ? LoginScreen(
+                          key: const ValueKey<String>('login'),
+                          state: state,
+                        )
+                      : MainShell(
+                          key: const ValueKey<String>('main'),
+                          state: state,
+                        ),
+                ),
+                if (locked && state.user != null)
+                  Positioned.fill(
+                    child: AppLockScreen(state: state, onUnlocked: unlock),
                   ),
-                  if (locked && state.user != null)
-                    Positioned.fill(
-                      child: AppLockScreen(state: state, onUnlocked: unlock),
-                    ),
-                ],
-              ),
+              ],
             ),
           ),
         );

@@ -116,6 +116,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool mentionPickerOpening = false;
   bool offline = false;
   bool nearBottom = true;
+  bool loadingOlder = false;
+  bool hasMoreOlderMessages = true;
+  bool olderPaginationReady = false;
   bool showChatHint = false;
   bool loadingMemberAvatars = false;
   int? pressedMessageId;
@@ -272,6 +275,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final next = distance < 96;
     if (next != nearBottom && mounted) {
       setState(() => nearBottom = next);
+    }
+    if (olderPaginationReady && scroll.offset < 96) {
+      unawaited(loadOlderMessages());
     }
   }
 
@@ -437,6 +443,7 @@ class _ChatScreenState extends State<ChatScreen> {
       loading = true;
       error = null;
       offline = false;
+      olderPaginationReady = false;
     });
     try {
       final focusId = widget.focusMessageId;
@@ -473,6 +480,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ..clear()
           ..addAll(mergeChatMessages(cached, loaded));
         offline = false;
+        hasMoreOlderMessages = messages.length >= 80;
       });
       await markCurrentConversationRead();
       scrollAfterLoad();
@@ -502,6 +510,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         loading = true;
         error = null;
+        olderPaginationReady = false;
       });
     }
     try {
@@ -516,6 +525,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ..clear()
           ..addAll(loaded);
         offline = false;
+        hasMoreOlderMessages = loaded.length >= 80;
       });
       await markCurrentConversationRead();
       scrollAfterLoad();
@@ -558,7 +568,7 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           messages
             ..clear()
-            ..addAll(loaded);
+            ..addAll(mergeChatMessages(messages, loaded));
           offline = false;
         });
         await markCurrentConversationRead();
@@ -598,6 +608,68 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } finally {
       refreshing = false;
+    }
+  }
+
+  Future<void> loadOlderMessages() async {
+    if (!mounted ||
+        loading ||
+        loadingOlder ||
+        !hasMoreOlderMessages ||
+        messages.isEmpty ||
+        pendingSends.isNotEmpty) {
+      return;
+    }
+    final beforeId = messages.first.id;
+    final previousExtent = scroll.hasClients
+        ? scroll.position.maxScrollExtent
+        : 0;
+    final previousOffset = scroll.hasClients ? scroll.offset : 0;
+    setState(() => loadingOlder = true);
+    try {
+      final older = await widget.state.loadOlderMessages(
+        widget.conversation,
+        beforeId: beforeId,
+      );
+      if (!mounted) {
+        return;
+      }
+      final merged = mergeChatMessages(older, messages);
+      final addedOlderMessages =
+          merged.isNotEmpty && merged.first.id < beforeId;
+      setState(() {
+        messages
+          ..clear()
+          ..addAll(merged);
+        hasMoreOlderMessages = older.length >= 80 && addedOlderMessages;
+        offline = false;
+      });
+      if (addedOlderMessages) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!scroll.hasClients) {
+            return;
+          }
+          final extentDelta = scroll.position.maxScrollExtent - previousExtent;
+          final target = (previousOffset + extentDelta).clamp(
+            0.0,
+            scroll.position.maxScrollExtent,
+          );
+          scroll.jumpTo(target);
+        });
+      }
+    } catch (err) {
+      if (mounted) {
+        setState(() {
+          error = context.strings.format('Offline cache: {error}', {
+            'error': err,
+          });
+          offline = messages.isNotEmpty;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => loadingOlder = false);
+      }
     }
   }
 
@@ -1614,20 +1686,54 @@ class _ChatScreenState extends State<ChatScreen> {
     final focusId = widget.focusMessageId;
     if (focusId == null) {
       scrollToEnd();
+      enableOlderPaginationSoon();
       return;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final keyContext = itemKeys[focusId]?.currentContext;
-      if (keyContext == null) {
-        scrollToEnd();
-        return;
-      }
+      focusLoadedMessage(focusId);
+    });
+  }
+
+  void focusLoadedMessage(int messageId, {int attempt = 0}) {
+    if (!mounted || !scroll.hasClients) {
+      return;
+    }
+    final keyContext = itemKeys[messageId]?.currentContext;
+    if (keyContext != null) {
       Scrollable.ensureVisible(
         keyContext,
         duration: const Duration(milliseconds: 280),
         curve: Curves.easeOut,
         alignment: 0.42,
       );
+      enableOlderPaginationSoon();
+      return;
+    }
+    final messageIndex = messages.indexWhere(
+      (message) => message.id == messageId,
+    );
+    if (messageIndex < 0 || attempt >= 4) {
+      enableOlderPaginationSoon();
+      return;
+    }
+    final maxExtent = scroll.position.maxScrollExtent;
+    if (maxExtent <= 0 || messages.length <= 1) {
+      enableOlderPaginationSoon();
+      return;
+    }
+    final fraction = messageIndex / (messages.length - 1);
+    final target = (maxExtent * fraction).clamp(0.0, maxExtent);
+    scroll.jumpTo(target);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      focusLoadedMessage(messageId, attempt: attempt + 1);
+    });
+  }
+
+  void enableOlderPaginationSoon() {
+    Future<void>.delayed(360.ms, () {
+      if (mounted) {
+        olderPaginationReady = true;
+      }
     });
   }
 
@@ -1844,13 +1950,31 @@ class _ChatScreenState extends State<ChatScreen> {
                       : ListView.builder(
                           controller: scroll,
                           padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                          itemCount: messages.length + pendingSends.length,
+                          itemCount:
+                              messages.length +
+                              pendingSends.length +
+                              (loadingOlder ? 1 : 0),
                           itemBuilder: (context, index) {
-                            if (index >= messages.length) {
+                            if (loadingOlder && index == 0) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 10),
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            final messageIndex = index - (loadingOlder ? 1 : 0);
+                            if (messageIndex >= messages.length) {
                               final pending =
-                                  pendingSends[index - messages.length];
+                                  pendingSends[messageIndex - messages.length];
                               return _MotionListItem(
-                                index: index,
+                                index: messageIndex,
                                 child: _PendingMessageBubble(
                                   pending: pending,
                                   onRetry: () =>
@@ -1858,13 +1982,13 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ),
                               );
                             }
-                            final message = messages[index];
+                            final message = messages[messageIndex];
                             final mine =
                                 widget.state.user?.uid == message.senderId;
                             if (message.messageType == 4 ||
                                 message.isRecalled) {
                               return _MotionListItem(
-                                index: index,
+                                index: messageIndex,
                                 child: _SystemMessagePill(
                                   key: itemKeys.putIfAbsent(
                                     message.id,
@@ -1888,7 +2012,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 .cast<ChatMessage?>()
                                 .firstOrNull;
                             return _MotionListItem(
-                              index: index,
+                              index: messageIndex,
                               child: _MessageBubble(
                                 key: itemKeys.putIfAbsent(
                                   message.id,
@@ -4339,19 +4463,34 @@ class _EssenceMessagesScreenState extends State<EssenceMessagesScreen> {
   }
 
   Future<void> openMessage(ChatMessage message) async {
-    final exists = await widget.state.hasCachedMessage(
-      widget.conversation,
-      message.id,
-    );
+    final messenger = ScaffoldMessenger.of(context);
+    final strings = context.strings;
+    List<ChatMessage> around;
+    var loadedFromNetwork = false;
+    try {
+      around = await widget.state.loadMessagesAroundFromNetwork(
+        widget.conversation,
+        message,
+      );
+      loadedFromNetwork = true;
+    } catch (_) {
+      await widget.state.cache.saveMessages(widget.conversation, [message]);
+      around = await widget.state.loadCachedMessagesAround(
+        widget.conversation,
+        message.id,
+      );
+    }
     if (!mounted) {
       return;
     }
-    if (!exists) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    final containsTarget = around.any((item) => item.id == message.id);
+    final hasContext =
+        around.any((item) => item.id < message.id) ||
+        around.any((item) => item.id > message.id);
+    if (!containsTarget || (!loadedFromNetwork && !hasContext)) {
+      messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            context.strings.text('Unable to locate this essence message.'),
-          ),
+          content: Text(strings.text('Unable to locate this essence message.')),
         ),
       );
       return;

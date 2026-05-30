@@ -662,7 +662,7 @@ class _MessageSearchScreenState extends State<MessageSearchScreen> {
           child: TextField(
             controller: search,
             onChanged: (_) => scheduleSearch(),
-            autofocus: true,
+            autofocus: !widget.embedded,
             decoration: InputDecoration(
               hintText: strings.text('Search cached messages'),
               prefixIcon: const Icon(Icons.search),

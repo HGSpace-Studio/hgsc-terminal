@@ -1274,6 +1274,202 @@ class _OpenSourceLicensesScreenState extends State<OpenSourceLicensesScreen> {
   }
 }
 
+class AppLogsScreen extends StatefulWidget {
+  const AppLogsScreen({super.key, required this.state});
+
+  final CsacAppState state;
+
+  @override
+  State<AppLogsScreen> createState() => _AppLogsScreenState();
+}
+
+class _AppLogsScreenState extends State<AppLogsScreen> {
+  late Future<List<AppLogFile>> logs = widget.state.loadAppLogFiles();
+
+  String formatLogBytes(int bytes) {
+    if (bytes <= 0) {
+      return '0 B';
+    }
+    const units = <String>['B', 'KB', 'MB', 'GB'];
+    var value = bytes.toDouble();
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    final decimals = value >= 10 || unit == 0 ? 0 : 1;
+    return '${value.toStringAsFixed(decimals)} ${units[unit]}';
+  }
+
+  void refreshLogs() {
+    setState(() => logs = widget.state.loadAppLogFiles());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(strings.text('App logs')),
+        actions: [
+          IconButton(
+            tooltip: strings.text('Refresh'),
+            onPressed: refreshLogs,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: FutureBuilder<List<AppLogFile>>(
+          future: logs,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return _InlineError(
+                message: snapshot.error.toString(),
+                onRetry: refreshLogs,
+              );
+            }
+            final items = snapshot.data ?? const <AppLogFile>[];
+            if (items.isEmpty) {
+              return _EmptyPanel(message: strings.text('No app logs found.'));
+            }
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final log = items[index];
+                return Card(
+                  elevation: 0,
+                  child: _RoundedInkClip(
+                    child: ListTile(
+                      leading: const Icon(Icons.description_outlined),
+                      title: Text(log.name),
+                      subtitle: Text(
+                        '${formatLogBytes(log.bytes)} | ${formatLocalDateTime(log.modified)}',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => AppLogDetailScreen(
+                              state: widget.state,
+                              log: log,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class AppLogDetailScreen extends StatefulWidget {
+  const AppLogDetailScreen({super.key, required this.state, required this.log});
+
+  final CsacAppState state;
+  final AppLogFile log;
+
+  @override
+  State<AppLogDetailScreen> createState() => _AppLogDetailScreenState();
+}
+
+class _AppLogDetailScreenState extends State<AppLogDetailScreen> {
+  late Future<String> content = widget.state.readAppLogFile(widget.log);
+
+  void refreshLog() {
+    setState(() => content = widget.state.readAppLogFile(widget.log));
+  }
+
+  Future<void> copyLog(String value) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('Log copied.'))),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.log.name),
+        actions: [
+          IconButton(
+            tooltip: strings.text('Refresh'),
+            onPressed: refreshLog,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: FutureBuilder<String>(
+          future: content,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return _InlineError(
+                message: snapshot.error.toString(),
+                onRetry: refreshLog,
+              );
+            }
+            final text = snapshot.data ?? '';
+            if (text.isEmpty) {
+              return _EmptyPanel(message: strings.text('This log is empty.'));
+            }
+            return Column(
+              children: [
+                Material(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.info_outline),
+                    title: SelectableText(widget.log.path),
+                    subtitle: Text(
+                      strings.text('Showing the latest part of this log.'),
+                    ),
+                    trailing: IconButton(
+                      tooltip: strings.text('Copy'),
+                      onPressed: () => copyLog(text),
+                      icon: const Icon(Icons.copy),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: SelectableText(
+                      text,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 class _LicenseNotice {
   const _LicenseNotice({required this.packages, required this.body});
 
@@ -2510,6 +2706,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Message cache',
       'Image cache',
       'Log files',
+      'App logs',
+      'View app logs',
+      'Diagnostics',
       'Low performance mode',
       'Cache',
       'Cached conversations and message history',
@@ -2944,6 +3143,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               )
                             : const Icon(Icons.chevron_right),
                         onTap: refreshing ? null : refreshAll,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.article_outlined),
+                        title: Text(strings.text('App logs')),
+                        subtitle: Text(
+                          strings.text('View local diagnostic logs'),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  AppLogsScreen(state: widget.state),
+                            ),
+                          );
+                        },
                       ),
                       const Divider(height: 1),
                       ListTile(

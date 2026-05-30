@@ -689,6 +689,8 @@ class CsacApiClient {
   Future<List<ChatMessage>> messages(
     Conversation conversation, {
     int afterId = 0,
+    int beforeId = 0,
+    int limit = 80,
   }) async {
     final route = conversation.type == ConversationType.group
         ? 'message/get_group_msg'
@@ -702,7 +704,8 @@ class CsacApiClient {
         'after_id': '$afterId',
       if (afterId > 0 && conversation.type == ConversationType.private)
         'last_id': '$afterId',
-      if (conversation.type == ConversationType.group) 'limit': '80',
+      if (beforeId > 0) 'before_id': '$beforeId',
+      'limit': '$limit',
     };
     final data = await get(route, values);
     final messages = _messageList(data).map(ChatMessage.fromJson).toList()

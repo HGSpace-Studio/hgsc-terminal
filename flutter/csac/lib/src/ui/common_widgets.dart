@@ -182,97 +182,6 @@ void _hidePlatformTextInput() {
   }
 }
 
-class _StartupTextInputSuppressor extends StatefulWidget {
-  const _StartupTextInputSuppressor({
-    required this.enabled,
-    required this.token,
-    required this.child,
-  });
-
-  final bool enabled;
-  final Object token;
-  final Widget child;
-
-  @override
-  State<_StartupTextInputSuppressor> createState() =>
-      _StartupTextInputSuppressorState();
-}
-
-class _StartupTextInputSuppressorState
-    extends State<_StartupTextInputSuppressor> {
-  final timers = <Timer>[];
-  bool suppressingFocus = false;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.enabled) {
-      suppressTextInput();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _StartupTextInputSuppressor oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.enabled &&
-        (!oldWidget.enabled || oldWidget.token != widget.token)) {
-      suppressTextInput();
-    }
-  }
-
-  @override
-  void dispose() {
-    cancelTimers();
-    super.dispose();
-  }
-
-  void cancelTimers() {
-    for (final timer in timers) {
-      timer.cancel();
-    }
-    timers.clear();
-  }
-
-  void suppressTextInput() {
-    cancelTimers();
-    setState(() => suppressingFocus = true);
-    void hide() {
-      if (mounted) {
-        _hidePlatformTextInput();
-      }
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => hide());
-    for (final delay in const <Duration>[
-      Duration(milliseconds: 80),
-      Duration(milliseconds: 220),
-      Duration(milliseconds: 520),
-      Duration(milliseconds: 900),
-    ]) {
-      timers.add(Timer(delay, hide));
-    }
-    timers.add(
-      Timer(const Duration(milliseconds: 980), () {
-        if (mounted) {
-          setState(() => suppressingFocus = false);
-        }
-      }),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!suppressingFocus) {
-      return widget.child;
-    }
-    return Focus(
-      descendantsAreFocusable: false,
-      descendantsAreTraversable: false,
-      child: widget.child,
-    );
-  }
-}
-
 class _PinEntryPad extends StatelessWidget {
   const _PinEntryPad({
     required this.value,
@@ -365,13 +274,13 @@ class _PinEntryPad extends StatelessWidget {
         const SizedBox(height: 18),
         _PinKeypadRows(
           leading: leadingIcon == null
-              ? const SizedBox.shrink()
-              : IconButton.filledTonal(
+              ? const _PinKeypadPlaceholder()
+              : _PinIconButton(
                   tooltip: leadingTooltip,
                   onPressed: onLeadingPressed,
                   icon: Icon(leadingIcon),
                 ),
-          trailing: IconButton.filledTonal(
+          trailing: _PinIconButton(
             tooltip: context.strings.text('Delete'),
             onPressed: value.isEmpty ? null : backspace,
             icon: const Icon(Icons.backspace_outlined),
@@ -433,6 +342,48 @@ class _PinKeypadRow extends StatelessWidget {
   }
 }
 
+class _PinKeypadPlaceholder extends StatelessWidget {
+  const _PinKeypadPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(child: SizedBox.square(dimension: 58));
+  }
+}
+
+class _PinIconButton extends StatelessWidget {
+  const _PinIconButton({
+    required this.tooltip,
+    required this.icon,
+    this.onPressed,
+  });
+
+  final String tooltip;
+  final Widget icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SizedBox.square(
+        dimension: 58,
+        child: IconButton.filledTonal(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          icon: icon,
+          style: IconButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size.square(58),
+            fixedSize: const Size.square(58),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: const CircleBorder(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PinDigitButton extends StatelessWidget {
   const _PinDigitButton({required this.digit, required this.onTap});
 
@@ -441,16 +392,24 @@ class _PinDigitButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.tonal(
-      onPressed: onTap,
-      style: FilledButton.styleFrom(
-        padding: EdgeInsets.zero,
-        textStyle: Theme.of(
-          context,
-        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    return Center(
+      child: SizedBox.square(
+        dimension: 58,
+        child: FilledButton.tonal(
+          onPressed: onTap,
+          style: FilledButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size.square(58),
+            fixedSize: const Size.square(58),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            textStyle: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            shape: const CircleBorder(),
+          ),
+          child: Text(digit),
+        ),
       ),
-      child: Text(digit),
     );
   }
 }
