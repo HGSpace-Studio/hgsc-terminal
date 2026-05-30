@@ -78,7 +78,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final input = TextEditingController();
   final inputFocus = FocusNode();
   final scroll = _desktopSmoothScrollController();
@@ -121,6 +121,8 @@ class _ChatScreenState extends State<ChatScreen> {
   bool olderPaginationReady = false;
   bool showChatHint = false;
   bool loadingMemberAvatars = false;
+  bool keyboardShouldKeepBottom = false;
+  double keyboardInsetBottom = 0;
   int? pressedMessageId;
   String? error;
 
@@ -152,6 +154,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    keyboardInsetBottom = currentKeyboardInsetBottom();
     widget.state.addListener(handleAppStateChanged);
     widget.state.setActiveConversation(widget.conversation);
     initialUnreadCount = widget.conversation.unreadCount;
@@ -173,6 +177,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     timer?.cancel();
     draftTimer?.cancel();
     unawaited(saveDraftNow());
@@ -193,6 +198,25 @@ class _ChatScreenState extends State<ChatScreen> {
     voicePlaybackEventSub?.cancel();
     unawaited(voicePlayer.dispose());
     super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    final nextInset = currentKeyboardInsetBottom();
+    final keyboardOpening = keyboardInsetBottom <= 0 && nextInset > 0;
+    final keyboardGrowing = nextInset > keyboardInsetBottom && nextInset > 0;
+    if (keyboardOpening) {
+      keyboardShouldKeepBottom =
+          inputFocus.hasFocus && nearBottom && widget.focusMessageId == null;
+    }
+    if (nextInset <= 0) {
+      keyboardShouldKeepBottom = false;
+    } else if ((keyboardOpening || keyboardGrowing) &&
+        keyboardShouldKeepBottom) {
+      scrollToEndAfterKeyboardResize();
+    }
+    keyboardInsetBottom = nextInset;
   }
 
   void handleAppStateChanged() {
@@ -1713,6 +1737,26 @@ class _ChatScreenState extends State<ChatScreen> {
       return Duration(seconds: message.voiceDuration);
     }
     return Duration.zero;
+  }
+
+  double currentKeyboardInsetBottom() {
+    final view = WidgetsBinding.instance.platformDispatcher.views.firstOrNull;
+    if (view == null) {
+      return 0;
+    }
+    return view.viewInsets.bottom / view.devicePixelRatio;
+  }
+
+  void scrollToEndAfterKeyboardResize({int frame = 0}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !scroll.hasClients || !keyboardShouldKeepBottom) {
+        return;
+      }
+      scroll.jumpTo(scroll.position.maxScrollExtent);
+      if (frame < 1) {
+        scrollToEndAfterKeyboardResize(frame: frame + 1);
+      }
+    });
   }
 
   void scrollToEnd() {
