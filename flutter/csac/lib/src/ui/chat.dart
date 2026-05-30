@@ -2207,18 +2207,88 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 );
                               },
                             ),
-                      if (!nearBottom && !loading)
-                        Positioned(
-                          right: 16,
-                          bottom: 16,
-                          child: _MotionPane(
-                            child: FloatingActionButton.small(
-                              tooltip: strings.text('Jump to bottom'),
-                              onPressed: jumpToEnd,
-                              child: const Icon(Icons.keyboard_arrow_down),
-                            ),
+                      Positioned(
+                        right: 16,
+                        bottom: 16,
+                        child: IgnorePointer(
+                          ignoring: nearBottom || loading,
+                          child: AnimatedSwitcher(
+                            duration: _MotionPreference.reduceOf(context)
+                                ? Duration.zero
+                                : 420.ms,
+                            reverseDuration: _MotionPreference.reduceOf(context)
+                                ? Duration.zero
+                                : 320.ms,
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, animation) {
+                              final reduceMotion = _MotionPreference.reduceOf(
+                                context,
+                              );
+                              if (reduceMotion) {
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: child,
+                                );
+                              }
+                              final fade = CurvedAnimation(
+                                parent: animation,
+                                curve: const Interval(
+                                  0.08,
+                                  1,
+                                  curve: Curves.easeOutCubic,
+                                ),
+                                reverseCurve: Curves.easeInCubic,
+                              );
+                              final scale = Tween<double>(begin: 0.82, end: 1)
+                                  .animate(
+                                    CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.easeOutBack,
+                                      reverseCurve: Curves.easeInBack,
+                                    ),
+                                  );
+                              return FadeTransition(
+                                opacity: fade,
+                                child: AnimatedBuilder(
+                                  animation: animation,
+                                  child: child,
+                                  builder: (context, child) {
+                                    final isButton =
+                                        child?.key ==
+                                        const ValueKey('jump-to-bottom-button');
+                                    final collapse = 1 - animation.value;
+                                    final angle = isButton
+                                        ? collapse * 0.55
+                                        : collapse * 1.35;
+                                    return Transform.scale(
+                                      scale: scale.value,
+                                      child: Transform.rotate(
+                                        angle: angle,
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                            },
+                            child: !nearBottom && !loading
+                                ? FloatingActionButton.small(
+                                    key: const ValueKey(
+                                      'jump-to-bottom-button',
+                                    ),
+                                    tooltip: strings.text('Jump to bottom'),
+                                    onPressed: jumpToEnd,
+                                    child: const Icon(
+                                      Icons.keyboard_arrow_down,
+                                    ),
+                                  )
+                                : const SizedBox.shrink(
+                                    key: ValueKey('jump-to-bottom-empty'),
+                                  ),
                           ),
                         ),
+                      ),
                       Positioned(
                         left: 12,
                         right: 12,

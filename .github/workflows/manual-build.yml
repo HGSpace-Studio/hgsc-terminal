@@ -57,6 +57,10 @@ jobs:
       - name: Install aria2
         run: choco install aria2 --no-progress -y
 
+      - name: Install Inno Setup
+        if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'windows-installer' }}
+        run: choco install innosetup --no-progress -y
+
       - name: Download Flutter SDK
         shell: pwsh
         run: |
@@ -106,6 +110,36 @@ jobs:
         with:
           name: ${{ env.APP_NAME }}-windows
           path: flutter/csac/build/windows/x64/runner/Release
+
+      - name: Build Windows installer
+        if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'windows-installer' }}
+        shell: pwsh
+        run: |
+          $buildDir = (Resolve-Path "build/windows/x64/runner/Release").Path
+          $outputDir = (Resolve-Path ".").Path
+          $outputDir = Join-Path $outputDir "build/windows/installer"
+          New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            $iscc = "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          }
+          if (!(Test-Path $iscc)) {
+            throw "ISCC.exe was not found after installing Inno Setup."
+          }
+
+          & $iscc `
+            "/DBuildDir=$buildDir" `
+            "/DOutputDir=$outputDir" `
+            "/DMyAppVersion=$env:APP_BUILD_NAME" `
+            "..\..\.github\installer\windows\csac.iss"
+
+      - name: Upload Windows installer
+        if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'windows-installer' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-windows-installer
+          path: flutter/csac/build/windows/installer/*.exe
 
   linux:
     name: Linux
@@ -394,6 +428,12 @@ jobs:
               cd "release-assets/${APP_NAME}-windows"
               zip -r "../../release-upload/${APP_NAME}-${version}-windows-x64.zip" .
             )
+          fi
+
+          if compgen -G "release-assets/${APP_NAME}-windows-installer/*.exe" > /dev/null; then
+            cp \
+              release-assets/${APP_NAME}-windows-installer/*.exe \
+              "release-upload/${APP_NAME}-${version}-windows-x64-setup.exe"
           fi
 
           if [[ -d release-assets/${APP_NAME}-linux ]]; then
