@@ -70,7 +70,7 @@ class CsacLocalCache {
   Future<CsacUser?> loadUser() async {
     final db = await _database();
     final rows = db.select('''
-      SELECT uid, nickname, username, avatar, online_status
+      SELECT uid, nickname, username, avatar, online_status, pat_action
       FROM session_user
       ORDER BY saved_at DESC
       LIMIT 1
@@ -85,6 +85,7 @@ class CsacLocalCache {
       username: row['username'] as String,
       avatar: row['avatar'] as String,
       onlineStatus: row['online_status'] as String,
+      patAction: row['pat_action'] as String,
     );
   }
 
@@ -94,9 +95,9 @@ class CsacLocalCache {
     db.execute(
       '''
       INSERT INTO session_user (
-        uid, nickname, username, avatar, online_status, saved_at
+        uid, nickname, username, avatar, online_status, pat_action, saved_at
       )
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         user.uid,
@@ -104,6 +105,7 @@ class CsacLocalCache {
         user.username,
         user.avatar,
         user.onlineStatus,
+        user.patAction,
         DateTime.now().millisecondsSinceEpoch,
       ],
     );
@@ -239,7 +241,8 @@ class CsacLocalCache {
     final db = await _database();
     final rows = db.select(
       '''
-      SELECT id, sender_id, sender, body, time, image_url, voice_url,
+      SELECT id, sender_id, sender, body, sender_avatar, message_type,
+        is_read, member_level, member_title, time, image_url, voice_url,
         voice_duration, file_url, file_name, can_recall, is_recalled,
         is_essence, is_mentioned, reply_to
       FROM messages
@@ -260,7 +263,8 @@ class CsacLocalCache {
     final db = await _database();
     final rows = db.select(
       '''
-      SELECT id, sender_id, sender, body, time, image_url, voice_url,
+      SELECT id, sender_id, sender, body, sender_avatar, message_type,
+        is_read, member_level, member_title, time, image_url, voice_url,
         voice_duration, file_url, file_name, can_recall, is_recalled,
         is_essence, is_mentioned, reply_to
       FROM messages
@@ -282,7 +286,8 @@ class CsacLocalCache {
     final type = _conversationTypeName(conversation.type);
     final beforeRows = db.select(
       '''
-      SELECT id, sender_id, sender, body, time, image_url, voice_url,
+      SELECT id, sender_id, sender, body, sender_avatar, message_type,
+        is_read, member_level, member_title, time, image_url, voice_url,
         voice_duration, file_url, file_name, can_recall, is_recalled,
         is_essence, is_mentioned, reply_to
       FROM messages
@@ -294,7 +299,8 @@ class CsacLocalCache {
     );
     final afterRows = db.select(
       '''
-      SELECT id, sender_id, sender, body, time, image_url, voice_url,
+      SELECT id, sender_id, sender, body, sender_avatar, message_type,
+        is_read, member_level, member_title, time, image_url, voice_url,
         voice_duration, file_url, file_name, can_recall, is_recalled,
         is_essence, is_mentioned, reply_to
       FROM messages
@@ -536,15 +542,21 @@ class CsacLocalCache {
     final statement = db.prepare('''
       INSERT INTO messages (
         conversation_type, conversation_id, id, sender_id, sender, body, time,
+        sender_avatar, message_type, is_read, member_level, member_title,
         image_url, voice_url, voice_duration, file_url, file_name, can_recall,
         is_recalled, is_essence, is_mentioned, reply_to
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(conversation_type, conversation_id, id) DO UPDATE SET
         sender_id = excluded.sender_id,
         sender = excluded.sender,
         body = excluded.body,
         time = excluded.time,
+        sender_avatar = excluded.sender_avatar,
+        message_type = excluded.message_type,
+        is_read = excluded.is_read,
+        member_level = excluded.member_level,
+        member_title = excluded.member_title,
         image_url = excluded.image_url,
         voice_url = excluded.voice_url,
         voice_duration = excluded.voice_duration,
@@ -572,6 +584,11 @@ class CsacLocalCache {
           message.sender,
           message.body,
           message.time,
+          message.senderAvatar,
+          message.messageType,
+          message.isRead ? 1 : 0,
+          message.memberLevel,
+          message.memberTitle,
           message.imageUrl,
           message.voiceUrl,
           message.voiceDuration,
@@ -710,9 +727,16 @@ class CsacLocalCache {
         username TEXT NOT NULL DEFAULT '',
         avatar TEXT NOT NULL DEFAULT '',
         online_status TEXT NOT NULL DEFAULT '',
+        pat_action TEXT NOT NULL DEFAULT '$defaultPatAction',
         saved_at INTEGER NOT NULL DEFAULT 0
       )
       ''');
+    _addColumnIfMissing(
+      db,
+      'session_user',
+      'pat_action',
+      "TEXT NOT NULL DEFAULT '$defaultPatAction'",
+    );
     db.execute('''
       CREATE TABLE IF NOT EXISTS conversations (
         type TEXT NOT NULL,
@@ -760,6 +784,11 @@ class CsacLocalCache {
         sender_id INTEGER NOT NULL DEFAULT 0,
         sender TEXT NOT NULL DEFAULT '',
         body TEXT NOT NULL DEFAULT '',
+        sender_avatar TEXT NOT NULL DEFAULT '',
+        message_type INTEGER NOT NULL DEFAULT 1,
+        is_read INTEGER NOT NULL DEFAULT 0,
+        member_level INTEGER NOT NULL DEFAULT 0,
+        member_title TEXT NOT NULL DEFAULT '',
         time TEXT NOT NULL DEFAULT '',
         image_url TEXT NOT NULL DEFAULT '',
         voice_url TEXT NOT NULL DEFAULT '',
@@ -774,6 +803,36 @@ class CsacLocalCache {
         PRIMARY KEY (conversation_type, conversation_id, id)
       )
       ''');
+    _addColumnIfMissing(
+      db,
+      'messages',
+      'sender_avatar',
+      "TEXT NOT NULL DEFAULT ''",
+    );
+    _addColumnIfMissing(
+      db,
+      'messages',
+      'message_type',
+      'INTEGER NOT NULL DEFAULT 1',
+    );
+    _addColumnIfMissing(
+      db,
+      'messages',
+      'is_read',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    _addColumnIfMissing(
+      db,
+      'messages',
+      'member_level',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    _addColumnIfMissing(
+      db,
+      'messages',
+      'member_title',
+      "TEXT NOT NULL DEFAULT ''",
+    );
     db.execute('''
       CREATE TABLE IF NOT EXISTS local_deleted_messages (
         conversation_type TEXT NOT NULL,
@@ -869,6 +928,11 @@ class CsacLocalCache {
       senderId: row['sender_id'] as int,
       sender: row['sender'] as String,
       body: body,
+      senderAvatar: row['sender_avatar'] as String,
+      messageType: row['message_type'] as int,
+      isRead: (row['is_read'] as int) != 0,
+      memberLevel: row['member_level'] as int,
+      memberTitle: row['member_title'] as String,
       time: time,
       timeSortValue: timestampForSort(row['time']),
       imageUrl: imageUrl,

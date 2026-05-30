@@ -54,10 +54,7 @@ class _MainShellState extends State<MainShell> {
   }
 
   void hideTextInput() {
-    FocusManager.instance.primaryFocus?.unfocus();
-    if (Platform.isIOS) {
-      unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
-    }
+    _hidePlatformTextInput();
   }
 
   int totalUnreadChats() {

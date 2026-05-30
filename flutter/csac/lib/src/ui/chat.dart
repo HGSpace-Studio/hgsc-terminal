@@ -540,7 +540,15 @@ class _ChatScreenState extends State<ChatScreen> {
     refreshing = true;
     try {
       refreshTicks += 1;
-      if (silent && refreshTicks % 8 == 0) {
+      final shouldFullReload =
+          silent &&
+          (refreshTicks % 8 == 0 ||
+              (widget.conversation.type == ConversationType.private &&
+                  messages.any((message) {
+                    return message.senderId == widget.state.user?.uid &&
+                        !message.isRead;
+                  })));
+      if (shouldFullReload) {
         final loaded = await widget.state.reloadMessagesFromNetwork(
           widget.conversation,
         );
@@ -887,6 +895,47 @@ class _ChatScreenState extends State<ChatScreen> {
         (item) => item.copyWith(
           status: _PendingSendStatus.failed,
           error: err.toString(),
+        ),
+      );
+    }
+  }
+
+  Future<void> sendPat(ChatMessage message) async {
+    if (widget.conversation.type != ConversationType.group ||
+        !widget.state.preferences.enablePat ||
+        message.senderId <= 0 ||
+        message.senderId == widget.state.user?.uid) {
+      return;
+    }
+    HapticFeedback.mediumImpact();
+    try {
+      await widget.state.client.sendPatMessage(
+        widget.conversation,
+        message.senderId,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.format('You patted {name}', {
+              'name': message.sender,
+            }),
+          ),
+        ),
+      );
+      await refresh(silent: true);
+      scrollToEnd();
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.format('Pat failed: {error}', {'error': err}),
+          ),
         ),
       );
     }
@@ -1812,6 +1861,20 @@ class _ChatScreenState extends State<ChatScreen> {
                             final message = messages[index];
                             final mine =
                                 widget.state.user?.uid == message.senderId;
+                            if (message.messageType == 4 ||
+                                message.isRecalled) {
+                              return _MotionListItem(
+                                index: index,
+                                child: _SystemMessagePill(
+                                  key: itemKeys.putIfAbsent(
+                                    message.id,
+                                    () => GlobalKey(),
+                                  ),
+                                  message: message,
+                                  preferences: widget.state.preferences,
+                                ),
+                              );
+                            }
                             final showAvatar =
                                 widget.state.preferences.showChatAvatars;
                             final avatarUrl = showAvatar
@@ -1836,6 +1899,17 @@ class _ChatScreenState extends State<ChatScreen> {
                                 mine: mine,
                                 showAvatar: showAvatar,
                                 avatarUrl: avatarUrl,
+                                showReadStatus:
+                                    widget.conversation.type ==
+                                        ConversationType.private &&
+                                    mine,
+                                showMemberLevel:
+                                    widget.conversation.type ==
+                                        ConversationType.group &&
+                                    widget
+                                        .state
+                                        .preferences
+                                        .showGroupMemberLevel,
                                 focused: widget.focusMessageId == message.id,
                                 selected: selected,
                                 selectionMode: selectionMode,
@@ -1850,6 +1924,13 @@ class _ChatScreenState extends State<ChatScreen> {
                                 onSwipeReply: selectionMode
                                     ? null
                                     : () => setReplyTarget(message),
+                                onAvatarDoubleTap:
+                                    widget.conversation.type ==
+                                            ConversationType.group &&
+                                        widget.state.preferences.enablePat &&
+                                        !mine
+                                    ? () => sendPat(message)
+                                    : null,
                                 onReplyTap: message.replyTo > 0
                                     ? () => scrollToMessage(message.replyTo)
                                     : null,
@@ -2041,6 +2122,8 @@ class _MessageBubble extends StatefulWidget {
     required this.mine,
     this.showAvatar = false,
     this.avatarUrl = '',
+    this.showReadStatus = false,
+    this.showMemberLevel = false,
     this.focused = false,
     this.selected = false,
     this.selectionMode = false,
@@ -2049,6 +2132,7 @@ class _MessageBubble extends StatefulWidget {
     this.onTap,
     this.onLongPress,
     this.onSwipeReply,
+    this.onAvatarDoubleTap,
     this.onReplyTap,
     this.onImageTap,
     this.voicePlaying = false,
@@ -2066,6 +2150,8 @@ class _MessageBubble extends StatefulWidget {
   final bool mine;
   final bool showAvatar;
   final String avatarUrl;
+  final bool showReadStatus;
+  final bool showMemberLevel;
   final bool focused;
   final bool selected;
   final bool selectionMode;
@@ -2074,6 +2160,7 @@ class _MessageBubble extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onSwipeReply;
+  final VoidCallback? onAvatarDoubleTap;
   final VoidCallback? onReplyTap;
   final VoidCallback? onImageTap;
   final bool voicePlaying;
@@ -2157,9 +2244,13 @@ class _MessageBubbleState extends State<_MessageBubble> {
             url: widget.avatarUrl,
             mine: widget.mine,
             name: widget.message.sender,
+            onDoubleTap: widget.onAvatarDoubleTap,
           )
         : const SizedBox.shrink();
     final messageTime = displayMessageTime(widget.message, widget.preferences);
+    final memberLevelText = widget.showMemberLevel
+        ? _memberLevelText(widget.message)
+        : '';
     final imageHeroTag = widget.message.imageUrl.isEmpty
         ? null
         : chatImageHeroTag(widget.message);
@@ -2183,13 +2274,30 @@ class _MessageBubbleState extends State<_MessageBubble> {
               if (widget.selectionMode) const SizedBox(width: 6),
               Flexible(
                 child: Text(
-                  '${widget.message.sender}${messageTime.isEmpty ? '' : ' · $messageTime'}',
+                  widget.message.sender,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
+              if (memberLevelText.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                _MemberLevelBadge(text: memberLevelText),
+              ],
+              if (messageTime.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    messageTime,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 3),
@@ -2318,6 +2426,13 @@ class _MessageBubbleState extends State<_MessageBubble> {
                     !widget.message.body.startsWith('[image]') &&
                     !widget.message.body.startsWith('[voice]'))
                   Text(widget.message.body, style: TextStyle(color: textColor)),
+                if (widget.showReadStatus) ...[
+                  const SizedBox(height: 5),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _PrivateReadStatus(read: widget.message.isRead),
+                  ),
+                ],
               ],
             ),
           ),
@@ -2425,33 +2540,275 @@ class _ChatBackground extends StatelessWidget {
   }
 }
 
-class _ChatMessageAvatar extends StatelessWidget {
+String _memberLevelText(ChatMessage message) {
+  if (message.memberLevel <= 0) {
+    return '';
+  }
+  final title = message.memberTitle.trim();
+  if (title.isEmpty) {
+    return 'Lv.${message.memberLevel}';
+  }
+  return 'Lv.${message.memberLevel} $title';
+}
+
+class _SystemMessagePill extends StatefulWidget {
+  const _SystemMessagePill({
+    super.key,
+    required this.message,
+    required this.preferences,
+  });
+
+  final ChatMessage message;
+  final CsacPreferences preferences;
+
+  @override
+  State<_SystemMessagePill> createState() => _SystemMessagePillState();
+}
+
+class _SystemMessagePillState extends State<_SystemMessagePill> {
+  bool showTime = false;
+
+  @override
+  void didUpdateWidget(_SystemMessagePill oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.id != widget.message.id) {
+      showTime = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final reduceMotion = _MotionPreference.reduceOf(context);
+    final body = widget.message.isRecalled
+        ? context.strings.text('[recalled]')
+        : widget.message.body;
+    final time = displayMessageTime(widget.message, widget.preferences);
+    final canToggleTime = time.isNotEmpty;
+    final text = showTime && canToggleTime ? time : body;
+    final child = DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.58),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: AnimatedSwitcher(
+          duration: reduceMotion ? Duration.zero : 180.ms,
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: SizeTransition(
+                sizeFactor: animation,
+                axis: Axis.horizontal,
+                child: child,
+              ),
+            );
+          },
+          child: Text(
+            text,
+            key: ValueKey<String>(showTime ? 'time:$text' : 'body:$text'),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 28),
+      child: Center(
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: canToggleTime
+                ? () => setState(() => showTime = !showTime)
+                : null,
+            borderRadius: BorderRadius.circular(999),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MemberLevelBadge extends StatelessWidget {
+  const _MemberLevelBadge({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 112),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.tertiaryContainer.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colors.onTertiaryContainer,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivateReadStatus extends StatelessWidget {
+  const _PrivateReadStatus({required this.read});
+
+  final bool read;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AnimatedSwitcher(
+      duration: 160.ms,
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: Row(
+        key: ValueKey<bool>(read),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            read ? Icons.done_all : Icons.done,
+            size: 14,
+            color: read ? colors.primary : colors.onSurfaceVariant,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            context.strings.text(read ? 'Read' : 'Unread'),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: read ? colors.primary : colors.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatMessageAvatar extends StatefulWidget {
   const _ChatMessageAvatar({
     required this.url,
     required this.mine,
     required this.name,
+    this.onDoubleTap,
   });
 
   final String url;
   final bool mine;
   final String name;
+  final VoidCallback? onDoubleTap;
+
+  @override
+  State<_ChatMessageAvatar> createState() => _ChatMessageAvatarState();
+}
+
+class _ChatMessageAvatarState extends State<_ChatMessageAvatar> {
+  int patPulse = 0;
+
+  void triggerPat() {
+    if (widget.onDoubleTap == null) {
+      return;
+    }
+    if (!_MotionPreference.reduceOf(context)) {
+      HapticFeedback.selectionClick();
+      setState(() => patPulse++);
+    }
+    widget.onDoubleTap!();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Padding(
+    final reduceMotion = _MotionPreference.reduceOf(context);
+    final avatar = Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: _Avatar(
-        url: url,
-        fallback: mine ? Icons.person_rounded : Icons.person_outline,
+        url: widget.url,
+        fallback: widget.mine ? Icons.person_rounded : Icons.person_outline,
         radius: 16,
-        backgroundColor: mine
+        backgroundColor: widget.mine
             ? colors.primaryContainer
             : colors.surfaceContainerHighest,
-        foregroundColor: mine
+        foregroundColor: widget.mine
             ? colors.onPrimaryContainer
             : colors.onSurfaceVariant,
       ),
+    );
+    if (widget.onDoubleTap == null) {
+      return avatar;
+    }
+    final animatedAvatar = reduceMotion
+        ? avatar
+        : SizedBox(
+            width: 40,
+            height: 40,
+            child: Stack(
+              alignment: Alignment.center,
+              clipBehavior: Clip.none,
+              children: [
+                if (patPulse > 0)
+                  TweenAnimationBuilder<double>(
+                    key: ValueKey<int>(patPulse),
+                    tween: Tween<double>(begin: 0, end: 1),
+                    duration: 560.ms,
+                    curve: Curves.easeOutCubic,
+                    builder: (context, value, child) {
+                      final opacity = (1 - value).clamp(0.0, 1.0);
+                      return Opacity(
+                        opacity: opacity,
+                        child: Transform.scale(
+                          scale: 1 + value * 0.58,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: colors.primary.withValues(alpha: 0.56),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                TweenAnimationBuilder<double>(
+                  key: ValueKey<String>('avatar-pat-$patPulse'),
+                  tween: Tween<double>(begin: patPulse == 0 ? 1 : 1.16, end: 1),
+                  duration: 420.ms,
+                  curve: Curves.easeOutBack,
+                  builder: (context, scale, child) {
+                    return Transform.scale(scale: scale, child: child);
+                  },
+                  child: avatar,
+                ),
+              ],
+            ),
+          );
+    return Tooltip(
+      message: context.strings.text('Double tap to pat'),
+      child: GestureDetector(onDoubleTap: triggerPat, child: animatedAvatar),
     );
   }
 }

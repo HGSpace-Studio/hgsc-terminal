@@ -232,6 +232,18 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateEnablePat(bool enabled) async {
+    preferences = preferences.copyWith(enablePat: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateShowGroupMemberLevel(bool enabled) async {
+    preferences = preferences.copyWith(showGroupMemberLevel: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
   Future<void> enableLowPerformanceMode() async {
     preferences = preferences.copyWith(reduceMotion: true);
     await preferences.save();
@@ -304,6 +316,45 @@ class CsacAppState extends ChangeNotifier {
     return true;
   }
 
+  Future<void> _clearLocalSessionState({
+    CsacUser? previousUser,
+    String? previousServerUrl,
+    bool removeLoginRecord = false,
+  }) async {
+    if (removeLoginRecord &&
+        previousUser != null &&
+        previousServerUrl != null) {
+      await LoginAccountStore.removeCurrent(
+        user: previousUser,
+        serverUrl: previousServerUrl,
+      );
+    }
+    await cache.clear();
+    await ConversationDraftStore.clearAll();
+    user = null;
+    conversations = const <Conversation>[];
+    notificationCounts = const NotificationCounts();
+    activeConversation = null;
+    offlineMode = false;
+    sessionExpired = false;
+    error = null;
+    notifyListeners();
+  }
+
+  Future<void> deleteAccount() async {
+    final previousUser = user;
+    final previousServerUrl = client.baseUrl;
+    try {
+      await client.deleteAccount();
+    } finally {
+      await _clearLocalSessionState(
+        previousUser: previousUser,
+        previousServerUrl: previousServerUrl,
+        removeLoginRecord: true,
+      );
+    }
+  }
+
   Future<void> refreshCurrentUser() async {
     user = await client.currentUser();
     await cache.saveUser(user!);
@@ -314,6 +365,11 @@ class CsacAppState extends ChangeNotifier {
 
   Future<void> updateNickname(String nickname) async {
     await client.updateNickname(nickname);
+    await refreshCurrentUser();
+  }
+
+  Future<void> updatePatAction(String patAction) async {
+    await client.updatePatAction(patAction);
     await refreshCurrentUser();
   }
 
@@ -738,6 +794,10 @@ class CsacAppState extends ChangeNotifier {
     return client.publicGroups();
   }
 
+  Future<List<GroupProfile>> loadCreatedGroups(int uid) {
+    return client.createdGroups(uid);
+  }
+
   Future<GroupProfile> createGroup(String roomName) async {
     final group = await client.createGroup(roomName);
     await syncConversations();
@@ -797,6 +857,13 @@ class CsacAppState extends ChangeNotifier {
     );
   }
 
+  Future<void> submitBugReport({
+    required String title,
+    required String description,
+  }) {
+    return client.submitBugReport(title: title, description: description);
+  }
+
   Future<void> leaveGroup(int roomId) async {
     await client.leaveGroup(roomId);
     await syncConversations();
@@ -817,6 +884,15 @@ class CsacAppState extends ChangeNotifier {
     await syncConversations();
   }
 
+  Future<void> updateGroupAvatar(
+    int roomId,
+    Uint8List avatarBytes,
+    String fileName,
+  ) async {
+    await client.updateGroupAvatar(roomId, avatarBytes, fileName);
+    await syncConversations();
+  }
+
   Future<void> updateGroupSettings(
     int roomId, {
     required String joinType,
@@ -824,6 +900,7 @@ class CsacAppState extends ChangeNotifier {
     required String question,
     required String answer,
     required bool showPublic,
+    required bool allowInvite,
   }) async {
     await client.updateGroupSettings(
       roomId,
@@ -832,6 +909,7 @@ class CsacAppState extends ChangeNotifier {
       question: question,
       answer: answer,
       showPublic: showPublic,
+      allowInvite: allowInvite,
     );
     await syncConversations();
   }
@@ -860,6 +938,25 @@ class CsacAppState extends ChangeNotifier {
 
   Future<void> setGroupAdmin(int roomId, int targetUid, bool set) {
     return client.setGroupAdmin(roomId, targetUid, set);
+  }
+
+  Future<void> inviteGroupMember(int roomId, int targetUid) async {
+    await client.inviteGroupMember(roomId, targetUid);
+    await syncConversations();
+  }
+
+  Future<void> setGroupMemberTitle(
+    int roomId,
+    int targetUid, {
+    required String title,
+    required int level,
+  }) {
+    return client.setGroupMemberTitle(
+      roomId,
+      targetUid,
+      title: title,
+      level: level,
+    );
   }
 
   Future<void> recallMessage(Conversation conversation, int msgId) {
@@ -1042,20 +1139,11 @@ class CsacAppState extends ChangeNotifier {
         await client.logout();
       }
     } finally {
-      if (!keepLoginRecord && previousUser != null) {
-        await LoginAccountStore.removeCurrent(
-          user: previousUser,
-          serverUrl: previousServerUrl,
-        );
-      }
-      await cache.clear();
-      await ConversationDraftStore.clearAll();
-      user = null;
-      conversations = const <Conversation>[];
-      notificationCounts = const NotificationCounts();
-      activeConversation = null;
-      offlineMode = false;
-      notifyListeners();
+      await _clearLocalSessionState(
+        previousUser: previousUser,
+        previousServerUrl: previousServerUrl,
+        removeLoginRecord: !keepLoginRecord,
+      );
     }
   }
 

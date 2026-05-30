@@ -147,6 +147,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   bool updatingNickname = false;
   bool updatingAvatar = false;
   bool updatingPassword = false;
+  bool updatingPatAction = false;
+  bool deletingAccount = false;
 
   Future<void> editNickname() async {
     final current = widget.state.user?.nickname ?? '';
@@ -270,6 +272,78 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     }
   }
 
+  Future<void> editPatAction() async {
+    final current = widget.state.user?.patAction ?? defaultPatAction;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => _PatActionDialog(initialAction: current),
+    );
+    if (action == null || !mounted) {
+      return;
+    }
+    final trimmed = action.trim();
+    if (trimmed.isEmpty) {
+      showSnack(context.strings.text('Please enter a pat action.'));
+      return;
+    }
+    if (trimmed == current.trim()) {
+      return;
+    }
+    setState(() => updatingPatAction = true);
+    try {
+      await widget.state.updatePatAction(trimmed);
+      if (!mounted) {
+        return;
+      }
+      showSnack(context.strings.text('Pat action updated.'));
+      setState(() {});
+    } catch (err) {
+      if (mounted) {
+        showSnack(
+          context.strings.format('Update failed: {error}', {'error': err}),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => updatingPatAction = false);
+      }
+    }
+  }
+
+  Future<void> deleteAccount() async {
+    final strings = context.strings;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => const _DeleteAccountDialog(),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => deletingAccount = true);
+    try {
+      await widget.state.deleteAccount();
+      if (!mounted) {
+        return;
+      }
+      navigator.popUntil((route) => route.isFirst);
+      messenger.showSnackBar(
+        SnackBar(content: Text(strings.text('Account deleted.'))),
+      );
+    } catch (err) {
+      if (mounted) {
+        showSnack(
+          context.strings.format('Delete failed: {error}', {'error': err}),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => deletingAccount = false);
+      }
+    }
+  }
+
   void showSnack(String message) {
     ScaffoldMessenger.of(
       context,
@@ -363,6 +437,14 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     ),
                     const Divider(height: 1),
                     ListTile(
+                      leading: const Icon(Icons.waving_hand_outlined),
+                      title: Text(strings.text('Pat action')),
+                      subtitle: Text(user?.patAction ?? defaultPatAction),
+                      trailing: progressOrChevron(updatingPatAction),
+                      onTap: updatingPatAction ? null : editPatAction,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
                       leading: const Icon(Icons.lock_reset_outlined),
                       title: Text(strings.text('Change password')),
                       subtitle: Text(
@@ -372,6 +454,45 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       onTap: updatingPassword ? null : changePassword,
                     ),
                   ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              strings.text('Danger zone'),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              elevation: 0,
+              child: _RoundedInkClip(
+                child: ListTile(
+                  leading: Icon(
+                    Icons.delete_forever_outlined,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  title: Text(
+                    strings.text('Delete account'),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  subtitle: Text(
+                    strings.text(
+                      'Permanently delete this account and owned groups.',
+                    ),
+                  ),
+                  trailing: deletingAccount
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.chevron_right),
+                  onTap: deletingAccount ? null : deleteAccount,
                 ),
               ),
             ),
@@ -392,6 +513,70 @@ class _PasswordChange {
   final String oldPassword;
   final String newPassword;
   final String confirmPassword;
+}
+
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog();
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  late final TextEditingController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = TextEditingController()..addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final canDelete = controller.text.trim() == 'DELETE';
+    return AlertDialog(
+      title: Text(strings.text('Delete account?')),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            strings.text(
+              'This will permanently delete your account, messages and owned groups. This cannot be undone.',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              labelText: strings.text('Type DELETE to confirm'),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+            foregroundColor: Theme.of(context).colorScheme.onError,
+          ),
+          onPressed: canDelete ? () => Navigator.of(context).pop(true) : null,
+          child: Text(strings.text('Delete account')),
+        ),
+      ],
+    );
+  }
 }
 
 class _NicknameDialog extends StatefulWidget {
@@ -434,6 +619,62 @@ class _NicknameDialogState extends State<_NicknameDialog> {
         textInputAction: TextInputAction.done,
         decoration: InputDecoration(
           labelText: strings.text('New nickname'),
+          border: const OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton(onPressed: submit, child: Text(strings.text('Save'))),
+      ],
+    );
+  }
+}
+
+class _PatActionDialog extends StatefulWidget {
+  const _PatActionDialog({required this.initialAction});
+
+  final String initialAction;
+
+  @override
+  State<_PatActionDialog> createState() => _PatActionDialogState();
+}
+
+class _PatActionDialogState extends State<_PatActionDialog> {
+  late final TextEditingController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = TextEditingController(text: widget.initialAction);
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    Navigator.of(context).pop(controller.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return AlertDialog(
+      title: Text(strings.text('Pat action')),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLength: 16,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(
+          labelText: strings.text('Pat action'),
+          helperText: strings.text('Used in double-tap avatar pats'),
           border: const OutlineInputBorder(),
         ),
         onSubmitted: (_) => submit(),
@@ -1059,78 +1300,90 @@ class _PinPromptDialog extends StatefulWidget {
 }
 
 class _PinPromptDialogState extends State<_PinPromptDialog> {
-  final pin = TextEditingController();
-  final pinConfirm = TextEditingController();
+  String pin = '';
+  String pinConfirm = '';
   String? localError;
+  bool confirming = false;
 
-  @override
-  void dispose() {
-    pin.dispose();
-    pinConfirm.dispose();
-    super.dispose();
+  String get activePin => confirming ? pinConfirm : pin;
+
+  void updateActivePin(String value) {
+    setState(() {
+      if (confirming) {
+        pinConfirm = value;
+      } else {
+        pin = value;
+      }
+      localError = null;
+    });
+    if (value.length >= 8) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && activePin.length >= 8) {
+          submit();
+        }
+      });
+    }
+  }
+
+  bool validateFirstPin() {
+    if (AppLockPin.isValid(pin)) {
+      return true;
+    }
+    setState(() {
+      localError = context.strings.text('PIN must be 4-8 digits.');
+    });
+    return false;
+  }
+
+  void moveToConfirm() {
+    if (!validateFirstPin()) {
+      return;
+    }
+    setState(() {
+      confirming = true;
+      pinConfirm = '';
+      localError = null;
+    });
   }
 
   void submit() {
-    final first = pin.text.trim();
-    if (!AppLockPin.isValid(first)) {
-      setState(() {
-        localError = context.strings.text('PIN must be 4-8 digits.');
-      });
+    if (widget.confirm && !confirming) {
+      moveToConfirm();
       return;
     }
-    if (widget.confirm && first != pinConfirm.text.trim()) {
+    if (!validateFirstPin()) {
+      return;
+    }
+    if (widget.confirm && pin != pinConfirm) {
       setState(() {
         localError = context.strings.text('PINs do not match.');
+        pinConfirm = '';
       });
       return;
     }
-    Navigator.of(context).pop(first);
+    Navigator.of(context).pop(pin);
   }
 
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final activeLabel = widget.confirm && confirming
+        ? strings.text('Confirm PIN')
+        : strings.text(widget.label);
     return AlertDialog(
       title: Text(strings.text(widget.title)),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: pin,
-              autofocus: true,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              textInputAction: widget.confirm
-                  ? TextInputAction.next
-                  : TextInputAction.done,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(8),
-              ],
-              decoration: InputDecoration(
-                labelText: strings.text(widget.label),
-                helperText: strings.text('4-8 digits'),
+            _PinEntryPad(
+              value: activePin,
+              onChanged: updateActivePin,
+              label: activeLabel,
+              helperText: strings.text(
+                widget.confirm && confirming ? 'Enter PIN again' : '4-8 digits',
               ),
-              onSubmitted: widget.confirm ? null : (_) => submit(),
             ),
-            if (widget.confirm) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: pinConfirm,
-                obscureText: true,
-                keyboardType: TextInputType.number,
-                textInputAction: TextInputAction.done,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(8),
-                ],
-                decoration: InputDecoration(
-                  labelText: strings.text('Confirm PIN'),
-                ),
-                onSubmitted: (_) => submit(),
-              ),
-            ],
             if (localError != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -1146,7 +1399,108 @@ class _PinPromptDialogState extends State<_PinPromptDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(strings.text('Cancel')),
         ),
-        FilledButton(onPressed: submit, child: Text(strings.text('Save'))),
+        if (widget.confirm && confirming)
+          TextButton(
+            onPressed: () {
+              setState(() {
+                confirming = false;
+                pinConfirm = '';
+                localError = null;
+              });
+            },
+            child: Text(strings.text('Back')),
+          ),
+        FilledButton(
+          onPressed: AppLockPin.isValid(activePin) ? submit : null,
+          child: Text(
+            strings.text(widget.confirm && !confirming ? 'Next' : 'Save'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BugReportDraft {
+  const _BugReportDraft({required this.title, required this.description});
+
+  final String title;
+  final String description;
+}
+
+class _BugReportDialog extends StatefulWidget {
+  const _BugReportDialog();
+
+  @override
+  State<_BugReportDialog> createState() => _BugReportDialogState();
+}
+
+class _BugReportDialogState extends State<_BugReportDialog> {
+  final title = TextEditingController();
+  final description = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    title.addListener(() => setState(() {}));
+    description.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    description.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    Navigator.of(
+      context,
+    ).pop(_BugReportDraft(title: title.text, description: description.text));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final canSubmit =
+        title.text.trim().isNotEmpty && description.text.trim().isNotEmpty;
+    return AlertDialog(
+      title: Text(strings.text('Report a problem')),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: title,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: strings.text('Feedback title'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: description,
+              minLines: 4,
+              maxLines: 6,
+              decoration: InputDecoration(
+                labelText: strings.text('Feedback description'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton(
+          onPressed: canSubmit ? submit : null,
+          child: Text(strings.text('Submit feedback')),
+        ),
       ],
     );
   }
@@ -1176,6 +1530,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool loadingPerformanceStats = false;
   bool clearingPerformanceCaches = false;
   bool enablingLowPerformanceMode = false;
+  bool submittingBugReport = false;
   PerformanceCacheStats? performanceStats;
   late bool developerOptionsExpanded;
 
@@ -1527,6 +1882,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) {
         setState(() => enablingLowPerformanceMode = false);
+      }
+    }
+  }
+
+  Future<void> submitBugReport() async {
+    final result = await showDialog<_BugReportDraft>(
+      context: context,
+      builder: (context) => const _BugReportDialog(),
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    if (result.title.trim().isEmpty || result.description.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.text('Title and description are required.'),
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() => submittingBugReport = true);
+    try {
+      await widget.state.submitBugReport(
+        title: result.title,
+        description: result.description,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('Feedback submitted.'))),
+      );
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.format('Submit failed: {error}', {'error': err}),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => submittingBugReport = false);
       }
     }
   }
@@ -2071,6 +2474,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Source code',
       'License',
     ]);
+    final showFeedback = settingMatches(query, [
+      'Feedback',
+      'Report a problem',
+      'Bug report',
+      'Problem',
+      'Submit feedback',
+    ]);
     final showAppearance = settingMatches(query, [
       'Theme',
       'Theme color',
@@ -2084,6 +2494,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Background',
       'Show chat avatars',
       'Avatar',
+      'Double tap avatar pat',
+      'Pat',
+      'Group member level',
+      'Level',
       'Reduce motion',
       'Animation',
       'Motion',
@@ -2114,6 +2528,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final hasMatches =
         showAccount ||
         showInfo ||
+        showFeedback ||
         showAppearance ||
         showLock ||
         showData ||
@@ -2219,6 +2634,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 12),
             ],
+            if (showFeedback) ...[
+              Card(
+                elevation: 0,
+                child: _RoundedInkClip(
+                  child: ListTile(
+                    leading: const Icon(Icons.feedback_outlined),
+                    title: Text(strings.text('Report a problem')),
+                    subtitle: Text(
+                      strings.text('Send app feedback to administrators'),
+                    ),
+                    trailing: submittingBugReport
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: submittingBugReport ? null : submitBugReport,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (showAppearance) ...[
               Card(
                 elevation: 0,
@@ -2302,6 +2740,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         value: widget.state.preferences.showChatAvatars,
                         onChanged: widget.state.updateShowChatAvatars,
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.waving_hand_outlined),
+                        title: Text(strings.text('Double tap avatar pat')),
+                        subtitle: Text(
+                          strings.text(
+                            'Double tap a group member avatar to send a pat',
+                          ),
+                        ),
+                        value: widget.state.preferences.enablePat,
+                        onChanged: widget.state.updateEnablePat,
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.military_tech_outlined),
+                        title: Text(strings.text('Show group member level')),
+                        subtitle: Text(
+                          strings.text(
+                            'Display member level beside names in group chats',
+                          ),
+                        ),
+                        value: widget.state.preferences.showGroupMemberLevel,
+                        onChanged: widget.state.updateShowGroupMemberLevel,
                       ),
                       const Divider(height: 1),
                       SwitchListTile(

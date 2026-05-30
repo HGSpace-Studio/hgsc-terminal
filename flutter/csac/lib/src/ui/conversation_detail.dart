@@ -52,6 +52,19 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         (currentGroupMember?.hasOwnerRole ?? false);
   }
 
+  bool isCurrentUserInGroup(GroupProfile profile) {
+    final currentUid = widget.state.user?.uid;
+    final hasConversation = widget.state.conversations.any((conversation) {
+      return conversation.type == ConversationType.group &&
+          conversation.id == profile.id;
+    });
+    return profile.isInGroup ||
+        profile.hasAdminRole ||
+        (profile.ownerUid != 0 && profile.ownerUid == currentUid) ||
+        currentGroupMember != null ||
+        hasConversation;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -487,6 +500,94 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
   }
 
+  Future<void> inviteMember(GroupProfile profile) async {
+    final targetUid = await showDialog<int>(
+      context: context,
+      builder: (context) => const _InviteMemberDialog(),
+    );
+    if (targetUid == null || !mounted) {
+      return;
+    }
+    try {
+      await widget.state.inviteGroupMember(profile.id, targetUid);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.strings.text('Invitation sent.'))),
+      );
+      await load();
+    } catch (err) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.strings.format('Action failed: {error}', {'error': err}),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> editMemberTitle(GroupMember member) async {
+    final profile = group;
+    if (profile == null) {
+      return;
+    }
+    final result = await showDialog<_MemberTitleChange>(
+      context: context,
+      builder: (context) => _MemberTitleDialog(member: member),
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    final strings = context.strings;
+    if (result.title.runes.length > 16) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            strings.text('Member title must be at most 16 characters.'),
+          ),
+        ),
+      );
+      return;
+    }
+    if (result.level < 1 || result.level > 100) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(strings.text('Level must be between 1 and 100.')),
+        ),
+      );
+      return;
+    }
+    try {
+      await widget.state.setGroupMemberTitle(
+        profile.id,
+        member.uid,
+        title: result.title,
+        level: result.level,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings.text('Member title updated.'))),
+      );
+      await load();
+    } catch (err) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings.format('Action failed: {error}', {'error': err}),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> showMemberActions(GroupMember member) async {
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -495,6 +596,11 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.military_tech_outlined),
+              title: Text(context.strings.text('Set member title')),
+              onTap: () => Navigator.of(context).pop('title'),
+            ),
             ListTile(
               leading: const Icon(Icons.volume_off_outlined),
               title: Text(context.strings.text('Mute 10 minutes')),
@@ -531,7 +637,11 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       ),
     );
     if (action != null) {
-      await memberAction(member, action);
+      if (action == 'title') {
+        await editMemberTitle(member);
+      } else {
+        await memberAction(member, action);
+      }
     }
   }
 
@@ -636,6 +746,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   Widget buildGroupProfile(GroupProfile profile) {
     final strings = context.strings;
     final canManageGroup = canManageCurrentGroup;
+    final isInGroup = isCurrentUserInGroup(profile);
     final visibleMembers = filteredMembers(memberSearch);
     final memberQuery = memberSearch.text.trim();
     return RefreshIndicator(
@@ -645,12 +756,15 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: CircleAvatar(
+            leading: _Avatar(
+              url: profile.avatar,
+              fallback: Icons.groups_rounded,
+              radius: 22,
+              heroTag: conversationAvatarHeroTag(widget.conversation),
               backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-              child: Icon(
-                Icons.groups_rounded,
-                color: Theme.of(context).colorScheme.onSecondaryContainer,
-              ),
+              foregroundColor: Theme.of(
+                context,
+              ).colorScheme.onSecondaryContainer,
             ),
             title: Text(profile.name),
             subtitle: Text(
@@ -720,7 +834,15 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               label: Text(strings.text('Group management')),
             ),
           ],
-          if (!profile.isInGroup) ...[
+          if (isInGroup && (profile.allowInvite || canManageGroup)) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => inviteMember(profile),
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              label: Text(strings.text('Invite member')),
+            ),
+          ],
+          if (!isInGroup) ...[
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: () => joinGroup(profile),
@@ -881,6 +1003,166 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 }
 
+class _InviteMemberDialog extends StatefulWidget {
+  const _InviteMemberDialog();
+
+  @override
+  State<_InviteMemberDialog> createState() => _InviteMemberDialogState();
+}
+
+class _InviteMemberDialogState extends State<_InviteMemberDialog> {
+  late final TextEditingController uid;
+
+  @override
+  void initState() {
+    super.initState();
+    uid = TextEditingController()..addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    uid.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    final value = int.tryParse(uid.text.trim()) ?? 0;
+    if (value <= 0) {
+      return;
+    }
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final validUid = (int.tryParse(uid.text.trim()) ?? 0) > 0;
+    return AlertDialog(
+      title: Text(strings.text('Invite member')),
+      content: TextField(
+        controller: uid,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(
+          labelText: strings.text('User UID'),
+          helperText: strings.text('Enter the UID to invite into this group'),
+          border: const OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton(
+          onPressed: validUid ? submit : null,
+          child: Text(strings.text('Invite')),
+        ),
+      ],
+    );
+  }
+}
+
+class _MemberTitleChange {
+  const _MemberTitleChange({required this.title, required this.level});
+
+  final String title;
+  final int level;
+}
+
+class _MemberTitleDialog extends StatefulWidget {
+  const _MemberTitleDialog({required this.member});
+
+  final GroupMember member;
+
+  @override
+  State<_MemberTitleDialog> createState() => _MemberTitleDialogState();
+}
+
+class _MemberTitleDialogState extends State<_MemberTitleDialog> {
+  late final TextEditingController title;
+  late final TextEditingController level;
+
+  @override
+  void initState() {
+    super.initState();
+    title = TextEditingController(text: widget.member.memberTitle)
+      ..addListener(() => setState(() {}));
+    level = TextEditingController(
+      text: '${widget.member.memberLevel <= 0 ? 1 : widget.member.memberLevel}',
+    )..addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    level.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    final parsedLevel = int.tryParse(level.text.trim()) ?? 0;
+    if (parsedLevel < 1 || parsedLevel > 100 || title.text.runes.length > 16) {
+      return;
+    }
+    Navigator.of(
+      context,
+    ).pop(_MemberTitleChange(title: title.text.trim(), level: parsedLevel));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final parsedLevel = int.tryParse(level.text.trim()) ?? 0;
+    final canSubmit =
+        parsedLevel >= 1 && parsedLevel <= 100 && title.text.runes.length <= 16;
+    return AlertDialog(
+      title: Text(strings.text('Set member title')),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: title,
+              maxLength: 16,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: strings.text('Member title'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: level,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                labelText: strings.text('Member level'),
+                helperText: strings.text('Level must be between 1 and 100.'),
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => submit(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.text('Cancel')),
+        ),
+        FilledButton(
+          onPressed: canSubmit ? submit : null,
+          child: Text(strings.text('Save')),
+        ),
+      ],
+    );
+  }
+}
+
 class GroupManagementScreen extends StatefulWidget {
   const GroupManagementScreen({
     super.key,
@@ -902,6 +1184,7 @@ class GroupManagementScreen extends StatefulWidget {
 }
 
 class _GroupManagementScreenState extends State<GroupManagementScreen> {
+  final imagePicker = ImagePicker();
   final memberSearch = TextEditingController();
   late GroupProfile group;
   late List<GroupMember> members;
@@ -1098,12 +1381,34 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
     );
   }
 
+  Future<void> changeGroupAvatar() async {
+    if (acting) {
+      return;
+    }
+    final picked = await imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 90,
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    final bytes = await picked.readAsBytes();
+    if (!mounted) {
+      return;
+    }
+    await runAction(
+      () => widget.state.updateGroupAvatar(group.id, bytes, picked.name),
+      'Group avatar updated.',
+    );
+  }
+
   Future<void> editSettings() async {
     final joinType = TextEditingController(text: group.joinType);
     final code = TextEditingController(text: group.code);
     final question = TextEditingController(text: group.question);
     final answer = TextEditingController(text: group.answer);
     var showPublic = group.showPublic;
+    var allowInvite = group.allowInvite;
     final strings = context.strings;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1156,6 +1461,13 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                   onChanged: (value) =>
                       setDialogState(() => showPublic = value),
                 ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(strings.text('Allow member invites')),
+                  value: allowInvite,
+                  onChanged: (value) =>
+                      setDialogState(() => allowInvite = value),
+                ),
               ],
             ),
           ),
@@ -1191,8 +1503,23 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
         question: questionText,
         answer: answerText,
         showPublic: showPublic,
+        allowInvite: allowInvite,
       ),
       'Group settings updated.',
+    );
+  }
+
+  Future<void> inviteMember() async {
+    final targetUid = await showDialog<int>(
+      context: context,
+      builder: (context) => const _InviteMemberDialog(),
+    );
+    if (targetUid == null || !mounted) {
+      return;
+    }
+    await runAction(
+      () => widget.state.inviteGroupMember(group.id, targetUid),
+      'Invitation sent.',
     );
   }
 
@@ -1243,8 +1570,38 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
     }, 'Member action completed.');
   }
 
+  Future<void> editMemberTitle(GroupMember member) async {
+    final result = await showDialog<_MemberTitleChange>(
+      context: context,
+      builder: (context) => _MemberTitleDialog(member: member),
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    if (result.title.runes.length > 16) {
+      showSnack(
+        context.strings.text('Member title must be at most 16 characters.'),
+      );
+      return;
+    }
+    if (result.level < 1 || result.level > 100) {
+      showSnack(context.strings.text('Level must be between 1 and 100.'));
+      return;
+    }
+    await runAction(
+      () => widget.state.setGroupMemberTitle(
+        group.id,
+        member.uid,
+        title: result.title,
+        level: result.level,
+      ),
+      'Member title updated.',
+    );
+  }
+
   Future<void> showMemberActions(GroupMember member) async {
     final actions = <String>[
+      'title',
       'mute10',
       'unmute',
       if (currentUserIsOwner && !member.hasOwnerRole) ...[
@@ -1260,6 +1617,12 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (actions.contains('title'))
+              ListTile(
+                leading: const Icon(Icons.military_tech_outlined),
+                title: Text(context.strings.text('Set member title')),
+                onTap: () => Navigator.of(context).pop('title'),
+              ),
             if (actions.contains('mute10'))
               ListTile(
                 leading: const Icon(Icons.volume_off_outlined),
@@ -1301,7 +1664,11 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
       ),
     );
     if (selected != null) {
-      await memberAction(member, selected);
+      if (selected == 'title') {
+        await editMemberTitle(member);
+      } else {
+        await memberAction(member, selected);
+      }
     }
   }
 
@@ -1526,12 +1893,12 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                         padding: const EdgeInsets.all(16),
                         child: Row(
                           children: [
-                            CircleAvatar(
+                            _Avatar(
+                              url: group.avatar,
+                              fallback: Icons.groups_rounded,
+                              radius: 24,
                               backgroundColor: colors.secondaryContainer,
-                              child: Icon(
-                                Icons.groups_rounded,
-                                color: colors.onSecondaryContainer,
-                              ),
+                              foregroundColor: colors.onSecondaryContainer,
                             ),
                             const SizedBox(width: 14),
                             Expanded(
@@ -1580,10 +1947,28 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
                             ),
                             const Divider(height: 1),
                             actionTile(
+                              icon: Icons.add_photo_alternate_outlined,
+                              title: strings.text('Change group avatar'),
+                              subtitle: strings.text(
+                                'Choose a new group profile image',
+                              ),
+                              onTap: changeGroupAvatar,
+                            ),
+                            const Divider(height: 1),
+                            actionTile(
                               icon: Icons.tune,
                               title: strings.text('Join settings'),
                               subtitle: group.joinType,
                               onTap: editSettings,
+                            ),
+                            const Divider(height: 1),
+                            actionTile(
+                              icon: Icons.person_add_alt_1_outlined,
+                              title: strings.text('Invite member'),
+                              subtitle: group.allowInvite
+                                  ? strings.text('Members can invite others')
+                                  : strings.text('Only admins can invite'),
+                              onTap: inviteMember,
                             ),
                             const Divider(height: 1),
                             actionTile(

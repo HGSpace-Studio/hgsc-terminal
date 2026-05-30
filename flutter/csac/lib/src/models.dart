@@ -6,6 +6,8 @@ enum ConversationMediaKind { all, image, voice, file }
 
 enum CsacTimestampPattern { slash, dash, compact, timeOnly }
 
+const defaultPatAction = '\u62cd\u4e86\u62cd';
+
 class CsacUser {
   const CsacUser({
     required this.uid,
@@ -13,6 +15,7 @@ class CsacUser {
     this.username = '',
     this.avatar = '',
     this.onlineStatus = '',
+    this.patAction = defaultPatAction,
   });
 
   final int uid;
@@ -20,6 +23,7 @@ class CsacUser {
   final String username;
   final String avatar;
   final String onlineStatus;
+  final String patAction;
 
   factory CsacUser.fromJson(Map<String, dynamic> json) {
     return CsacUser(
@@ -30,6 +34,9 @@ class CsacUser {
       username: asString(json['username']),
       avatar: normalizeApiUrl(asString(json['avatar'])),
       onlineStatus: asString(json['online_status']),
+      patAction: firstString(json, const ['pat_action', 'patAction']).isEmpty
+          ? defaultPatAction
+          : firstString(json, const ['pat_action', 'patAction']),
     );
   }
 }
@@ -276,6 +283,7 @@ class GroupProfile {
     this.answer = '',
     this.joinType = '',
     this.showPublic = false,
+    this.allowInvite = true,
     this.memberCount = 0,
     this.isInGroup = false,
     this.isAdmin = false,
@@ -295,6 +303,7 @@ class GroupProfile {
   final String answer;
   final String joinType;
   final bool showPublic;
+  final bool allowInvite;
   final int memberCount;
   final bool isInGroup;
   final bool isAdmin;
@@ -340,16 +349,24 @@ class GroupProfile {
       code: firstString(json, const ['code', 'fixed_code', 'join_code']),
       question: firstString(json, const [
         'question',
+        'ask_question',
         'apply_question',
         'audit_question',
       ]),
-      answer: firstString(json, const ['answer', 'apply_answer']),
+      answer: firstString(json, const ['answer', 'ask_answer', 'apply_answer']),
       joinType: firstString(json, const [
         'join_type',
         'join_mode',
         'join_method',
       ]),
-      showPublic: firstBool(json, const ['show_public', 'is_public']),
+      showPublic: firstBool(json, const [
+        'show_public',
+        'is_public',
+        'show_in_list',
+      ]),
+      allowInvite: json.containsKey('allow_invite')
+          ? firstBool(json, const ['allow_invite'])
+          : true,
       memberCount: asInt(json['member_count']),
       isInGroup: asBool(json['is_in_group']),
       isAdmin: firstBool(json, const [
@@ -413,6 +430,10 @@ class ChatMessage {
     required this.sender,
     required this.body,
     this.senderAvatar = '',
+    this.messageType = 1,
+    this.isRead = false,
+    this.memberLevel = 0,
+    this.memberTitle = '',
     this.time = '',
     this.timeSortValue = 0,
     this.imageUrl = '',
@@ -432,6 +453,10 @@ class ChatMessage {
   final String sender;
   final String body;
   final String senderAvatar;
+  final int messageType;
+  final bool isRead;
+  final int memberLevel;
+  final String memberTitle;
   final String time;
   final int timeSortValue;
   final String imageUrl;
@@ -451,6 +476,10 @@ class ChatMessage {
     String? sender,
     String? body,
     String? senderAvatar,
+    int? messageType,
+    bool? isRead,
+    int? memberLevel,
+    String? memberTitle,
     String? time,
     int? timeSortValue,
     String? imageUrl,
@@ -470,6 +499,10 @@ class ChatMessage {
       sender: sender ?? this.sender,
       body: body ?? this.body,
       senderAvatar: senderAvatar ?? this.senderAvatar,
+      messageType: messageType ?? this.messageType,
+      isRead: isRead ?? this.isRead,
+      memberLevel: memberLevel ?? this.memberLevel,
+      memberTitle: memberTitle ?? this.memberTitle,
       time: time ?? this.time,
       timeSortValue: timeSortValue ?? this.timeSortValue,
       imageUrl: imageUrl ?? this.imageUrl,
@@ -490,6 +523,7 @@ class ChatMessage {
         ? asInt(json['id'])
         : asInt(json['msg_id']);
     final senderId = firstInt(json, const ['from_uid', 'uid', 'user_id']);
+    final messageType = firstInt(json, const ['msg_type', 'message_type']);
     final isRecalled =
         asBool(json['is_recalled']) ||
         asBool(json['recalled']) ||
@@ -569,6 +603,10 @@ class ChatMessage {
           'from_avatar',
         ]),
       ),
+      messageType: messageType <= 0 ? 1 : messageType,
+      isRead: asBool(json['is_read']),
+      memberLevel: firstInt(json, const ['member_level', 'level']),
+      memberTitle: firstString(json, const ['member_title', 'title']),
       time: readableTimestamp(rawTime),
       timeSortValue: timestampForSort(rawTime),
       imageUrl: image,
@@ -938,6 +976,8 @@ class GroupMember {
     this.avatar = '',
     this.role = '',
     this.onlineStatus = '',
+    this.memberTitle = '',
+    this.memberLevel = 0,
     this.isOwner = false,
     this.isAdmin = false,
   });
@@ -950,12 +990,16 @@ class GroupMember {
   final String avatar;
   final String role;
   final String onlineStatus;
+  final String memberTitle;
+  final int memberLevel;
   final bool isOwner;
   final bool isAdmin;
 
   String get subtitle {
     return [
       if (username.isNotEmpty) '@$username',
+      if (memberLevel > 0) 'Lv.$memberLevel',
+      if (memberTitle.isNotEmpty) memberTitle,
       if (roleLabel.isNotEmpty) roleLabel,
       if (onlineStatus.isNotEmpty) onlineStatus,
     ].join(' | ');
@@ -969,6 +1013,9 @@ class GroupMember {
       username,
       role,
       roleLabel,
+      memberTitle,
+      if (memberLevel > 0) 'Lv.$memberLevel',
+      if (memberLevel > 0) '$memberLevel',
       onlineStatus,
       '$uid',
       'UID $uid',
@@ -1014,6 +1061,16 @@ class GroupMember {
         'identity',
       ]),
       onlineStatus: asString(json['online_status']),
+      memberTitle: firstString(json, const [
+        'title',
+        'member_title',
+        'group_title',
+      ]),
+      memberLevel: firstInt(json, const [
+        'level',
+        'member_level',
+        'group_level',
+      ]),
       isOwner: firstBool(json, const [
         'is_owner',
         'is_creator',

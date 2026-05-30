@@ -175,6 +175,286 @@ class _RoundedInkClip extends StatelessWidget {
   }
 }
 
+void _hidePlatformTextInput() {
+  FocusManager.instance.primaryFocus?.unfocus();
+  if (Platform.isIOS || Platform.isAndroid) {
+    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
+  }
+}
+
+class _StartupTextInputSuppressor extends StatefulWidget {
+  const _StartupTextInputSuppressor({
+    required this.enabled,
+    required this.token,
+    required this.child,
+  });
+
+  final bool enabled;
+  final Object token;
+  final Widget child;
+
+  @override
+  State<_StartupTextInputSuppressor> createState() =>
+      _StartupTextInputSuppressorState();
+}
+
+class _StartupTextInputSuppressorState
+    extends State<_StartupTextInputSuppressor> {
+  final timers = <Timer>[];
+  bool suppressingFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.enabled) {
+      suppressTextInput();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _StartupTextInputSuppressor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.enabled &&
+        (!oldWidget.enabled || oldWidget.token != widget.token)) {
+      suppressTextInput();
+    }
+  }
+
+  @override
+  void dispose() {
+    cancelTimers();
+    super.dispose();
+  }
+
+  void cancelTimers() {
+    for (final timer in timers) {
+      timer.cancel();
+    }
+    timers.clear();
+  }
+
+  void suppressTextInput() {
+    cancelTimers();
+    setState(() => suppressingFocus = true);
+    void hide() {
+      if (mounted) {
+        _hidePlatformTextInput();
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => hide());
+    for (final delay in const <Duration>[
+      Duration(milliseconds: 80),
+      Duration(milliseconds: 220),
+      Duration(milliseconds: 520),
+      Duration(milliseconds: 900),
+    ]) {
+      timers.add(Timer(delay, hide));
+    }
+    timers.add(
+      Timer(const Duration(milliseconds: 980), () {
+        if (mounted) {
+          setState(() => suppressingFocus = false);
+        }
+      }),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!suppressingFocus) {
+      return widget.child;
+    }
+    return Focus(
+      descendantsAreFocusable: false,
+      descendantsAreTraversable: false,
+      child: widget.child,
+    );
+  }
+}
+
+class _PinEntryPad extends StatelessWidget {
+  const _PinEntryPad({
+    required this.value,
+    required this.onChanged,
+    this.label = '',
+    this.helperText = '',
+    this.leadingIcon,
+    this.leadingTooltip = '',
+    this.onLeadingPressed,
+  });
+
+  static const maxLength = 8;
+
+  final String value;
+  final ValueChanged<String> onChanged;
+  final String label;
+  final String helperText;
+  final IconData? leadingIcon;
+  final String leadingTooltip;
+  final VoidCallback? onLeadingPressed;
+
+  void appendDigit(String digit) {
+    if (value.length >= maxLength) {
+      return;
+    }
+    HapticFeedback.selectionClick();
+    onChanged('$value$digit');
+  }
+
+  void backspace() {
+    if (value.isEmpty) {
+      return;
+    }
+    HapticFeedback.selectionClick();
+    onChanged(value.substring(0, value.length - 1));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (label.isNotEmpty) ...[
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+        Semantics(
+          label: label,
+          value: '${value.length} / $maxLength',
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var index = 0; index < maxLength; index++) ...[
+                AnimatedContainer(
+                  duration: 150.ms,
+                  curve: Curves.easeOutCubic,
+                  width: index < value.length ? 12 : 9,
+                  height: index < value.length ? 12 : 9,
+                  decoration: BoxDecoration(
+                    color: index < value.length
+                        ? colors.primary
+                        : colors.outlineVariant,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                if (index != maxLength - 1) const SizedBox(width: 8),
+              ],
+            ],
+          ),
+        ),
+        if (helperText.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            helperText,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+        const SizedBox(height: 18),
+        _PinKeypadRows(
+          leading: leadingIcon == null
+              ? const SizedBox.shrink()
+              : IconButton.filledTonal(
+                  tooltip: leadingTooltip,
+                  onPressed: onLeadingPressed,
+                  icon: Icon(leadingIcon),
+                ),
+          trailing: IconButton.filledTonal(
+            tooltip: context.strings.text('Delete'),
+            onPressed: value.isEmpty ? null : backspace,
+            icon: const Icon(Icons.backspace_outlined),
+          ),
+          digitBuilder: (digit) =>
+              _PinDigitButton(digit: digit, onTap: () => appendDigit(digit)),
+        ),
+      ],
+    );
+  }
+}
+
+class _PinKeypadRows extends StatelessWidget {
+  const _PinKeypadRows({
+    required this.leading,
+    required this.trailing,
+    required this.digitBuilder,
+  });
+
+  final Widget leading;
+  final Widget trailing;
+  final Widget Function(String digit) digitBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _PinKeypadRow(children: ['1', '2', '3'].map(digitBuilder).toList()),
+        const SizedBox(height: 10),
+        _PinKeypadRow(children: ['4', '5', '6'].map(digitBuilder).toList()),
+        const SizedBox(height: 10),
+        _PinKeypadRow(children: ['7', '8', '9'].map(digitBuilder).toList()),
+        const SizedBox(height: 10),
+        _PinKeypadRow(children: [leading, digitBuilder('0'), trailing]),
+      ],
+    );
+  }
+}
+
+class _PinKeypadRow extends StatelessWidget {
+  const _PinKeypadRow({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 58,
+      child: Row(
+        children: [
+          for (var index = 0; index < children.length; index++) ...[
+            Expanded(child: children[index]),
+            if (index != children.length - 1) const SizedBox(width: 12),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PinDigitButton extends StatelessWidget {
+  const _PinDigitButton({required this.digit, required this.onTap});
+
+  final String digit;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonal(
+      onPressed: onTap,
+      style: FilledButton.styleFrom(
+        padding: EdgeInsets.zero,
+        textStyle: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+      child: Text(digit),
+    );
+  }
+}
+
 class _MotionListItem extends StatelessWidget {
   const _MotionListItem({required this.child, this.index = 0});
 

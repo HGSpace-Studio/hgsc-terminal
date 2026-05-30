@@ -25,6 +25,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   UserProfile? profile;
   List<CommonGroup> commonGroups = const <CommonGroup>[];
+  List<GroupProfile> createdGroups = const <GroupProfile>[];
   late final ScrollController profileScroll;
   Timer? profileHeaderSnapTimer;
   bool loading = true;
@@ -131,12 +132,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           groups = await widget.state.loadCommonGroups(loaded.uid);
         } catch (_) {}
       }
+      var created = const <GroupProfile>[];
+      try {
+        created = await widget.state.loadCreatedGroups(loaded.uid);
+      } catch (_) {}
       if (!mounted) {
         return;
       }
       setState(() {
         profile = loaded;
         commonGroups = groups;
+        createdGroups = created;
       });
     } catch (err) {
       if (mounted) {
@@ -338,6 +344,50 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }, 'Member action completed.');
   }
 
+  Future<void> editMemberTitle() async {
+    final group = widget.group;
+    final member = widget.member;
+    if (group == null || member == null) {
+      return;
+    }
+    final result = await showDialog<_MemberTitleChange>(
+      context: context,
+      builder: (context) => _MemberTitleDialog(member: member),
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    if (result.title.runes.length > 16) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.text('Member title must be at most 16 characters.'),
+          ),
+        ),
+      );
+      return;
+    }
+    if (result.level < 1 || result.level > 100) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.text('Level must be between 1 and 100.'),
+          ),
+        ),
+      );
+      return;
+    }
+    await runAction(
+      () => widget.state.setGroupMemberTitle(
+        group.id,
+        member.uid,
+        title: result.title,
+        level: result.level,
+      ),
+      'Member title updated.',
+    );
+  }
+
   void copyValue(String label, String value) {
     Clipboard.setData(ClipboardData(text: value));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -375,6 +425,23 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             type: ConversationType.group,
             id: group.id,
             name: group.name,
+            subtitle: group.subtitle,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void openCreatedGroup(GroupProfile group) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ConversationDetailScreen(
+          state: widget.state,
+          conversation: Conversation(
+            type: ConversationType.group,
+            id: group.id,
+            name: group.name,
+            avatar: group.avatar,
             subtitle: group.subtitle,
           ),
         ),
@@ -526,6 +593,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                                   strings.text('Group role'),
                                   member.roleLabel,
                                 ),
+                              if (member != null && member.memberLevel > 0)
+                                infoRow(
+                                  Icons.military_tech_outlined,
+                                  strings.text('Member level'),
+                                  'Lv.${member.memberLevel}',
+                                ),
+                              if (member != null &&
+                                  member.memberTitle.isNotEmpty)
+                                infoRow(
+                                  Icons.workspace_premium_outlined,
+                                  strings.text('Member title'),
+                                  member.memberTitle,
+                                ),
                             ],
                           ),
                         ),
@@ -611,6 +691,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                             child: Column(
                               children: [
                                 actionTile(
+                                  icon: Icons.military_tech_outlined,
+                                  title: strings.text('Set member title'),
+                                  onTap: editMemberTitle,
+                                ),
+                                const Divider(height: 1),
+                                actionTile(
                                   icon: Icons.volume_off_outlined,
                                   title: strings.text('Mute 10 minutes'),
                                   onTap: () => memberAction('mute10'),
@@ -643,6 +729,45 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                               ],
                             ),
                           ),
+                        ],
+                        if (createdGroups.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          Text(
+                            strings.text(
+                              isSelf
+                                  ? 'Created groups'
+                                  : 'Created public groups',
+                            ),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 8),
+                          for (final group in createdGroups)
+                            Card(
+                              elevation: 0,
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              child: _RoundedInkClip(
+                                child: ListTile(
+                                  leading: _Avatar(
+                                    url: group.avatar,
+                                    fallback: Icons.groups_rounded,
+                                    backgroundColor: colors.secondaryContainer,
+                                    foregroundColor:
+                                        colors.onSecondaryContainer,
+                                  ),
+                                  title: Text(group.name),
+                                  subtitle: Text(
+                                    group.subtitle.isEmpty
+                                        ? strings.format('Room {id}', {
+                                            'id': group.id,
+                                          })
+                                        : group.subtitle,
+                                  ),
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () => openCreatedGroup(group),
+                                ),
+                              ),
+                            ),
                         ],
                         if (commonGroups.isNotEmpty) ...[
                           const SizedBox(height: 20),

@@ -15,9 +15,8 @@ class AppLockScreen extends StatefulWidget {
 }
 
 class _AppLockScreenState extends State<AppLockScreen> {
-  final pin = TextEditingController();
-  final pinFocus = FocusNode();
   final auth = LocalAuthentication();
+  String pin = '';
   bool checkingBiometric = false;
   bool biometricAvailable = false;
   String? error;
@@ -26,16 +25,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      pinFocus.requestFocus();
+      _hidePlatformTextInput();
       checkBiometric();
     });
-  }
-
-  @override
-  void dispose() {
-    pin.dispose();
-    pinFocus.dispose();
-    super.dispose();
   }
 
   Future<void> checkBiometric() async {
@@ -88,15 +80,29 @@ class _AppLockScreenState extends State<AppLockScreen> {
   }
 
   void unlockWithPin() {
-    if (widget.state.verifyAppLockPin(pin.text)) {
+    if (widget.state.verifyAppLockPin(pin)) {
       widget.onUnlocked();
       return;
     }
+    HapticFeedback.mediumImpact();
     setState(() {
       error = context.strings.text('Incorrect PIN.');
-      pin.clear();
+      pin = '';
     });
-    pinFocus.requestFocus();
+  }
+
+  void updatePin(String value) {
+    setState(() {
+      pin = value;
+      error = null;
+    });
+    if (value.length >= 8) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && pin.length >= 8) {
+          unlockWithPin();
+        }
+      });
+    }
   }
 
   @override
@@ -133,22 +139,20 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     ),
                   ),
                   const SizedBox(height: 22),
-                  TextField(
-                    controller: pin,
-                    focusNode: pinFocus,
-                    autofocus: true,
-                    obscureText: true,
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.done,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(8),
-                    ],
-                    decoration: InputDecoration(
-                      labelText: strings.text('PIN'),
-                      prefixIcon: const Icon(Icons.pin_outlined),
-                    ),
-                    onSubmitted: (_) => unlockWithPin(),
+                  _PinEntryPad(
+                    value: pin,
+                    onChanged: updatePin,
+                    label: strings.text('PIN'),
+                    helperText: strings.text('4-8 digits'),
+                    leadingIcon:
+                        widget.state.preferences.appLockBiometricEnabled &&
+                            biometricAvailable
+                        ? Icons.fingerprint
+                        : null,
+                    leadingTooltip: strings.text('Use biometrics'),
+                    onLeadingPressed: checkingBiometric
+                        ? null
+                        : unlockWithBiometric,
                   ),
                   if (error != null) ...[
                     const SizedBox(height: 10),
@@ -160,25 +164,10 @@ class _AppLockScreenState extends State<AppLockScreen> {
                   ],
                   const SizedBox(height: 16),
                   FilledButton.icon(
-                    onPressed: unlockWithPin,
+                    onPressed: AppLockPin.isValid(pin) ? unlockWithPin : null,
                     icon: const Icon(Icons.lock_open_outlined),
                     label: Text(strings.text('Unlock')),
                   ),
-                  if (widget.state.preferences.appLockBiometricEnabled &&
-                      biometricAvailable) ...[
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: checkingBiometric ? null : unlockWithBiometric,
-                      icon: checkingBiometric
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.fingerprint),
-                      label: Text(strings.text('Use biometrics')),
-                    ),
-                  ],
                 ],
               ),
             ),

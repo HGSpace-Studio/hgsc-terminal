@@ -30,6 +30,8 @@ class CsacPreferences {
     this.serverUrl = '',
     this.reduceMotion = false,
     this.showChatAvatars = true,
+    this.enablePat = true,
+    this.showGroupMemberLevel = true,
     this.appLockEnabled = false,
     this.appLockPinSalt = '',
     this.appLockPinHash = '',
@@ -46,6 +48,8 @@ class CsacPreferences {
   static const _serverUrlKey = 'csac.server_url';
   static const _reduceMotionKey = 'csac.reduce_motion';
   static const _showChatAvatarsKey = 'csac.chat.show_avatars';
+  static const _enablePatKey = 'csac.chat.enable_pat';
+  static const _showGroupMemberLevelKey = 'csac.chat.show_group_member_level';
   static const _appLockEnabledKey = 'csac.app_lock.enabled';
   static const _appLockPinSaltKey = 'csac.app_lock.pin_salt';
   static const _appLockPinHashKey = 'csac.app_lock.pin_hash';
@@ -61,6 +65,8 @@ class CsacPreferences {
   final String serverUrl;
   final bool reduceMotion;
   final bool showChatAvatars;
+  final bool enablePat;
+  final bool showGroupMemberLevel;
   final bool appLockEnabled;
   final String appLockPinSalt;
   final String appLockPinHash;
@@ -89,6 +95,8 @@ class CsacPreferences {
     String? serverUrl,
     bool? reduceMotion,
     bool? showChatAvatars,
+    bool? enablePat,
+    bool? showGroupMemberLevel,
     bool? appLockEnabled,
     String? appLockPinSalt,
     String? appLockPinHash,
@@ -105,6 +113,8 @@ class CsacPreferences {
       serverUrl: serverUrl ?? this.serverUrl,
       reduceMotion: reduceMotion ?? this.reduceMotion,
       showChatAvatars: showChatAvatars ?? this.showChatAvatars,
+      enablePat: enablePat ?? this.enablePat,
+      showGroupMemberLevel: showGroupMemberLevel ?? this.showGroupMemberLevel,
       appLockEnabled: appLockEnabled ?? this.appLockEnabled,
       appLockPinSalt: appLockPinSalt ?? this.appLockPinSalt,
       appLockPinHash: appLockPinHash ?? this.appLockPinHash,
@@ -130,6 +140,8 @@ class CsacPreferences {
       serverUrl: (prefs.getString(_serverUrlKey) ?? '').trim(),
       reduceMotion: prefs.getBool(_reduceMotionKey) ?? false,
       showChatAvatars: prefs.getBool(_showChatAvatarsKey) ?? true,
+      enablePat: prefs.getBool(_enablePatKey) ?? true,
+      showGroupMemberLevel: prefs.getBool(_showGroupMemberLevelKey) ?? true,
       appLockEnabled: prefs.getBool(_appLockEnabledKey) ?? false,
       appLockPinSalt: prefs.getString(_appLockPinSaltKey) ?? '',
       appLockPinHash: prefs.getString(_appLockPinHashKey) ?? '',
@@ -158,6 +170,8 @@ class CsacPreferences {
     }
     await prefs.setBool(_reduceMotionKey, reduceMotion);
     await prefs.setBool(_showChatAvatarsKey, showChatAvatars);
+    await prefs.setBool(_enablePatKey, enablePat);
+    await prefs.setBool(_showGroupMemberLevelKey, showGroupMemberLevel);
     await prefs.setBool(_appLockEnabledKey, appLockEnabled);
     if (appLockPinSalt.trim().isEmpty || appLockPinHash.trim().isEmpty) {
       await prefs.remove(_appLockPinSaltKey);

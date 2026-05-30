@@ -167,6 +167,14 @@ class CsacApiClient {
     }
   }
 
+  Future<void> deleteAccount() async {
+    try {
+      await postForm('user/delete_account');
+    } finally {
+      await clearSession();
+    }
+  }
+
   Future<CsacUser> currentUser() async {
     final data = await get('user/get_info');
     final user = data['user'];
@@ -180,6 +188,13 @@ class CsacApiClient {
     return postForm('user/update_profile', <String, String>{
       'action': 'nickname',
       'nickname': nickname.trim(),
+    });
+  }
+
+  Future<void> updatePatAction(String patAction) {
+    return postForm('user/update_profile', <String, String>{
+      'action': 'pat_action',
+      'pat_action': patAction.trim(),
     });
   }
 
@@ -213,6 +228,19 @@ class CsacApiClient {
       throw const CsacApiException('Server did not return user info.');
     }
     return UserProfile.fromJson(user);
+  }
+
+  Future<List<GroupProfile>> createdGroups(int uid) async {
+    final data = await get(
+      'user/get_created_groups',
+      uid > 0 ? <String, String>{'uid': '$uid'} : null,
+    );
+    return _firstList(data, const [
+      'groups',
+      'rooms',
+      'list',
+      'data',
+    ]).map(GroupProfile.fromJson).toList();
   }
 
   Future<List<Friend>> friends() async {
@@ -494,6 +522,16 @@ class CsacApiClient {
     });
   }
 
+  Future<void> submitBugReport({
+    required String title,
+    required String description,
+  }) {
+    return postForm('bug_report', <String, String>{
+      'title': title.trim(),
+      'description': description.trim(),
+    });
+  }
+
   Future<void> leaveGroup(int roomId) {
     return postForm('group/leave', <String, String>{'room_id': '$roomId'});
   }
@@ -507,9 +545,24 @@ class CsacApiClient {
     return postForm('group/edit_info', <String, String>{
       'room_id': '$roomId',
       'room_name': roomName.trim(),
+      'intro': description,
       'description': description,
       'notice': notice,
     });
+  }
+
+  Future<void> updateGroupAvatar(
+    int roomId,
+    Uint8List avatarBytes,
+    String fileName,
+  ) {
+    return postMultipart(
+      'group/edit_info',
+      <String, String>{'room_id': '$roomId', 'action': 'avatar'},
+      fileField: 'avatar',
+      fileBytes: avatarBytes,
+      fileName: fileName,
+    );
   }
 
   Future<void> updateGroupSettings(
@@ -519,14 +572,43 @@ class CsacApiClient {
     required String question,
     required String answer,
     required bool showPublic,
+    required bool allowInvite,
   }) {
     return postForm('group/update_settings', <String, String>{
       'room_id': '$roomId',
       'join_type': joinType.trim(),
       'code': code.trim(),
+      'fixed_code': code.trim(),
       'question': question.trim(),
       'answer': answer.trim(),
       'show_public': showPublic ? '1' : '0',
+      'show_in_list': showPublic ? '1' : '0',
+      'allow_invite': allowInvite ? '1' : '0',
+    });
+  }
+
+  Future<void> inviteGroupMember(int roomId, int targetUid) {
+    return postForm('group/invite_member', <String, String>{
+      'room_id': '$roomId',
+      'rid': '$roomId',
+      'target_uid': '$targetUid',
+      'uid': '$targetUid',
+    });
+  }
+
+  Future<void> setGroupMemberTitle(
+    int roomId,
+    int targetUid, {
+    required String title,
+    required int level,
+  }) {
+    return postForm('group/set_member_title', <String, String>{
+      'room_id': '$roomId',
+      'rid': '$roomId',
+      'target_uid': '$targetUid',
+      'uid': '$targetUid',
+      'title': title.trim(),
+      'level': '$level',
     });
   }
 
@@ -709,6 +791,16 @@ class CsacApiClient {
       fileBytes: voiceBytes,
       fileName: fileName,
     );
+  }
+
+  Future<void> sendPatMessage(Conversation conversation, int targetUid) {
+    if (conversation.type != ConversationType.group) {
+      throw const CsacApiException('Pat is only available in group chats.');
+    }
+    return postForm('message/send_pat_msg', <String, String>{
+      'room_id': '${conversation.id}',
+      'target_uid': '$targetUid',
+    });
   }
 
   Future<void> recallMessage(Conversation conversation, int msgId) {
