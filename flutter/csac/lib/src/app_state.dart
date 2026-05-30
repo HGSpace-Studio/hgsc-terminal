@@ -229,6 +229,32 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateChatBubbleCornerStyle(ChatBubbleCornerStyle style) async {
+    preferences = preferences.copyWith(chatBubbleCornerStyle: style);
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateOwnChatBubbleColor(int colorValue) async {
+    preferences = preferences.copyWith(ownChatBubbleColorValue: colorValue);
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateOtherChatBubbleColor(int colorValue) async {
+    preferences = preferences.copyWith(otherChatBubbleColorValue: colorValue);
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateChatBubbleOpacity(double opacity) async {
+    preferences = preferences.copyWith(
+      chatBubbleOpacity: opacity.clamp(0.45, 1.0).toDouble(),
+    );
+    await preferences.save();
+    notifyListeners();
+  }
+
   Future<void> updateChatBackgroundPath(String path) async {
     preferences = preferences.copyWith(chatBackgroundPath: path);
     await preferences.save();

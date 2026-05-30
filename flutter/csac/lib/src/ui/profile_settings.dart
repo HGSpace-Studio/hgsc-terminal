@@ -854,6 +854,171 @@ class _ThemeColorButton extends StatelessWidget {
   }
 }
 
+class _FollowThemeColorButton extends StatelessWidget {
+  const _FollowThemeColorButton({required this.selected, required this.onTap});
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: context.strings.text('Follow theme'),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [colors.primaryContainer, colors.surfaceContainerHigh],
+              ),
+              border: Border.all(
+                color: selected ? colors.primary : colors.outlineVariant,
+                width: selected ? 3 : 1,
+              ),
+            ),
+            child: selected
+                ? Icon(Icons.check, size: 16, color: colors.onPrimaryContainer)
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatBubbleColorTrailing extends StatelessWidget {
+  const _ChatBubbleColorTrailing({
+    required this.colorValue,
+    required this.fallback,
+  });
+
+  final int colorValue;
+  final Color fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ThemeColorDot(
+          color: colorValue == defaultChatBubbleColorValue
+              ? fallback
+              : Color(colorValue),
+        ),
+        const SizedBox(width: 12),
+        const Icon(Icons.chevron_right),
+      ],
+    );
+  }
+}
+
+class _ChatBubbleThemePreview extends StatelessWidget {
+  const _ChatBubbleThemePreview({required this.preferences});
+
+  final CsacPreferences preferences;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.forum_outlined, color: colors.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                strings.text('Chat bubble theme'),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _PreviewBubble(
+          text: strings.text('Preview message'),
+          mine: false,
+          preferences: preferences,
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: _PreviewBubble(
+            text: strings.text('Preview message'),
+            mine: true,
+            preferences: preferences,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PreviewBubble extends StatelessWidget {
+  const _PreviewBubble({
+    required this.text,
+    required this.mine,
+    required this.preferences,
+  });
+
+  final String text;
+  final bool mine;
+  final CsacPreferences preferences;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final fallback = mine
+        ? colors.primaryContainer
+        : colors.surfaceContainerHighest;
+    final colorValue = mine
+        ? preferences.ownChatBubbleColorValue
+        : preferences.otherChatBubbleColorValue;
+    final color =
+        (colorValue == defaultChatBubbleColorValue
+                ? fallback
+                : Color(colorValue))
+            .withValues(alpha: preferences.chatBubbleOpacity);
+    final solidTextSource = Color.alphaBlend(
+      color,
+      theme.scaffoldBackgroundColor,
+    );
+    final textColor =
+        ThemeData.estimateBrightnessForColor(solidTextSource) == Brightness.dark
+        ? Colors.white
+        : Colors.black87;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: chatBubbleBorderRadius(
+          preferences.chatBubbleCornerStyle,
+          mine,
+        ),
+        border: Border.all(color: textColor.withValues(alpha: 0.08)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Text(text, style: TextStyle(color: textColor)),
+      ),
+    );
+  }
+}
+
 class _CacheMetricTile extends StatelessWidget {
   const _CacheMetricTile({required this.metric});
 
@@ -1946,6 +2111,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ThemeColorOption('Slate', Color(0xff475569)),
   ];
 
+  static const chatBubbleColorOptions = <_ThemeColorOption>[
+    _ThemeColorOption('Emerald', Color(0xff1f8a70)),
+    _ThemeColorOption('Blue', Color(0xff2563eb)),
+    _ThemeColorOption('Teal', Color(0xff0f766e)),
+    _ThemeColorOption('Indigo', Color(0xff4f46e5)),
+    _ThemeColorOption('Violet', Color(0xff7c3aed)),
+    _ThemeColorOption('Rose', Color(0xffe11d48)),
+    _ThemeColorOption('Orange', Color(0xffea580c)),
+    _ThemeColorOption('Slate', Color(0xff475569)),
+    _ThemeColorOption('Mint', Color(0xff99f6e4)),
+    _ThemeColorOption('Sky', Color(0xffbfdbfe)),
+    _ThemeColorOption('Lavender', Color(0xffddd6fe)),
+    _ThemeColorOption('Sand', Color(0xfffde68a)),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -2031,6 +2211,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context,
       widget.state.preferences.messageTimeFormat,
     );
+  }
+
+  String get chatBubbleCornerStyleLabel {
+    return chatBubbleCornerStyleLabelFor(
+      context,
+      widget.state.preferences.chatBubbleCornerStyle,
+    );
+  }
+
+  String chatBubbleColorLabel(int colorValue) {
+    if (colorValue == defaultChatBubbleColorValue) {
+      return context.strings.text('Follow theme');
+    }
+    final selected = chatBubbleColorOptions.firstWhere(
+      (option) => option.color.toARGB32() == colorValue,
+      orElse: () => _ThemeColorOption('Custom', Color(colorValue)),
+    );
+    return context.strings.text(selected.label);
+  }
+
+  String get chatBubbleOpacityLabel {
+    final percent = (widget.state.preferences.chatBubbleOpacity * 100).round();
+    return '$percent%';
   }
 
   String get chatBackgroundLabel {
@@ -2784,6 +2987,101 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> chooseChatBubbleCornerStyle() async {
+    final selected = await showModalBottomSheet<ChatBubbleCornerStyle>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final style in ChatBubbleCornerStyle.values)
+                ListTile(
+                  leading:
+                      widget.state.preferences.chatBubbleCornerStyle == style
+                      ? const Icon(Icons.check)
+                      : const SizedBox(width: 24),
+                  title: Text(chatBubbleCornerStyleLabelFor(context, style)),
+                  onTap: () => Navigator.of(context).pop(style),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      await widget.state.updateChatBubbleCornerStyle(selected);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  Future<void> chooseChatBubbleColor({required bool mine}) async {
+    final title = mine ? 'Own bubble color' : 'Other bubble color';
+    final current = mine
+        ? widget.state.preferences.ownChatBubbleColorValue
+        : widget.state.preferences.otherChatBubbleColorValue;
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                context.strings.text(title),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _FollowThemeColorButton(
+                    selected: current == defaultChatBubbleColorValue,
+                    onTap: () =>
+                        Navigator.of(context).pop(defaultChatBubbleColorValue),
+                  ),
+                  for (final option in chatBubbleColorOptions)
+                    _ThemeColorButton(
+                      option: option,
+                      selected: option.color.toARGB32() == current,
+                      onTap: () =>
+                          Navigator.of(context).pop(option.color.toARGB32()),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      if (mine) {
+        await widget.state.updateOwnChatBubbleColor(selected);
+      } else {
+        await widget.state.updateOtherChatBubbleColor(selected);
+      }
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  Future<void> updateChatBubbleOpacity(double value) async {
+    await widget.state.updateChatBubbleOpacity(value);
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> chooseChatBackground() async {
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -2891,6 +3189,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Typography',
       'Conversation sorting',
       'Message time format',
+      'Chat bubble theme',
+      'Own bubble color',
+      'Other bubble color',
+      'Bubble corner style',
+      'Bubble opacity',
       'Chat background',
       'Background',
       'Show chat avatars',
@@ -3130,6 +3433,97 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         subtitle: Text(messageTimeFormatLabel),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: chooseMessageTimeFormat,
+                      ),
+                      const Divider(height: 1),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                        child: _ChatBubbleThemePreview(
+                          preferences: widget.state.preferences,
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.chat_bubble_outline),
+                        title: Text(strings.text('Own bubble color')),
+                        subtitle: Text(
+                          chatBubbleColorLabel(
+                            widget.state.preferences.ownChatBubbleColorValue,
+                          ),
+                        ),
+                        trailing: _ChatBubbleColorTrailing(
+                          colorValue:
+                              widget.state.preferences.ownChatBubbleColorValue,
+                          fallback: Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer,
+                        ),
+                        onTap: () => chooseChatBubbleColor(mine: true),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.chat_bubble_outline),
+                        title: Text(strings.text('Other bubble color')),
+                        subtitle: Text(
+                          chatBubbleColorLabel(
+                            widget.state.preferences.otherChatBubbleColorValue,
+                          ),
+                        ),
+                        trailing: _ChatBubbleColorTrailing(
+                          colorValue: widget
+                              .state
+                              .preferences
+                              .otherChatBubbleColorValue,
+                          fallback: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                        ),
+                        onTap: () => chooseChatBubbleColor(mine: false),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.rounded_corner),
+                        title: Text(strings.text('Bubble corner style')),
+                        subtitle: Text(chatBubbleCornerStyleLabel),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: chooseChatBubbleCornerStyle,
+                      ),
+                      const Divider(height: 1),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.opacity),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(strings.text('Bubble opacity')),
+                                  Text(
+                                    chatBubbleOpacityLabel,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                  Slider(
+                                    value: widget
+                                        .state
+                                        .preferences
+                                        .chatBubbleOpacity,
+                                    min: 0.45,
+                                    max: 1,
+                                    divisions: 11,
+                                    label: chatBubbleOpacityLabel,
+                                    onChanged: updateChatBubbleOpacity,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const Divider(height: 1),
                       ListTile(

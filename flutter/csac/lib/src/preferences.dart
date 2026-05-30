@@ -16,7 +16,11 @@ enum MessageTimeFormat { slash, dash, compact, timeOnly }
 
 enum CsacFontStyle { system, serif, rounded, monospace }
 
+enum ChatBubbleCornerStyle { telegram, ios, qq }
+
 const defaultThemeColorValue = 0xff1f8a70;
+const defaultChatBubbleColorValue = 0;
+const defaultChatBubbleOpacity = 1.0;
 
 class CsacPreferences {
   const CsacPreferences({
@@ -26,6 +30,10 @@ class CsacPreferences {
     this.fontStyle = CsacFontStyle.system,
     this.conversationSortMode = ConversationSortMode.latest,
     this.messageTimeFormat = MessageTimeFormat.slash,
+    this.chatBubbleCornerStyle = ChatBubbleCornerStyle.telegram,
+    this.ownChatBubbleColorValue = defaultChatBubbleColorValue,
+    this.otherChatBubbleColorValue = defaultChatBubbleColorValue,
+    this.chatBubbleOpacity = defaultChatBubbleOpacity,
     this.chatBackgroundPath = '',
     this.serverUrl = '',
     this.reduceMotion = false,
@@ -44,6 +52,10 @@ class CsacPreferences {
   static const _fontStyleKey = 'csac.font_style';
   static const _conversationSortModeKey = 'csac.conversation_sort_mode';
   static const _messageTimeFormatKey = 'csac.message_time_format';
+  static const _chatBubbleCornerStyleKey = 'csac.chat.bubble_corner_style';
+  static const _ownChatBubbleColorKey = 'csac.chat.own_bubble_color';
+  static const _otherChatBubbleColorKey = 'csac.chat.other_bubble_color';
+  static const _chatBubbleOpacityKey = 'csac.chat.bubble_opacity';
   static const _chatBackgroundPathKey = 'csac.chat_background_path';
   static const _serverUrlKey = 'csac.server_url';
   static const _reduceMotionKey = 'csac.reduce_motion';
@@ -61,6 +73,10 @@ class CsacPreferences {
   final CsacFontStyle fontStyle;
   final ConversationSortMode conversationSortMode;
   final MessageTimeFormat messageTimeFormat;
+  final ChatBubbleCornerStyle chatBubbleCornerStyle;
+  final int ownChatBubbleColorValue;
+  final int otherChatBubbleColorValue;
+  final double chatBubbleOpacity;
   final String chatBackgroundPath;
   final String serverUrl;
   final bool reduceMotion;
@@ -91,6 +107,10 @@ class CsacPreferences {
     CsacFontStyle? fontStyle,
     ConversationSortMode? conversationSortMode,
     MessageTimeFormat? messageTimeFormat,
+    ChatBubbleCornerStyle? chatBubbleCornerStyle,
+    int? ownChatBubbleColorValue,
+    int? otherChatBubbleColorValue,
+    double? chatBubbleOpacity,
     String? chatBackgroundPath,
     String? serverUrl,
     bool? reduceMotion,
@@ -109,6 +129,13 @@ class CsacPreferences {
       fontStyle: fontStyle ?? this.fontStyle,
       conversationSortMode: conversationSortMode ?? this.conversationSortMode,
       messageTimeFormat: messageTimeFormat ?? this.messageTimeFormat,
+      chatBubbleCornerStyle:
+          chatBubbleCornerStyle ?? this.chatBubbleCornerStyle,
+      ownChatBubbleColorValue:
+          ownChatBubbleColorValue ?? this.ownChatBubbleColorValue,
+      otherChatBubbleColorValue:
+          otherChatBubbleColorValue ?? this.otherChatBubbleColorValue,
+      chatBubbleOpacity: chatBubbleOpacity ?? this.chatBubbleOpacity,
       chatBackgroundPath: chatBackgroundPath ?? this.chatBackgroundPath,
       serverUrl: serverUrl ?? this.serverUrl,
       reduceMotion: reduceMotion ?? this.reduceMotion,
@@ -136,6 +163,18 @@ class CsacPreferences {
       messageTimeFormat: _messageTimeFormatFromName(
         prefs.getString(_messageTimeFormatKey),
       ),
+      chatBubbleCornerStyle: _chatBubbleCornerStyleFromName(
+        prefs.getString(_chatBubbleCornerStyleKey),
+      ),
+      ownChatBubbleColorValue: _chatBubbleColorFromPrefs(
+        prefs,
+        _ownChatBubbleColorKey,
+      ),
+      otherChatBubbleColorValue: _chatBubbleColorFromPrefs(
+        prefs,
+        _otherChatBubbleColorKey,
+      ),
+      chatBubbleOpacity: _chatBubbleOpacityFromPrefs(prefs),
       chatBackgroundPath: prefs.getString(_chatBackgroundPathKey) ?? '',
       serverUrl: (prefs.getString(_serverUrlKey) ?? '').trim(),
       reduceMotion: prefs.getBool(_reduceMotionKey) ?? false,
@@ -158,6 +197,21 @@ class CsacPreferences {
     await prefs.setString(_fontStyleKey, fontStyle.name);
     await prefs.setString(_conversationSortModeKey, conversationSortMode.name);
     await prefs.setString(_messageTimeFormatKey, messageTimeFormat.name);
+    await prefs.setString(
+      _chatBubbleCornerStyleKey,
+      chatBubbleCornerStyle.name,
+    );
+    if (ownChatBubbleColorValue == defaultChatBubbleColorValue) {
+      await prefs.remove(_ownChatBubbleColorKey);
+    } else {
+      await prefs.setInt(_ownChatBubbleColorKey, ownChatBubbleColorValue);
+    }
+    if (otherChatBubbleColorValue == defaultChatBubbleColorValue) {
+      await prefs.remove(_otherChatBubbleColorKey);
+    } else {
+      await prefs.setInt(_otherChatBubbleColorKey, otherChatBubbleColorValue);
+    }
+    await prefs.setDouble(_chatBubbleOpacityKey, chatBubbleOpacity);
     if (chatBackgroundPath.trim().isEmpty) {
       await prefs.remove(_chatBackgroundPathKey);
     } else {
@@ -200,6 +254,22 @@ class CsacPreferences {
     return 0xff000000 | (value & 0x00ffffff);
   }
 
+  static int _chatBubbleColorFromPrefs(SharedPreferences prefs, String key) {
+    final value = prefs.getInt(key);
+    if (value == null || value == defaultChatBubbleColorValue) {
+      return defaultChatBubbleColorValue;
+    }
+    return 0xff000000 | (value & 0x00ffffff);
+  }
+
+  static double _chatBubbleOpacityFromPrefs(SharedPreferences prefs) {
+    final value = prefs.getDouble(_chatBubbleOpacityKey);
+    if (value == null) {
+      return defaultChatBubbleOpacity;
+    }
+    return value.clamp(0.45, 1.0).toDouble();
+  }
+
   static CsacLanguage _languageFromName(String? value) {
     for (final language in CsacLanguage.values) {
       if (language.name == value) {
@@ -234,6 +304,15 @@ class CsacPreferences {
       }
     }
     return MessageTimeFormat.slash;
+  }
+
+  static ChatBubbleCornerStyle _chatBubbleCornerStyleFromName(String? value) {
+    for (final style in ChatBubbleCornerStyle.values) {
+      if (style.name == value) {
+        return style;
+      }
+    }
+    return ChatBubbleCornerStyle.telegram;
   }
 }
 

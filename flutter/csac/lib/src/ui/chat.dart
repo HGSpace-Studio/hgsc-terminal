@@ -2361,6 +2361,27 @@ String chatImageHeroTag(ChatMessage message) {
   return 'chat-image:${message.id}:${message.imageUrl}';
 }
 
+BorderRadius chatBubbleBorderRadius(ChatBubbleCornerStyle style, bool mine) {
+  switch (style) {
+    case ChatBubbleCornerStyle.telegram:
+      return BorderRadius.only(
+        topLeft: const Radius.circular(14),
+        topRight: const Radius.circular(14),
+        bottomLeft: Radius.circular(mine ? 14 : 4),
+        bottomRight: Radius.circular(mine ? 4 : 14),
+      );
+    case ChatBubbleCornerStyle.ios:
+      return BorderRadius.only(
+        topLeft: const Radius.circular(20),
+        topRight: const Radius.circular(20),
+        bottomLeft: Radius.circular(mine ? 20 : 6),
+        bottomRight: Radius.circular(mine ? 6 : 20),
+      );
+    case ChatBubbleCornerStyle.qq:
+      return BorderRadius.circular(8);
+  }
+}
+
 class _MessageBubbleState extends State<_MessageBubble> {
   static const double _replyTriggerDistance = 72;
   double dragOffset = 0;
@@ -2403,18 +2424,39 @@ class _MessageBubbleState extends State<_MessageBubble> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final color = widget.mine
+    final defaultColor = widget.mine
         ? colors.primaryContainer
         : colors.surfaceContainerHighest;
-    final textColor = widget.mine
-        ? colors.onPrimaryContainer
-        : colors.onSurface;
-    final secondaryTextColor = widget.mine
-        ? colors.onPrimaryContainer.withValues(alpha: 0.72)
-        : colors.onSurfaceVariant;
+    final colorValue = widget.mine
+        ? widget.preferences.ownChatBubbleColorValue
+        : widget.preferences.otherChatBubbleColorValue;
+    final baseColor = colorValue == defaultChatBubbleColorValue
+        ? defaultColor
+        : Color(colorValue);
+    final bubbleOpacity = widget.preferences.chatBubbleOpacity
+        .clamp(0.45, 1.0)
+        .toDouble();
+    final color = baseColor.withValues(alpha: bubbleOpacity);
+    final solidTextSource = Color.alphaBlend(
+      color,
+      theme.scaffoldBackgroundColor,
+    );
+    final textColor =
+        ThemeData.estimateBrightnessForColor(solidTextSource) == Brightness.dark
+        ? Colors.white
+        : Colors.black87;
+    final secondaryTextColor = textColor.withValues(alpha: 0.72);
     final replyColor = widget.mine
-        ? colors.primary.withValues(alpha: 0.12)
-        : colors.surfaceContainerHigh;
+        ? colors.primary.withValues(alpha: 0.14)
+        : colors.surfaceContainerHigh.withValues(alpha: bubbleOpacity);
+    final borderColor = Color.alphaBlend(
+      textColor.withValues(alpha: 0.08),
+      color,
+    );
+    final borderRadius = chatBubbleBorderRadius(
+      widget.preferences.chatBubbleCornerStyle,
+      widget.mine,
+    );
     final highlighted = widget.pressed || widget.selected || widget.focused;
     final align = widget.mine
         ? CrossAxisAlignment.end
@@ -2494,13 +2536,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       color,
                     )
                   : color,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: borderRadius,
               border: Border.all(
-                color: highlighted
-                    ? colors.primary
-                    : widget.mine
-                    ? colors.primaryContainer
-                    : colors.outlineVariant,
+                color: highlighted ? colors.primary : borderColor,
                 width: highlighted ? 2 : 1,
               ),
               boxShadow: armed || widget.pressed

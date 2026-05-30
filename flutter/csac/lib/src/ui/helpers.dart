@@ -58,6 +58,20 @@ String messageTimeFormatExampleFor(MessageTimeFormat format) {
   }
 }
 
+String chatBubbleCornerStyleLabelFor(
+  BuildContext context,
+  ChatBubbleCornerStyle style,
+) {
+  switch (style) {
+    case ChatBubbleCornerStyle.telegram:
+      return context.strings.text('Telegram style');
+    case ChatBubbleCornerStyle.ios:
+      return context.strings.text('iOS style');
+    case ChatBubbleCornerStyle.qq:
+      return context.strings.text('QQ style');
+  }
+}
+
 String fontStyleLabelFor(BuildContext context, CsacFontStyle style) {
   final strings = context.strings;
   switch (style) {
