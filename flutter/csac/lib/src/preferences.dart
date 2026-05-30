@@ -44,6 +44,7 @@ class CsacPreferences {
     this.appLockPinSalt = '',
     this.appLockPinHash = '',
     this.appLockBiometricEnabled = false,
+    this.autoCheckVersionUpdates = true,
   });
 
   static const _themeKey = 'csac.theme_mode';
@@ -66,6 +67,7 @@ class CsacPreferences {
   static const _appLockPinSaltKey = 'csac.app_lock.pin_salt';
   static const _appLockPinHashKey = 'csac.app_lock.pin_hash';
   static const _appLockBiometricEnabledKey = 'csac.app_lock.biometric_enabled';
+  static const _autoCheckVersionUpdatesKey = 'csac.updates.auto_check_version';
 
   final ThemeMode themeMode;
   final int themeColorValue;
@@ -87,6 +89,7 @@ class CsacPreferences {
   final String appLockPinSalt;
   final String appLockPinHash;
   final bool appLockBiometricEnabled;
+  final bool autoCheckVersionUpdates;
 
   bool get hasAppLockPin =>
       appLockPinSalt.trim().isNotEmpty && appLockPinHash.trim().isNotEmpty;
@@ -121,6 +124,7 @@ class CsacPreferences {
     String? appLockPinSalt,
     String? appLockPinHash,
     bool? appLockBiometricEnabled,
+    bool? autoCheckVersionUpdates,
   }) {
     return CsacPreferences(
       themeMode: themeMode ?? this.themeMode,
@@ -147,6 +151,8 @@ class CsacPreferences {
       appLockPinHash: appLockPinHash ?? this.appLockPinHash,
       appLockBiometricEnabled:
           appLockBiometricEnabled ?? this.appLockBiometricEnabled,
+      autoCheckVersionUpdates:
+          autoCheckVersionUpdates ?? this.autoCheckVersionUpdates,
     );
   }
 
@@ -186,6 +192,8 @@ class CsacPreferences {
       appLockPinHash: prefs.getString(_appLockPinHashKey) ?? '',
       appLockBiometricEnabled:
           prefs.getBool(_appLockBiometricEnabledKey) ?? false,
+      autoCheckVersionUpdates:
+          prefs.getBool(_autoCheckVersionUpdatesKey) ?? true,
     );
   }
 
@@ -235,6 +243,7 @@ class CsacPreferences {
       await prefs.setString(_appLockPinHashKey, appLockPinHash.trim());
     }
     await prefs.setBool(_appLockBiometricEnabledKey, appLockBiometricEnabled);
+    await prefs.setBool(_autoCheckVersionUpdatesKey, autoCheckVersionUpdates);
   }
 
   static ThemeMode _themeModeFromName(String? value) {

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:csac/src/api_client.dart';
 import 'package:csac/src/models.dart';
+import 'package:csac/src/update_checker.dart';
 
 void main() {
   test('message accepts numeric zero timestamps', () {
@@ -72,5 +73,30 @@ void main() {
     );
 
     configureApiAssetBaseUrl(CsacApiClient.defaultBaseUrl);
+  });
+
+  test('release version tags match app versions', () {
+    expect(
+      VersionUpdateChecker.versionMatches('1.2.5+46', 'v1.2.5-46'),
+      isTrue,
+    );
+    expect(
+      VersionUpdateChecker.versionMatches('1.2.5+46', 'refs/tags/v1.2.5-46'),
+      isTrue,
+    );
+    expect(VersionUpdateChecker.versionMatches('1.2.5', 'v1.2.5'), isTrue);
+    expect(
+      VersionUpdateChecker.versionMatches('1.2.5+46', 'v1.2.6-1'),
+      isFalse,
+    );
+  });
+
+  test('release version display normalizes action tags', () {
+    expect(VersionUpdateChecker.displayVersion('v1.2.5-46'), '1.2.5+46');
+    expect(
+      VersionUpdateChecker.displayVersion('refs/tags/v1.2.5-46'),
+      '1.2.5+46',
+    );
+    expect(VersionUpdateChecker.displayVersion('1.2.5+46'), '1.2.5+46');
   });
 }

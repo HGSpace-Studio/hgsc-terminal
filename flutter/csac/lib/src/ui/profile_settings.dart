@@ -1840,6 +1840,1386 @@ class _DiagnosticInfoTile extends StatelessWidget {
   }
 }
 
+enum ApiDocMethod { get, post }
+
+class ApiDocParam {
+  const ApiDocParam({
+    required this.name,
+    required this.description,
+    this.required = false,
+    this.example = '',
+  });
+
+  final String name;
+  final String description;
+  final bool required;
+  final String example;
+}
+
+class ApiDocEndpoint {
+  const ApiDocEndpoint({
+    required this.group,
+    required this.route,
+    required this.method,
+    required this.summary,
+    required this.description,
+    this.params = const <ApiDocParam>[],
+  });
+
+  final String group;
+  final String route;
+  final ApiDocMethod method;
+  final String summary;
+  final String description;
+  final List<ApiDocParam> params;
+
+  String get methodLabel => method == ApiDocMethod.post ? 'POST' : 'GET';
+}
+
+const apiDocEndpoints = <ApiDocEndpoint>[
+  ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/login',
+    method: ApiDocMethod.post,
+    summary: 'Login',
+    description: 'Log in with username and password.',
+    params: [
+      ApiDocParam(name: 'username', description: 'Username', required: true),
+      ApiDocParam(name: 'pwd', description: 'Password', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/register',
+    method: ApiDocMethod.post,
+    summary: 'Register account',
+    description: 'Create a new user account.',
+    params: [
+      ApiDocParam(name: 'username', description: 'Username', required: true),
+      ApiDocParam(name: 'nickname', description: 'Nickname', required: true),
+      ApiDocParam(name: 'pwd', description: 'Password', required: true),
+      ApiDocParam(
+        name: 'confirm_pwd',
+        description: 'Confirm password',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Auth',
+    route: 'auth/logout',
+    method: ApiDocMethod.post,
+    summary: 'Logout',
+    description: 'Clear the current server session.',
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/get_info',
+    method: ApiDocMethod.get,
+    summary: 'Get user profile',
+    description: 'Get current user profile, or another user by uid.',
+    params: [ApiDocParam(name: 'uid', description: 'Target user UID')],
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/update_profile',
+    method: ApiDocMethod.post,
+    summary: 'Update profile',
+    description: 'Update nickname, privacy, pat action or profile fields.',
+    params: [
+      ApiDocParam(
+        name: 'action',
+        description: 'nickname / privacy / pat_action',
+        required: true,
+        example: 'nickname',
+      ),
+      ApiDocParam(name: 'nickname', description: 'New nickname'),
+      ApiDocParam(name: 'pat_action', description: 'Pat action text'),
+      ApiDocParam(name: 'allow_auto_join', description: '0 or 1'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/upgrade_password',
+    method: ApiDocMethod.post,
+    summary: 'Upgrade password hash',
+    description:
+        'Change password for an account still using the old hash flow.',
+    params: [
+      ApiDocParam(
+        name: 'old_password',
+        description: 'Current password',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'new_password',
+        description: 'New password',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'confirm_password',
+        description: 'Confirm new password',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/delete_account',
+    method: ApiDocMethod.post,
+    summary: 'Delete account',
+    description: 'Permanently delete the current account and owned groups.',
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/get_friends',
+    method: ApiDocMethod.get,
+    summary: 'Friend list',
+    description: 'Return accepted friends for current user.',
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/get_groups',
+    method: ApiDocMethod.get,
+    summary: 'Joined groups',
+    description: 'Return groups joined by current user.',
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/get_notifications',
+    method: ApiDocMethod.get,
+    summary: 'Notification counters',
+    description:
+        'Return unread notice, friend request and deleted-friend counts.',
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/get_notice_list',
+    method: ApiDocMethod.get,
+    summary: 'Notice list',
+    description: 'Return system notices for the current user.',
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/mark_notice_read',
+    method: ApiDocMethod.post,
+    summary: 'Mark notices read',
+    description:
+        'Mark one notice as read, or all notices when read_all is true.',
+    params: [
+      ApiDocParam(name: 'notice_id', description: 'Notice ID'),
+      ApiDocParam(name: 'read_all', description: '0 or 1', example: '1'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'User',
+    route: 'user/get_created_groups',
+    method: ApiDocMethod.get,
+    summary: 'Created groups',
+    description: 'Return public groups created by a user.',
+    params: [ApiDocParam(name: 'uid', description: 'Target user UID')],
+  ),
+  ApiDocEndpoint(
+    group: 'Friend',
+    route: 'friend/send_request',
+    method: ApiDocMethod.post,
+    summary: 'Send friend request',
+    description: 'Request to add a user as friend.',
+    params: [
+      ApiDocParam(name: 'friend_id', description: 'Target UID', required: true),
+      ApiDocParam(name: 'message', description: 'Request message'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Friend',
+    route: 'friend/handle_request',
+    method: ApiDocMethod.post,
+    summary: 'Handle friend request',
+    description: 'Accept or reject a friend request.',
+    params: [
+      ApiDocParam(
+        name: 'request_id',
+        description: 'Friend request ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'action',
+        description: 'agree or reject',
+        required: true,
+        example: 'agree',
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Friend',
+    route: 'friend/update_remark',
+    method: ApiDocMethod.post,
+    summary: 'Update friend remark',
+    description: 'Set remark for a friend.',
+    params: [
+      ApiDocParam(name: 'friend_id', description: 'Friend UID', required: true),
+      ApiDocParam(name: 'remark', description: 'Remark text'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Friend',
+    route: 'friend/delete_friend',
+    method: ApiDocMethod.post,
+    summary: 'Delete friend',
+    description: 'Remove a friend relation.',
+    params: [
+      ApiDocParam(name: 'friend_id', description: 'Friend UID', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Friend',
+    route: 'friend/block_friend',
+    method: ApiDocMethod.post,
+    summary: 'Block friend',
+    description: 'Block an existing friend relation.',
+    params: [
+      ApiDocParam(name: 'friend_id', description: 'Friend UID', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Friend',
+    route: 'friend/recover_friend',
+    method: ApiDocMethod.post,
+    summary: 'Recover friend',
+    description: 'Recover a deleted friend directly or send a recover request.',
+    params: [
+      ApiDocParam(name: 'friend_id', description: 'Friend UID', required: true),
+      ApiDocParam(name: 'direct', description: '0 or 1'),
+      ApiDocParam(name: 'message', description: 'Recover request message'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Friend',
+    route: 'friend/get_common_groups',
+    method: ApiDocMethod.get,
+    summary: 'Common groups',
+    description: 'List common groups with a friend.',
+    params: [
+      ApiDocParam(name: 'friend_id', description: 'Friend UID', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Friend',
+    route: 'friend/get_deleted_notices',
+    method: ApiDocMethod.get,
+    summary: 'Deleted friend notices',
+    description: 'Return recently deleted friend relation notices.',
+  ),
+  ApiDocEndpoint(
+    group: 'Friend',
+    route: 'friend/get_friend_requests',
+    method: ApiDocMethod.get,
+    summary: 'Pending friend requests',
+    description: 'Return pending friend requests for the current user.',
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/get_public_list',
+    method: ApiDocMethod.get,
+    summary: 'Public groups',
+    description: 'List public groups.',
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/get_group_view_info',
+    method: ApiDocMethod.get,
+    summary: 'Group profile',
+    description: 'Get group profile and membership state.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/get_members',
+    method: ApiDocMethod.get,
+    summary: 'Group members',
+    description: 'List members in a group.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/get_applications',
+    method: ApiDocMethod.get,
+    summary: 'Join applications',
+    description: 'List pending join applications for a group.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/create',
+    method: ApiDocMethod.post,
+    summary: 'Create group',
+    description: 'Create a new group.',
+    params: [
+      ApiDocParam(name: 'room_name', description: 'Group name', required: true),
+      ApiDocParam(name: 'description', description: 'Group description'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/apply_join',
+    method: ApiDocMethod.post,
+    summary: 'Apply to join group',
+    description: 'Send a join request or join by invite code.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(name: 'code', description: 'Invite code if required'),
+      ApiDocParam(name: 'answer', description: 'Join question answer'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/handle_apply',
+    method: ApiDocMethod.post,
+    summary: 'Handle join application',
+    description: 'Approve or refuse a pending group join application.',
+    params: [
+      ApiDocParam(
+        name: 'apply_id',
+        description: 'Application ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'action',
+        description: 'pass or refuse',
+        required: true,
+        example: 'pass',
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/invite_member',
+    method: ApiDocMethod.post,
+    summary: 'Invite member',
+    description: 'Invite a user into a group.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'target_uid',
+        description: 'Target UID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/edit_info',
+    method: ApiDocMethod.post,
+    summary: 'Edit group info',
+    description:
+        'Update group name, intro, notice or avatar URL. File avatar upload is not supported by this debugger.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'action',
+        description: 'name / intro / notice / avatar',
+        example: 'name',
+      ),
+      ApiDocParam(name: 'value', description: 'Value used with action'),
+      ApiDocParam(name: 'room_name', description: 'Group name'),
+      ApiDocParam(name: 'intro', description: 'Group intro'),
+      ApiDocParam(name: 'notice', description: 'Group notice'),
+      ApiDocParam(name: 'avatar', description: 'Avatar URL'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/update_settings',
+    method: ApiDocMethod.post,
+    summary: 'Update group settings',
+    description: 'Update join mode, invite permissions and group visibility.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(name: 'join_type', description: '1-4'),
+      ApiDocParam(name: 'fixed_code', description: 'Fixed invite code'),
+      ApiDocParam(name: 'question', description: 'Join question'),
+      ApiDocParam(name: 'answer', description: 'Join answer'),
+      ApiDocParam(name: 'show_in_list', description: '0 or 1'),
+      ApiDocParam(name: 'allow_invite', description: '0 or 1'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/reset_invite_code',
+    method: ApiDocMethod.post,
+    summary: 'Reset invite code',
+    description: 'Generate a new group invite code.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/transfer',
+    method: ApiDocMethod.post,
+    summary: 'Transfer group owner',
+    description: 'Send a group ownership transfer request.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'target_uid',
+        description: 'New owner UID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/disband',
+    method: ApiDocMethod.post,
+    summary: 'Disband group',
+    description: 'Mark a group as disbanded.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/leave',
+    method: ApiDocMethod.post,
+    summary: 'Leave group',
+    description: 'Leave a joined group. Owners must transfer or disband first.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/mute_member',
+    method: ApiDocMethod.post,
+    summary: 'Mute member',
+    description: 'Mute or unmute a group member.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'target_uid',
+        description: 'Target UID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'action',
+        description: 'mute or unmute',
+        required: true,
+        example: 'mute',
+      ),
+      ApiDocParam(name: 'minutes', description: '1-43200 when muting'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/kick_member',
+    method: ApiDocMethod.post,
+    summary: 'Kick member',
+    description: 'Remove a member from a group.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'target_uid',
+        description: 'Target UID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/set_admin',
+    method: ApiDocMethod.post,
+    summary: 'Set admin',
+    description: 'Grant or revoke group admin permission.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'target_uid',
+        description: 'Target UID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'action',
+        description: 'set or remove',
+        required: true,
+        example: 'set',
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Group',
+    route: 'group/set_member_title',
+    method: ApiDocMethod.post,
+    summary: 'Set member title',
+    description: 'Set custom group title and level for a member.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'target_uid',
+        description: 'Target UID',
+        required: true,
+      ),
+      ApiDocParam(name: 'title', description: 'Member title'),
+      ApiDocParam(name: 'level', description: 'Member level 1-100'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/get_group_msg',
+    method: ApiDocMethod.get,
+    summary: 'Group messages',
+    description: 'Load group messages with pagination.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(name: 'before_id', description: 'Load messages before ID'),
+      ApiDocParam(name: 'after_id', description: 'Load messages after ID'),
+      ApiDocParam(name: 'limit', description: '20-200', example: '80'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/get_private_msg',
+    method: ApiDocMethod.get,
+    summary: 'Private messages',
+    description: 'Load private messages with pagination.',
+    params: [
+      ApiDocParam(name: 'friend_id', description: 'Friend UID', required: true),
+      ApiDocParam(name: 'last_id', description: 'Alias for after_id'),
+      ApiDocParam(name: 'before_id', description: 'Load messages before ID'),
+      ApiDocParam(name: 'after_id', description: 'Load messages after ID'),
+      ApiDocParam(name: 'limit', description: '20-200', example: '80'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/send_group_msg',
+    method: ApiDocMethod.post,
+    summary: 'Send group message',
+    description:
+        'Send a text message to a group. File upload is not supported by this debugger.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(name: 'content', description: 'Message text', required: true),
+      ApiDocParam(name: 'reply_to', description: 'Reply message ID'),
+      ApiDocParam(name: 'mention_uids', description: 'Comma separated UIDs'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/send_private_msg',
+    method: ApiDocMethod.post,
+    summary: 'Send private message',
+    description:
+        'Send a text message to a friend. File upload is not supported by this debugger.',
+    params: [
+      ApiDocParam(name: 'friend_id', description: 'Friend UID', required: true),
+      ApiDocParam(name: 'content', description: 'Message text', required: true),
+      ApiDocParam(name: 'reply_to', description: 'Reply message ID'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/send_voice_msg',
+    method: ApiDocMethod.post,
+    summary: 'Send voice message',
+    description:
+        'Send a voice message. File upload is not supported by this debugger.',
+    params: [
+      ApiDocParam(name: 'room_id', description: 'Group room ID'),
+      ApiDocParam(name: 'friend_id', description: 'Private friend UID'),
+      ApiDocParam(name: 'duration', description: 'Duration in seconds'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/mark_read',
+    method: ApiDocMethod.post,
+    summary: 'Mark read',
+    description: 'Mark private chat read or update group last read position.',
+    params: [
+      ApiDocParam(name: 'friend_id', description: 'Private friend UID'),
+      ApiDocParam(name: 'room_id', description: 'Group room ID'),
+      ApiDocParam(name: 'last_msg_id', description: 'Group last read message'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/send_pat_msg',
+    method: ApiDocMethod.post,
+    summary: 'Send pat',
+    description: 'Send a pat system message in group chat.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(
+        name: 'target_uid',
+        description: 'Target UID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/recall_msg',
+    method: ApiDocMethod.post,
+    summary: 'Recall message',
+    description: 'Recall a group or private message.',
+    params: [
+      ApiDocParam(name: 'msg_id', description: 'Message ID', required: true),
+      ApiDocParam(name: 'room_id', description: 'Group room ID'),
+      ApiDocParam(name: 'type', description: 'group or private'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Message',
+    route: 'message/get_mentions',
+    method: ApiDocMethod.get,
+    summary: 'Mention counters',
+    description:
+        'Return group mention and reply counters for the current user.',
+  ),
+  ApiDocEndpoint(
+    group: 'Essence',
+    route: 'essence/get_essence',
+    method: ApiDocMethod.get,
+    summary: 'Essence messages',
+    description: 'Load group essence messages.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Essence',
+    route: 'essence/get_essence_stats',
+    method: ApiDocMethod.get,
+    summary: 'Essence stats',
+    description: 'Load essence statistics for a group.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(name: 'type', description: 'today / week / month / all'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Essence',
+    route: 'essence/set_essence',
+    method: ApiDocMethod.post,
+    summary: 'Toggle essence',
+    description: 'Set or unset a group message as essence.',
+    params: [
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Group room ID',
+        required: true,
+      ),
+      ApiDocParam(name: 'msg_id', description: 'Message ID', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Report',
+    route: 'report/submit_report',
+    method: ApiDocMethod.post,
+    summary: 'Submit report',
+    description: 'Report a user or group.',
+    params: [
+      ApiDocParam(
+        name: 'type',
+        description: 'user or group',
+        required: true,
+        example: 'user',
+      ),
+      ApiDocParam(name: 'uid', description: 'Reported user UID'),
+      ApiDocParam(name: 'rid', description: 'Reported group room ID'),
+      ApiDocParam(
+        name: 'reason',
+        description: 'At least 10 characters',
+        required: true,
+      ),
+      ApiDocParam(name: 'anonymous', description: '0 or 1'),
+      ApiDocParam(name: 'nickname', description: 'Reported user nickname'),
+      ApiDocParam(name: 'username', description: 'Reported username'),
+      ApiDocParam(name: 'room_name', description: 'Reported group name'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Admin',
+    route: 'admin/generate_token',
+    method: ApiDocMethod.post,
+    summary: 'Generate admin token',
+    description: 'Generate a short-lived admin token. Admin only.',
+  ),
+  ApiDocEndpoint(
+    group: 'Admin',
+    route: 'admin/admin_ban',
+    method: ApiDocMethod.get,
+    summary: 'Ban list',
+    description:
+        'List currently banned users and groups. Admin token required.',
+    params: [
+      ApiDocParam(name: 'token', description: 'Admin token', required: true),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Admin',
+    route: 'admin/admin_ban',
+    method: ApiDocMethod.post,
+    summary: 'Manage bans',
+    description: 'Ban or unban users and groups. Admin token required.',
+    params: [
+      ApiDocParam(name: 'token', description: 'Admin token', required: true),
+      ApiDocParam(
+        name: 'action',
+        description: 'ban_user / unban_user / ban_room / unban_room',
+        required: true,
+        example: 'ban_user',
+      ),
+      ApiDocParam(name: 'user_id', description: 'User ID for user ban actions'),
+      ApiDocParam(
+        name: 'room_id',
+        description: 'Room ID for group ban actions',
+      ),
+      ApiDocParam(name: 'ban_days', description: 'Ban duration in days'),
+      ApiDocParam(name: 'ban_reason', description: 'Ban reason'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Utility',
+    route: 'utils/upload_image',
+    method: ApiDocMethod.post,
+    summary: 'Upload image',
+    description:
+        'Upload an image file. Multipart file upload is not supported by this debugger.',
+    params: [
+      ApiDocParam(name: 'image', description: 'Multipart file field name'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Utility',
+    route: 'utils/upload_voice',
+    method: ApiDocMethod.post,
+    summary: 'Upload voice',
+    description:
+        'Upload a voice file. Multipart file upload is not supported by this debugger.',
+    params: [
+      ApiDocParam(name: 'voice', description: 'Multipart file field name'),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Feedback',
+    route: 'bug_report',
+    method: ApiDocMethod.post,
+    summary: 'Bug report',
+    description: 'Submit app feedback to administrators.',
+    params: [
+      ApiDocParam(name: 'title', description: 'Feedback title', required: true),
+      ApiDocParam(
+        name: 'description',
+        description: 'Feedback description',
+        required: true,
+      ),
+    ],
+  ),
+  ApiDocEndpoint(
+    group: 'Utility',
+    route: 'test',
+    method: ApiDocMethod.get,
+    summary: 'API health test',
+    description: 'Simple API/database health check.',
+  ),
+];
+
+class ApiExplorerScreen extends StatefulWidget {
+  const ApiExplorerScreen({super.key, required this.state});
+
+  final CsacAppState state;
+
+  @override
+  State<ApiExplorerScreen> createState() => _ApiExplorerScreenState();
+}
+
+class _ApiExplorerScreenState extends State<ApiExplorerScreen> {
+  late final TextEditingController search;
+  final route = TextEditingController();
+  final paramControllers = <String, TextEditingController>{};
+  ApiDocEndpoint selected = apiDocEndpoints.first;
+  ApiDebugResponse? response;
+  String? error;
+  bool running = false;
+
+  @override
+  void initState() {
+    super.initState();
+    search = TextEditingController()..addListener(() => setState(() {}));
+    applyEndpoint(selected, notify: false);
+  }
+
+  @override
+  void dispose() {
+    search.dispose();
+    route.dispose();
+    for (final controller in paramControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  List<ApiDocEndpoint> get filteredEndpoints {
+    final query = search.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return apiDocEndpoints;
+    }
+    return apiDocEndpoints.where((endpoint) {
+      return endpoint.route.toLowerCase().contains(query) ||
+          endpoint.group.toLowerCase().contains(query) ||
+          endpoint.summary.toLowerCase().contains(query) ||
+          endpoint.description.toLowerCase().contains(query) ||
+          endpoint.params.any(
+            (param) =>
+                param.name.toLowerCase().contains(query) ||
+                param.description.toLowerCase().contains(query),
+          );
+    }).toList();
+  }
+
+  void selectEndpoint(ApiDocEndpoint endpoint) {
+    applyEndpoint(endpoint);
+  }
+
+  void applyEndpoint(ApiDocEndpoint endpoint, {bool notify = true}) {
+    selected = endpoint;
+    route.text = endpoint.route;
+    final existingValues = <String, String>{
+      for (final entry in paramControllers.entries) entry.key: entry.value.text,
+    };
+    for (final controller in paramControllers.values) {
+      controller.dispose();
+    }
+    paramControllers
+      ..clear()
+      ..addEntries(
+        endpoint.params.map(
+          (param) => MapEntry(
+            param.name,
+            TextEditingController(
+              text: existingValues[param.name] ?? param.example,
+            ),
+          ),
+        ),
+      );
+    response = null;
+    error = null;
+    if (notify && mounted) {
+      setState(() {});
+    }
+  }
+
+  Map<String, String> requestValues() {
+    return <String, String>{
+      for (final entry in paramControllers.entries)
+        if (entry.value.text.trim().isNotEmpty)
+          entry.key: entry.value.text.trim(),
+    };
+  }
+
+  Future<void> runSelectedEndpoint() async {
+    if (running) {
+      return;
+    }
+    setState(() {
+      running = true;
+      error = null;
+      response = null;
+    });
+    try {
+      final result = await widget.state.runApiDebugRequest(
+        method: selected.methodLabel,
+        route: route.text.trim(),
+        values: requestValues(),
+      );
+      if (mounted) {
+        setState(() => response = result);
+      }
+    } catch (err) {
+      if (mounted) {
+        setState(() => error = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => running = false);
+      }
+    }
+  }
+
+  Future<void> copyResult() async {
+    final text = response?.prettyBody ?? error ?? '';
+    if (text.trim().isEmpty) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.strings.text('Copied.'))));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
+    final endpoints = filteredEndpoints;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(strings.text('API explorer')),
+        actions: [
+          IconButton(
+            tooltip: strings.text('Copy'),
+            onPressed: response == null && error == null ? null : copyResult,
+            icon: const Icon(Icons.copy),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 860;
+            final list = _ApiEndpointList(
+              search: search,
+              endpoints: endpoints,
+              selected: selected,
+              onSelect: selectEndpoint,
+            );
+            final detail = _ApiEndpointDetail(
+              endpoint: selected,
+              route: route,
+              paramControllers: paramControllers,
+              running: running,
+              response: response,
+              error: error,
+              onRun: runSelectedEndpoint,
+              onCopy: copyResult,
+            );
+            if (wide) {
+              return Row(
+                children: [
+                  SizedBox(width: 340, child: list),
+                  VerticalDivider(width: 1, color: colors.outlineVariant),
+                  Expanded(child: detail),
+                ],
+              );
+            }
+            return Column(
+              children: [
+                SizedBox(height: 260, child: list),
+                Divider(height: 1, color: colors.outlineVariant),
+                Expanded(child: detail),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ApiEndpointList extends StatelessWidget {
+  const _ApiEndpointList({
+    required this.search,
+    required this.endpoints,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final TextEditingController search;
+  final List<ApiDocEndpoint> endpoints;
+  final ApiDocEndpoint selected;
+  final ValueChanged<ApiDocEndpoint> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: TextField(
+            controller: search,
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search),
+              hintText: strings.text('Search API endpoints'),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+        ),
+        Expanded(
+          child: endpoints.isEmpty
+              ? _EmptyPanel(message: strings.text('No matching API.'))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                  itemCount: endpoints.length,
+                  itemBuilder: (context, index) {
+                    final endpoint = endpoints[index];
+                    final active =
+                        endpoint.route == selected.route &&
+                        endpoint.method == selected.method;
+                    return Card(
+                      elevation: 0,
+                      color: active
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : null,
+                      child: ListTile(
+                        dense: true,
+                        leading: _ApiMethodBadge(method: endpoint.methodLabel),
+                        title: Text(endpoint.route),
+                        subtitle: Text(
+                          '${endpoint.group} · ${endpoint.summary}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        selected: active,
+                        onTap: () => onSelect(endpoint),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ApiEndpointDetail extends StatelessWidget {
+  const _ApiEndpointDetail({
+    required this.endpoint,
+    required this.route,
+    required this.paramControllers,
+    required this.running,
+    required this.response,
+    required this.error,
+    required this.onRun,
+    required this.onCopy,
+  });
+
+  final ApiDocEndpoint endpoint;
+  final TextEditingController route;
+  final Map<String, TextEditingController> paramControllers;
+  final bool running;
+  final ApiDebugResponse? response;
+  final String? error;
+  final VoidCallback onRun;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        Card(
+          elevation: 0,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _ApiMethodBadge(method: endpoint.methodLabel),
+                    Chip(label: Text(endpoint.group)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SelectableText(
+                  endpoint.route,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  endpoint.summary,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  endpoint.description,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 0,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  strings.text('Run online'),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: route,
+                  decoration: InputDecoration(
+                    labelText: strings.text('Route'),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (endpoint.params.isEmpty)
+                  Text(
+                    strings.text('No parameters.'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  )
+                else
+                  for (final param in endpoint.params) ...[
+                    TextField(
+                      controller: paramControllers[param.name],
+                      decoration: InputDecoration(
+                        labelText: '${param.name}${param.required ? ' *' : ''}',
+                        helperText: param.description,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                OverflowBar(
+                  alignment: MainAxisAlignment.end,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: running ? null : onRun,
+                      icon: running
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.play_arrow),
+                      label: Text(strings.text('Run request')),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 0,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _ApiResultPanel(
+              response: response,
+              error: error,
+              onCopy: onCopy,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ApiMethodBadge extends StatelessWidget {
+  const _ApiMethodBadge({required this.method});
+
+  final String method;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final post = method == 'POST';
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: post ? colors.tertiaryContainer : colors.secondaryContainer,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Text(
+          method,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: post
+                ? colors.onTertiaryContainer
+                : colors.onSecondaryContainer,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ApiResultPanel extends StatelessWidget {
+  const _ApiResultPanel({
+    required this.response,
+    required this.error,
+    required this.onCopy,
+  });
+
+  final ApiDebugResponse? response;
+  final String? error;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
+    final text =
+        response?.prettyBody ?? error ?? strings.text('No response yet.');
+    final hasResult = response != null || error != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                strings.text('Response'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (response != null)
+              Chip(
+                label: Text(
+                  '${response!.statusCode} · ${response!.elapsedMs} ms',
+                ),
+              ),
+            IconButton(
+              tooltip: strings.text('Copy'),
+              onPressed: hasResult ? onCopy : null,
+              icon: const Icon(Icons.copy),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerHighest.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: colors.outlineVariant),
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: SelectableText(
+                text,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                  height: 1.35,
+                  color: error == null ? null : colors.error,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _LicenseNotice {
   const _LicenseNotice({required this.packages, required this.body});
 
@@ -2097,6 +3477,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool clearingPerformanceCaches = false;
   bool enablingLowPerformanceMode = false;
   bool submittingBugReport = false;
+  bool checkingVersionUpdate = false;
   PerformanceCacheStats? performanceStats;
   late bool developerOptionsExpanded;
 
@@ -2534,6 +3915,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) {
         setState(() => submittingBugReport = false);
+      }
+    }
+  }
+
+  Future<void> checkVersionUpdateManually() async {
+    if (checkingVersionUpdate) {
+      return;
+    }
+    setState(() => checkingVersionUpdate = true);
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      final checker = VersionUpdateChecker();
+      VersionUpdateInfo result;
+      try {
+        result = await checker.check(
+          currentVersion: '${packageInfo.version}+${packageInfo.buildNumber}'
+              .trim(),
+          timeout: const Duration(seconds: 8),
+        );
+      } finally {
+        checker.close();
+      }
+      if (!mounted) {
+        return;
+      }
+      if (result.hasUpdate) {
+        await showVersionUpdateDialog(context, result);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.strings.text('Already up to date.'))),
+        );
+      }
+    } catch (err, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('CsAC manual GitHub update check failed: $err');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.strings.format('Check update failed: {error}', {
+                'error': err,
+              }),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => checkingVersionUpdate = false);
       }
     }
   }
@@ -3170,6 +4602,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'App information',
       'Open-source licenses',
       'Version',
+      'Version updates',
+      'Check for updates',
+      'Automatic update checks',
+      'Release notes',
       'Source code',
       'License',
     ]);
@@ -3230,6 +4666,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final showDeveloper = settingMatches(query, [
       'Developer options',
       'CsAC server address',
+      'API explorer',
+      'API documentation',
+      'Run online',
+      'Endpoint',
+      'Route',
       'Server',
       'Default server',
     ]);
@@ -3324,6 +4765,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           );
                         },
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.event_repeat_outlined),
+                        title: Text(strings.text('Automatic update checks')),
+                        subtitle: Text(
+                          strings.text(
+                            'Silently check GitHub Releases once on startup',
+                          ),
+                        ),
+                        value: widget.state.preferences.autoCheckVersionUpdates,
+                        onChanged: widget.state.updateAutoCheckVersionUpdates,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.update),
+                        title: Text(strings.text('Check for updates')),
+                        subtitle: Text(
+                          strings.text(
+                            'Check the latest GitHub Release manually',
+                          ),
+                        ),
+                        trailing: checkingVersionUpdate
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.chevron_right),
+                        onTap: checkingVersionUpdate
+                            ? null
+                            : checkVersionUpdateManually,
                       ),
                       const Divider(height: 1),
                       ListTile(
@@ -3875,6 +5350,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             label: Text(strings.text('Apply server')),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 12),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.api_outlined),
+                        title: Text(strings.text('API explorer')),
+                        subtitle: Text(
+                          strings.text(
+                            'Search API docs, inspect parameters and run requests',
+                          ),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  ApiExplorerScreen(state: widget.state),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),

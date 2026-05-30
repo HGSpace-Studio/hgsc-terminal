@@ -122,6 +122,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool showChatHint = false;
   bool loadingMemberAvatars = false;
   bool keyboardShouldKeepBottom = false;
+  bool composeMenuOpen = false;
   double keyboardInsetBottom = 0;
   int? pressedMessageId;
   String? error;
@@ -798,19 +799,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return;
       }
       final fileName = pickedImageFileName(picked, source);
-      final caption = await showDialog<String>(
-        context: context,
-        builder: (context) =>
-            _ImageCaptionDialog(fileName: fileName, bytes: bytes),
+      final prepared = await Navigator.of(context).push<_PreparedImage>(
+        MaterialPageRoute<_PreparedImage>(
+          builder: (_) =>
+              _ImageSendPreviewScreen(fileName: fileName, bytes: bytes),
+        ),
       );
-      if (caption == null) {
+      if (prepared == null) {
         return;
       }
       final pending = _PendingSend(
         localId: nextPendingId--,
-        text: caption.trim(),
-        imageBytes: bytes,
-        imageName: fileName,
+        text: prepared.caption.trim(),
+        imageBytes: prepared.bytes,
+        imageName: prepared.fileName,
         replyTo: replyTarget?.id ?? 0,
         mentionUids: mentionTargets.map((member) => member.uid).toList(),
       );
@@ -1342,69 +1344,63 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> showComposeMenu() async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.72,
-          ),
-          child: ListView(
-            shrinkWrap: true,
-            padding: EdgeInsets.zero,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.image_outlined),
-                title: Text(context.strings.text('Image')),
-                onTap: () => Navigator.of(context).pop('image'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
-                title: Text(context.strings.text('Take photo')),
-                onTap: () => Navigator.of(context).pop('camera'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.mic),
-                title: Text(context.strings.text('Record voice')),
-                onTap: () => Navigator.of(context).pop('recordVoice'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.audio_file_outlined),
-                title: Text(context.strings.text('Choose audio file')),
-                onTap: () => Navigator.of(context).pop('voiceFile'),
-              ),
-              if (widget.conversation.type == ConversationType.group)
-                ListTile(
-                  leading: const Icon(Icons.alternate_email),
-                  title: Text(context.strings.text('Mention')),
-                  onTap: () => Navigator.of(context).pop('mention'),
-                ),
-              if (widget.conversation.type == ConversationType.group)
-                ListTile(
-                  leading: const Icon(Icons.star_outline),
-                  title: Text(context.strings.text('Essence')),
-                  onTap: () => Navigator.of(context).pop('essence'),
-                ),
-              ListTile(
-                leading: const Icon(Icons.perm_media_outlined),
-                title: Text(context.strings.text('Media and files')),
-                onTap: () => Navigator.of(context).pop('media'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.ios_share_outlined),
-                title: Text(context.strings.text('Export chat history')),
-                onTap: () => Navigator.of(context).pop('export'),
-              ),
-            ],
-          ),
-        ),
+  List<_ComposeMenuAction> composeMenuActions(CsacStrings strings) {
+    return [
+      _ComposeMenuAction(
+        value: 'image',
+        icon: Icons.image_outlined,
+        label: strings.text('Image'),
       ),
-    );
-    if (!mounted || action == null) {
-      return;
+      _ComposeMenuAction(
+        value: 'camera',
+        icon: Icons.photo_camera_outlined,
+        label: strings.text('Take photo'),
+      ),
+      _ComposeMenuAction(
+        value: 'recordVoice',
+        icon: Icons.mic,
+        label: strings.text('Record voice'),
+      ),
+      _ComposeMenuAction(
+        value: 'voiceFile',
+        icon: Icons.audio_file_outlined,
+        label: strings.text('Voice file'),
+      ),
+      if (widget.conversation.type == ConversationType.group)
+        _ComposeMenuAction(
+          value: 'mention',
+          icon: Icons.alternate_email,
+          label: strings.text('Mention'),
+        ),
+      if (widget.conversation.type == ConversationType.group)
+        _ComposeMenuAction(
+          value: 'essence',
+          icon: Icons.star_outline,
+          label: strings.text('Essence'),
+        ),
+      _ComposeMenuAction(
+        value: 'media',
+        icon: Icons.perm_media_outlined,
+        label: strings.text('Media'),
+      ),
+      _ComposeMenuAction(
+        value: 'export',
+        icon: Icons.ios_share_outlined,
+        label: strings.text('Export'),
+      ),
+    ];
+  }
+
+  void toggleComposeMenu() {
+    setState(() => composeMenuOpen = !composeMenuOpen);
+    if (composeMenuOpen) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+  }
+
+  Future<void> handleComposeMenuAction(String action) async {
+    if (composeMenuOpen && mounted) {
+      setState(() => composeMenuOpen = false);
     }
     switch (action) {
       case 'image':
@@ -1977,358 +1973,431 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-        child: Column(
+        onTap: () {
+          FocusManager.instance.primaryFocus?.unfocus();
+          if (composeMenuOpen) {
+            setState(() => composeMenuOpen = false);
+          }
+        },
+        child: Stack(
           children: [
-            if (error != null)
-              MaterialBanner(
-                content: Text(error!),
-                actions: [
-                  TextButton(
-                    onPressed: () => setState(() => error = null),
-                    child: Text(strings.text('Dismiss')),
+            Column(
+              children: [
+                if (error != null)
+                  MaterialBanner(
+                    content: Text(error!),
+                    actions: [
+                      TextButton(
+                        onPressed: () => setState(() => error = null),
+                        child: Text(strings.text('Dismiss')),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            if (announcement.isNotEmpty)
-              _MotionPane(
-                child: _GroupAnnouncementBar(
-                  announcement: announcement,
-                  onTap: openConversationDetails,
-                ),
-              ),
-            if (unreadMessageId != null)
-              _MotionPane(
-                child: Material(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  child: InkWell(
-                    onTap: scrollToFirstUnread,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.mark_chat_unread_outlined,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onPrimaryContainer,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              strings.format(
-                                'Jump to {count} unread messages',
-                                {'count': initialUnreadCount},
-                              ),
-                              style: TextStyle(
+                if (announcement.isNotEmpty)
+                  _MotionPane(
+                    child: _GroupAnnouncementBar(
+                      announcement: announcement,
+                      onTap: openConversationDetails,
+                    ),
+                  ),
+                if (unreadMessageId != null)
+                  _MotionPane(
+                    child: Material(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      child: InkWell(
+                        onTap: scrollToFirstUnread,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.mark_chat_unread_outlined,
                                 color: Theme.of(
                                   context,
                                 ).colorScheme.onPrimaryContainer,
-                                fontWeight: FontWeight.w700,
                               ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  strings.format(
+                                    'Jump to {count} unread messages',
+                                    {'count': initialUnreadCount},
+                                  ),
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.keyboard_arrow_down,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: _ChatBackground(path: backgroundPath),
+                      ),
+                      loading
+                          ? const Center(child: CircularProgressIndicator())
+                          : showEmpty
+                          ? _EmptyPanel(message: strings.text('No messages.'))
+                          : ListView.builder(
+                              controller: scroll,
+                              padding: const EdgeInsets.fromLTRB(
+                                12,
+                                12,
+                                12,
+                                12,
+                              ),
+                              itemCount:
+                                  messages.length +
+                                  pendingSends.length +
+                                  (loadingOlder ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                if (loadingOlder && index == 0) {
+                                  return const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 10),
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                final messageIndex =
+                                    index - (loadingOlder ? 1 : 0);
+                                if (messageIndex >= messages.length) {
+                                  final pending =
+                                      pendingSends[messageIndex -
+                                          messages.length];
+                                  return _MotionListItem(
+                                    index: messageIndex,
+                                    child: _PendingMessageBubble(
+                                      pending: pending,
+                                      onRetry: () =>
+                                          retryPendingSend(pending.localId),
+                                    ),
+                                  );
+                                }
+                                final message = messages[messageIndex];
+                                final mine =
+                                    widget.state.user?.uid == message.senderId;
+                                if (message.messageType == 4 ||
+                                    message.isRecalled) {
+                                  return _MotionListItem(
+                                    index: messageIndex,
+                                    child: _SystemMessagePill(
+                                      key: itemKeys.putIfAbsent(
+                                        message.id,
+                                        () => GlobalKey(),
+                                      ),
+                                      message: message,
+                                      preferences: widget.state.preferences,
+                                    ),
+                                  );
+                                }
+                                final showAvatar =
+                                    widget.state.preferences.showChatAvatars;
+                                final avatarUrl = showAvatar
+                                    ? avatarForMessage(message, mine)
+                                    : '';
+                                final selected = selectedMessageIds.contains(
+                                  message.id,
+                                );
+                                final replyMessage = messages
+                                    .where((item) => item.id == message.replyTo)
+                                    .cast<ChatMessage?>()
+                                    .firstOrNull;
+                                return _MotionListItem(
+                                  index: messageIndex,
+                                  child: _MessageBubble(
+                                    key: itemKeys.putIfAbsent(
+                                      message.id,
+                                      () => GlobalKey(),
+                                    ),
+                                    message: message,
+                                    replyMessage: replyMessage,
+                                    mine: mine,
+                                    showAvatar: showAvatar,
+                                    avatarUrl: avatarUrl,
+                                    showReadStatus:
+                                        widget.conversation.type ==
+                                            ConversationType.private &&
+                                        mine,
+                                    showMemberLevel:
+                                        widget.conversation.type ==
+                                            ConversationType.group &&
+                                        widget
+                                            .state
+                                            .preferences
+                                            .showGroupMemberLevel,
+                                    focused:
+                                        widget.focusMessageId == message.id,
+                                    selected: selected,
+                                    selectionMode: selectionMode,
+                                    pressed: pressedMessageId == message.id,
+                                    preferences: widget.state.preferences,
+                                    onTap: selectionMode
+                                        ? () => toggleMessageSelection(message)
+                                        : null,
+                                    onLongPress: selectionMode
+                                        ? null
+                                        : () =>
+                                              showMessageActions(message, mine),
+                                    onSwipeReply: selectionMode
+                                        ? null
+                                        : () => setReplyTarget(message),
+                                    onAvatarDoubleTap:
+                                        widget.conversation.type ==
+                                                ConversationType.group &&
+                                            widget
+                                                .state
+                                                .preferences
+                                                .enablePat &&
+                                            !mine
+                                        ? () => sendPat(message)
+                                        : null,
+                                    onReplyTap: message.replyTo > 0
+                                        ? () => scrollToMessage(message.replyTo)
+                                        : null,
+                                    onImageTap: message.imageUrl.isEmpty
+                                        ? null
+                                        : () => showImagePreview(
+                                            context,
+                                            message.imageUrl,
+                                            heroTag: chatImageHeroTag(message),
+                                          ),
+                                    voicePlaying: isVoicePlaying(message),
+                                    voiceActive:
+                                        playingVoiceMessageId == message.id,
+                                    voicePosition:
+                                        playingVoiceMessageId == message.id
+                                        ? voicePosition
+                                        : Duration.zero,
+                                    voiceDuration: displayVoiceDuration(
+                                      message,
+                                    ),
+                                    voiceSpeed: voiceSpeed,
+                                    onVoiceTap: message.voiceUrl.isEmpty
+                                        ? null
+                                        : () => toggleVoicePlayback(message),
+                                    onVoiceSeek: message.voiceUrl.isEmpty
+                                        ? null
+                                        : seekVoice,
+                                    onVoiceSpeed: message.voiceUrl.isEmpty
+                                        ? null
+                                        : cycleVoiceSpeed,
+                                  ),
+                                );
+                              },
+                            ),
+                      if (!nearBottom && !loading)
+                        Positioned(
+                          right: 16,
+                          bottom: 16,
+                          child: _MotionPane(
+                            child: FloatingActionButton.small(
+                              tooltip: strings.text('Jump to bottom'),
+                              onPressed: jumpToEnd,
+                              child: const Icon(Icons.keyboard_arrow_down),
                             ),
                           ),
-                          Icon(
-                            Icons.keyboard_arrow_down,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onPrimaryContainer,
+                        ),
+                      Positioned(
+                        left: 12,
+                        right: 12,
+                        bottom: 12,
+                        child: IgnorePointer(
+                          ignoring: !showChatHint,
+                          child: AnimatedSwitcher(
+                            duration: 260.ms,
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, animation) {
+                              return FadeTransition(
+                                opacity: animation,
+                                child: ScaleTransition(
+                                  scale: Tween<double>(
+                                    begin: 0.98,
+                                    end: 1,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: showChatHint
+                                ? _ChatHintOverlay(
+                                    key: const ValueKey('chat-hint'),
+                                    onDismiss: dismissChatHint,
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: AnimatedContainer(
+                    duration: 160.ms,
+                    curve: Curves.easeOutCubic,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(
+                          color: nearBottom
+                              ? Colors.transparent
+                              : Theme.of(context).colorScheme.outlineVariant,
+                          width: nearBottom ? 0 : 1,
+                        ),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AnimatedSwitcher(
+                            duration: 220.ms,
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, animation) {
+                              return FadeTransition(
+                                opacity: animation,
+                                child: SizeTransition(
+                                  sizeFactor: animation,
+                                  axisAlignment: -1,
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child:
+                                replyTarget != null || mentionTargets.isNotEmpty
+                                ? KeyedSubtree(
+                                    key: ValueKey<String>(
+                                      '${replyTarget?.id ?? 0}:${mentionTargets.length}',
+                                    ),
+                                    child: _ComposeTargetsBar(
+                                      replyTarget: replyTarget,
+                                      mentions: mentionTargets,
+                                      onClearReply: () {
+                                        setState(() => replyTarget = null);
+                                        unawaited(saveDraftNow());
+                                      },
+                                      onClearMentions: () => setState(
+                                        () => mentionTargets.clear(),
+                                      ),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                          _MotionPane(
+                            child: Row(
+                              children: [
+                                IconButton.filledTonal(
+                                  tooltip: strings.text('More'),
+                                  onPressed: toggleComposeMenu,
+                                  icon: AnimatedRotation(
+                                    turns: composeMenuOpen ? 0.125 : 0,
+                                    duration:
+                                        _MotionPreference.reduceOf(context)
+                                        ? Duration.zero
+                                        : 220.ms,
+                                    curve: Curves.easeOutBack,
+                                    child: const Icon(Icons.add),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller: input,
+                                    focusNode: inputFocus,
+                                    minLines: 1,
+                                    maxLines: 4,
+                                    textInputAction: TextInputAction.send,
+                                    onSubmitted: (_) => send(),
+                                    decoration: InputDecoration(
+                                      hintText: strings.text('Message'),
+                                      border: const OutlineInputBorder(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 46,
+                                  height: 46,
+                                  child: _AnimatedSendButton(
+                                    active: canSendText,
+                                    onPressed: send,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
                 ),
-              ),
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(child: _ChatBackground(path: backgroundPath)),
-                  loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : showEmpty
-                      ? _EmptyPanel(message: strings.text('No messages.'))
-                      : ListView.builder(
-                          controller: scroll,
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                          itemCount:
-                              messages.length +
-                              pendingSends.length +
-                              (loadingOlder ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (loadingOlder && index == 0) {
-                              return const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 10),
-                                child: Center(
-                                  child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }
-                            final messageIndex = index - (loadingOlder ? 1 : 0);
-                            if (messageIndex >= messages.length) {
-                              final pending =
-                                  pendingSends[messageIndex - messages.length];
-                              return _MotionListItem(
-                                index: messageIndex,
-                                child: _PendingMessageBubble(
-                                  pending: pending,
-                                  onRetry: () =>
-                                      retryPendingSend(pending.localId),
-                                ),
-                              );
-                            }
-                            final message = messages[messageIndex];
-                            final mine =
-                                widget.state.user?.uid == message.senderId;
-                            if (message.messageType == 4 ||
-                                message.isRecalled) {
-                              return _MotionListItem(
-                                index: messageIndex,
-                                child: _SystemMessagePill(
-                                  key: itemKeys.putIfAbsent(
-                                    message.id,
-                                    () => GlobalKey(),
-                                  ),
-                                  message: message,
-                                  preferences: widget.state.preferences,
-                                ),
-                              );
-                            }
-                            final showAvatar =
-                                widget.state.preferences.showChatAvatars;
-                            final avatarUrl = showAvatar
-                                ? avatarForMessage(message, mine)
-                                : '';
-                            final selected = selectedMessageIds.contains(
-                              message.id,
-                            );
-                            final replyMessage = messages
-                                .where((item) => item.id == message.replyTo)
-                                .cast<ChatMessage?>()
-                                .firstOrNull;
-                            return _MotionListItem(
-                              index: messageIndex,
-                              child: _MessageBubble(
-                                key: itemKeys.putIfAbsent(
-                                  message.id,
-                                  () => GlobalKey(),
-                                ),
-                                message: message,
-                                replyMessage: replyMessage,
-                                mine: mine,
-                                showAvatar: showAvatar,
-                                avatarUrl: avatarUrl,
-                                showReadStatus:
-                                    widget.conversation.type ==
-                                        ConversationType.private &&
-                                    mine,
-                                showMemberLevel:
-                                    widget.conversation.type ==
-                                        ConversationType.group &&
-                                    widget
-                                        .state
-                                        .preferences
-                                        .showGroupMemberLevel,
-                                focused: widget.focusMessageId == message.id,
-                                selected: selected,
-                                selectionMode: selectionMode,
-                                pressed: pressedMessageId == message.id,
-                                preferences: widget.state.preferences,
-                                onTap: selectionMode
-                                    ? () => toggleMessageSelection(message)
-                                    : null,
-                                onLongPress: selectionMode
-                                    ? null
-                                    : () => showMessageActions(message, mine),
-                                onSwipeReply: selectionMode
-                                    ? null
-                                    : () => setReplyTarget(message),
-                                onAvatarDoubleTap:
-                                    widget.conversation.type ==
-                                            ConversationType.group &&
-                                        widget.state.preferences.enablePat &&
-                                        !mine
-                                    ? () => sendPat(message)
-                                    : null,
-                                onReplyTap: message.replyTo > 0
-                                    ? () => scrollToMessage(message.replyTo)
-                                    : null,
-                                onImageTap: message.imageUrl.isEmpty
-                                    ? null
-                                    : () => showImagePreview(
-                                        context,
-                                        message.imageUrl,
-                                        heroTag: chatImageHeroTag(message),
-                                      ),
-                                voicePlaying: isVoicePlaying(message),
-                                voiceActive:
-                                    playingVoiceMessageId == message.id,
-                                voicePosition:
-                                    playingVoiceMessageId == message.id
-                                    ? voicePosition
-                                    : Duration.zero,
-                                voiceDuration: displayVoiceDuration(message),
-                                voiceSpeed: voiceSpeed,
-                                onVoiceTap: message.voiceUrl.isEmpty
-                                    ? null
-                                    : () => toggleVoicePlayback(message),
-                                onVoiceSeek: message.voiceUrl.isEmpty
-                                    ? null
-                                    : seekVoice,
-                                onVoiceSpeed: message.voiceUrl.isEmpty
-                                    ? null
-                                    : cycleVoiceSpeed,
-                              ),
-                            );
-                          },
-                        ),
-                  if (!nearBottom && !loading)
-                    Positioned(
-                      right: 16,
-                      bottom: 16,
-                      child: _MotionPane(
-                        child: FloatingActionButton.small(
-                          tooltip: strings.text('Jump to bottom'),
-                          onPressed: jumpToEnd,
-                          child: const Icon(Icons.keyboard_arrow_down),
-                        ),
-                      ),
-                    ),
-                  Positioned(
-                    left: 12,
-                    right: 12,
-                    bottom: 12,
-                    child: IgnorePointer(
-                      ignoring: !showChatHint,
-                      child: AnimatedSwitcher(
-                        duration: 260.ms,
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) {
-                          return FadeTransition(
-                            opacity: animation,
-                            child: SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(0, 0.08),
-                                end: Offset.zero,
-                              ).animate(animation),
-                              child: ScaleTransition(
-                                scale: Tween<double>(
-                                  begin: 0.98,
-                                  end: 1,
-                                ).animate(animation),
-                                child: child,
-                              ),
-                            ),
-                          );
-                        },
-                        child: showChatHint
-                            ? _ChatHintOverlay(
-                                key: const ValueKey('chat-hint'),
-                                onDismiss: dismissChatHint,
-                              )
-                            : const SizedBox.shrink(),
-                      ),
-                    ),
-                  ),
-                ],
+              ],
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                ignoring: !composeMenuOpen,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => setState(() => composeMenuOpen = false),
+                  child: const SizedBox.expand(),
+                ),
               ),
             ),
-            SafeArea(
-              top: false,
-              child: AnimatedContainer(
-                duration: 160.ms,
-                curve: Curves.easeOutCubic,
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(
-                      color: nearBottom
-                          ? Colors.transparent
-                          : Theme.of(context).colorScheme.outlineVariant,
-                      width: nearBottom ? 0 : 1,
-                    ),
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedSwitcher(
-                        duration: 220.ms,
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) {
-                          return FadeTransition(
-                            opacity: animation,
-                            child: SizeTransition(
-                              sizeFactor: animation,
-                              axisAlignment: -1,
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: replyTarget != null || mentionTargets.isNotEmpty
-                            ? KeyedSubtree(
-                                key: ValueKey<String>(
-                                  '${replyTarget?.id ?? 0}:${mentionTargets.length}',
-                                ),
-                                child: _ComposeTargetsBar(
-                                  replyTarget: replyTarget,
-                                  mentions: mentionTargets,
-                                  onClearReply: () {
-                                    setState(() => replyTarget = null);
-                                    unawaited(saveDraftNow());
-                                  },
-                                  onClearMentions: () =>
-                                      setState(() => mentionTargets.clear()),
-                                ),
-                              )
-                            : const SizedBox.shrink(),
+            Positioned(
+              left: 10,
+              right: 10,
+              bottom: 74 + MediaQuery.paddingOf(context).bottom,
+              child: IgnorePointer(
+                ignoring: !composeMenuOpen,
+                child: AnimatedSwitcher(
+                  duration: _MotionPreference.reduceOf(context)
+                      ? Duration.zero
+                      : 260.ms,
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: ScaleTransition(
+                        scale: Tween<double>(
+                          begin: 0.985,
+                          end: 1,
+                        ).animate(animation),
+                        child: child,
                       ),
-                      _MotionPane(
-                        child: Row(
-                          children: [
-                            IconButton.filledTonal(
-                              tooltip: strings.text('More'),
-                              onPressed: showComposeMenu,
-                              icon: const Icon(Icons.add),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                controller: input,
-                                focusNode: inputFocus,
-                                minLines: 1,
-                                maxLines: 4,
-                                textInputAction: TextInputAction.send,
-                                onSubmitted: (_) => send(),
-                                decoration: InputDecoration(
-                                  hintText: strings.text('Message'),
-                                  border: const OutlineInputBorder(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            SizedBox(
-                              width: 46,
-                              height: 46,
-                              child: _AnimatedSendButton(
-                                active: canSendText,
-                                onPressed: send,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
+                  child: composeMenuOpen
+                      ? _ComposeMenuPanel(
+                          key: const ValueKey('compose-menu-panel'),
+                          actions: composeMenuActions(strings),
+                          onSelected: handleComposeMenuAction,
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ),
             ),
@@ -2539,6 +2608,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 selected: widget.selected,
               ),
               if (widget.selectionMode) const SizedBox(width: 6),
+              if (memberLevelText.isNotEmpty) ...[
+                _MemberLevelBadge(text: memberLevelText),
+                const SizedBox(width: 6),
+              ],
               Flexible(
                 child: Text(
                   widget.message.sender,
@@ -2549,10 +2622,6 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   ),
                 ),
               ),
-              if (memberLevelText.isNotEmpty) ...[
-                const SizedBox(width: 6),
-                _MemberLevelBadge(text: memberLevelText),
-              ],
               if (messageTime.isNotEmpty) ...[
                 const SizedBox(width: 6),
                 Flexible(
@@ -3303,6 +3372,162 @@ class _AnimatedSendButton extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _ComposeMenuAction {
+  const _ComposeMenuAction({
+    required this.value,
+    required this.icon,
+    required this.label,
+  });
+
+  final String value;
+  final IconData icon;
+  final String label;
+}
+
+class _ComposeMenuPanel extends StatelessWidget {
+  const _ComposeMenuPanel({
+    super.key,
+    required this.actions,
+    required this.onSelected,
+  });
+
+  final List<_ComposeMenuAction> actions;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = _MotionPreference.reduceOf(context);
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 430,
+            maxHeight: math.min(468, MediaQuery.sizeOf(context).height * 0.54),
+          ),
+          child: Material(
+            color: colors.surfaceContainerHigh,
+            elevation: reduceMotion ? 0 : 3,
+            shadowColor: colors.shadow.withValues(alpha: 0.14),
+            surfaceTintColor: colors.surfaceTint,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(26),
+              side: BorderSide(color: colors.outlineVariant),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const ClampingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: actions.length,
+              separatorBuilder: (context, index) => Padding(
+                padding: const EdgeInsets.only(left: 74),
+                child: Divider(
+                  height: 1,
+                  color: colors.outlineVariant.withValues(alpha: 0.62),
+                ),
+              ),
+              itemBuilder: (context, index) {
+                return _ComposeMenuTile(
+                  action: actions[index],
+                  index: index,
+                  onTap: () => onSelected(actions[index].value),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComposeMenuTile extends StatelessWidget {
+  const _ComposeMenuTile({
+    required this.action,
+    required this.index,
+    required this.onTap,
+  });
+
+  final _ComposeMenuAction action;
+  final int index;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = _MotionPreference.reduceOf(context);
+    final colors = Theme.of(context).colorScheme;
+    final tile = Tooltip(
+      message: action.label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.secondaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: SizedBox.square(
+                    dimension: 46,
+                    child: Icon(
+                      action.icon,
+                      color: colors.onSecondaryContainer,
+                      size: 24,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    action.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 22,
+                  color: colors.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (reduceMotion) {
+      return tile;
+    }
+    return tile
+        .animate(delay: Duration(milliseconds: 26 * index))
+        .fadeIn(duration: 170.ms, curve: Curves.easeOutCubic)
+        .slideY(
+          begin: 0.16,
+          end: 0,
+          duration: 330.ms,
+          curve: Curves.easeOutCubic,
+        )
+        .scale(
+          begin: const Offset(0.97, 0.97),
+          end: const Offset(1, 1),
+          duration: 360.ms,
+          curve: Curves.easeOutBack,
+        );
   }
 }
 

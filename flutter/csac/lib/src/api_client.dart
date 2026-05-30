@@ -53,6 +53,33 @@ class NetworkDiagnosticCheck {
   final String detail;
 }
 
+class ApiDebugResponse {
+  const ApiDebugResponse({
+    required this.method,
+    required this.route,
+    required this.statusCode,
+    required this.elapsedMs,
+    required this.body,
+    required this.decoded,
+  });
+
+  final String method;
+  final String route;
+  final int statusCode;
+  final int elapsedMs;
+  final String body;
+  final Object? decoded;
+
+  String get prettyBody {
+    if (decoded != null) {
+      try {
+        return const JsonEncoder.withIndent('  ').convert(decoded);
+      } catch (_) {}
+    }
+    return body;
+  }
+}
+
 class CsacApiClient {
   CsacApiClient({http.Client? httpClient, String baseUrl = defaultBaseUrl})
     : _http = httpClient ?? http.Client(),
@@ -1021,6 +1048,59 @@ class CsacApiClient {
     });
   }
 
+  Future<ApiDebugResponse> runDebugRequest({
+    required String method,
+    required String route,
+    required Map<String, String> values,
+  }) async {
+    final normalizedMethod = method.toUpperCase() == 'POST' ? 'POST' : 'GET';
+    final cleanRoute = route.trim();
+    final cleanValues = <String, String>{
+      for (final entry in values.entries)
+        if (entry.key.trim().isNotEmpty && entry.value.trim().isNotEmpty)
+          entry.key.trim(): entry.value.trim(),
+    };
+    final timer = Stopwatch()..start();
+    http.Response response = await _sendDebugOnce(
+      normalizedMethod,
+      cleanRoute,
+      cleanValues,
+    );
+    var body = response.body;
+    for (var attempt = 0; _isChallenge(body); attempt++) {
+      if (attempt >= 3) {
+        throw CsacApiException(
+          'Server returned JavaScript challenge again after setting __test cookie.',
+        );
+      }
+      final retryUri = _solveChallenge(
+        response.request?.url ?? Uri.parse(baseUrl),
+        body,
+      );
+      response = await _sendOnce(
+        _debugRequest(
+          normalizedMethod,
+          retryUri,
+          normalizedMethod == 'POST' ? cleanValues : null,
+        ),
+      );
+      body = response.body;
+    }
+    timer.stop();
+    Object? decoded;
+    try {
+      decoded = jsonDecode(body);
+    } catch (_) {}
+    return ApiDebugResponse(
+      method: normalizedMethod,
+      route: cleanRoute,
+      statusCode: response.statusCode,
+      elapsedMs: timer.elapsedMilliseconds,
+      body: body,
+      decoded: decoded,
+    );
+  }
+
   Future<Map<String, dynamic>> postMultipart(
     String route,
     Map<String, String> fields, {
@@ -1125,6 +1205,29 @@ class CsacApiClient {
     final response = await http.Response.fromStream(streamed);
     _storeCookies(response);
     return response;
+  }
+
+  Future<http.Response> _sendDebugOnce(
+    String method,
+    String route,
+    Map<String, String> values,
+  ) {
+    final uri = method == 'POST' ? _routeUri(route) : _routeUri(route, values);
+    return _sendOnce(
+      _debugRequest(method, uri, method == 'POST' ? values : null),
+    );
+  }
+
+  http.Request _debugRequest(
+    String method,
+    Uri uri,
+    Map<String, String>? bodyFields,
+  ) {
+    final request = http.Request(method, uri);
+    if (method == 'POST') {
+      request.bodyFields = bodyFields ?? <String, String>{};
+    }
+    return request;
   }
 
   bool _looksLikeHtml(http.Response response) {

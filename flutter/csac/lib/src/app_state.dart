@@ -326,6 +326,12 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateAutoCheckVersionUpdates(bool enabled) async {
+    preferences = preferences.copyWith(autoCheckVersionUpdates: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
   bool verifyAppLockPin(String pin) {
     return preferences.verifyAppLockPin(pin);
   }
@@ -846,6 +852,14 @@ class CsacAppState extends ChangeNotifier {
   Future<NetworkDiagnosticReport> runNetworkDiagnostics() async {
     final imageUrl = await cache.latestImageUrl();
     return client.runNetworkDiagnostics(imageUrl: imageUrl);
+  }
+
+  Future<ApiDebugResponse> runApiDebugRequest({
+    required String method,
+    required String route,
+    required Map<String, String> values,
+  }) {
+    return client.runDebugRequest(method: method, route: route, values: values);
   }
 
   Future<List<GroupMember>> loadGroupMembers(int roomId) {

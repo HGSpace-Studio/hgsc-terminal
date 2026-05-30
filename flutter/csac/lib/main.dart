@@ -26,6 +26,7 @@ import 'src/api_client.dart';
 import 'src/l10n.dart';
 import 'src/models.dart';
 import 'src/preferences.dart';
+import 'src/update_checker.dart';
 
 part 'src/ui/app_shell.dart';
 part 'src/ui/home.dart';
