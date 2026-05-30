@@ -28,3 +28,6 @@ coverage.html
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# SOME FUCKING DUMB THING
+backend_apis.php
