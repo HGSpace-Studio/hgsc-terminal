@@ -1063,7 +1063,13 @@ class CsacAppState extends ChangeNotifier {
 
   Future<List<ChatMessage>> reloadMessagesFromNetwork(
     Conversation conversation,
-  ) {
+  ) async {
+    if (conversation.type == ConversationType.private) {
+      final loaded = await client.messages(conversation);
+      await cache.saveMessages(conversation, loaded);
+      await _applyConversationActivity(conversation, loaded);
+      return cache.filterLocallyDeletedMessages(conversation, loaded);
+    }
     return syncMessages(conversation);
   }
 

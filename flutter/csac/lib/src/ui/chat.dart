@@ -520,15 +520,25 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) {
         return;
       }
+      final currentMessages = List<ChatMessage>.of(messages);
+      final hadMessages = currentMessages.isNotEmpty;
+      final merged = await mergeMessagesWithCacheFallback(
+        currentMessages,
+        loaded,
+      );
+      if (!mounted) {
+        return;
+      }
       setState(() {
         messages
           ..clear()
-          ..addAll(loaded);
+          ..addAll(merged);
         offline = false;
-        hasMoreOlderMessages = loaded.length >= 80;
       });
       await markCurrentConversationRead();
-      scrollAfterLoad();
+      if (!hadMessages || loaded.isNotEmpty || widget.focusMessageId != null) {
+        scrollAfterLoad();
+      }
     } catch (err) {
       if (mounted) {
         setState(() {
@@ -565,10 +575,17 @@ class _ChatScreenState extends State<ChatScreen> {
         if (!mounted) {
           return;
         }
+        final merged = await mergeMessagesWithCacheFallback(
+          List<ChatMessage>.of(messages),
+          loaded,
+        );
+        if (!mounted) {
+          return;
+        }
         setState(() {
           messages
             ..clear()
-            ..addAll(mergeChatMessages(messages, loaded));
+            ..addAll(merged);
           offline = false;
         });
         await markCurrentConversationRead();
@@ -580,6 +597,25 @@ class _ChatScreenState extends State<ChatScreen> {
         afterId: afterId,
       );
       if (loaded.isEmpty) {
+        if (messages.isEmpty) {
+          final cached = await mergeMessagesWithCacheFallback(
+            const <ChatMessage>[],
+            loaded,
+          );
+          if (!mounted) {
+            return;
+          }
+          if (cached.isNotEmpty) {
+            setState(() {
+              messages
+                ..clear()
+                ..addAll(cached);
+              offline = false;
+            });
+            await markCurrentConversationRead();
+            return;
+          }
+        }
         if (offline && mounted) {
           setState(() => offline = false);
         }
@@ -609,6 +645,27 @@ class _ChatScreenState extends State<ChatScreen> {
     } finally {
       refreshing = false;
     }
+  }
+
+  Future<List<ChatMessage>> mergeMessagesWithCacheFallback(
+    List<ChatMessage> currentMessages,
+    List<ChatMessage> loaded,
+  ) async {
+    final merged = mergeChatMessages(currentMessages, loaded);
+    if (merged.isNotEmpty || currentMessages.isNotEmpty || loaded.isNotEmpty) {
+      return merged;
+    }
+    final focusId = widget.focusMessageId;
+    if (focusId != null) {
+      final focused = await widget.state.loadCachedMessagesAround(
+        widget.conversation,
+        focusId,
+      );
+      if (focused.isNotEmpty) {
+        return focused;
+      }
+    }
+    return widget.state.loadCachedMessages(widget.conversation);
   }
 
   Future<void> loadOlderMessages() async {

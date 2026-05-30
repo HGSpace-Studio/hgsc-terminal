@@ -32,6 +32,26 @@ void main() {
     expect(friend.unreadCount, 3);
   });
 
+  test('message accepts read status aliases', () {
+    final readByStatus = ChatMessage.fromJson({
+      'id': 15,
+      'from_uid': 4,
+      'nickname': 'Leon',
+      'content': 'hello',
+      'read_status': 1,
+    });
+    final readByTime = ChatMessage.fromJson({
+      'id': 16,
+      'from_uid': 4,
+      'nickname': 'Leon',
+      'content': 'hello',
+      'read_at': '2026-05-30 12:00:00',
+    });
+
+    expect(readByStatus.isRead, isTrue);
+    expect(readByTime.isRead, isTrue);
+  });
+
   test('server URL accepts bare host and host with port', () {
     expect(
       CsacApiClient.normalizeServerUrl('192.168.1.10'),

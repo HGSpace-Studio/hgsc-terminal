@@ -604,7 +604,15 @@ class ChatMessage {
         ]),
       ),
       messageType: messageType <= 0 ? 1 : messageType,
-      isRead: asBool(json['is_read']),
+      isRead:
+          firstBool(json, const [
+            'is_read',
+            'read',
+            'read_status',
+            'has_read',
+            'isRead',
+          ]) ||
+          firstTimestampValue(json, const ['read_at', 'read_time']) != null,
       memberLevel: firstInt(json, const ['member_level', 'level']),
       memberTitle: firstString(json, const ['member_title', 'title']),
       time: readableTimestamp(rawTime),
