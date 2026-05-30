@@ -1470,6 +1470,211 @@ class _AppLogDetailScreenState extends State<AppLogDetailScreen> {
   }
 }
 
+class NetworkDiagnosticsScreen extends StatefulWidget {
+  const NetworkDiagnosticsScreen({super.key, required this.state});
+
+  final CsacAppState state;
+
+  @override
+  State<NetworkDiagnosticsScreen> createState() =>
+      _NetworkDiagnosticsScreenState();
+}
+
+class _NetworkDiagnosticsScreenState extends State<NetworkDiagnosticsScreen> {
+  late Future<NetworkDiagnosticReport> report = widget.state
+      .runNetworkDiagnostics();
+
+  void rerun() {
+    setState(() => report = widget.state.runNetworkDiagnostics());
+  }
+
+  Future<void> copyReport(NetworkDiagnosticReport value) async {
+    final buffer = StringBuffer()
+      ..writeln('Server: ${value.serverUrl}')
+      ..writeln('Origin: ${value.originUrl}')
+      ..writeln('Started: ${formatLocalDateTime(value.startedAt)}')
+      ..writeln('Total: ${value.totalMs} ms')
+      ..writeln();
+    for (final check in value.checks) {
+      buffer.writeln(
+        '[${check.ok ? 'OK' : 'FAIL'}] ${check.name} '
+        '${check.elapsedMs} ms ${check.detail}',
+      );
+    }
+    await Clipboard.setData(ClipboardData(text: buffer.toString()));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.strings.text('Diagnostic report copied.')),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(strings.text('Connection diagnostics')),
+        actions: [
+          IconButton(
+            tooltip: strings.text('Run again'),
+            onPressed: rerun,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: FutureBuilder<NetworkDiagnosticReport>(
+          future: report,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(strings.text('Running diagnostics...')),
+                  ],
+                ),
+              );
+            }
+            if (snapshot.hasError) {
+              return _InlineError(
+                message: snapshot.error.toString(),
+                onRetry: rerun,
+              );
+            }
+            final value = snapshot.data!;
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              children: [
+                Card(
+                  elevation: 0,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: value.passed
+                              ? colors.primaryContainer
+                              : colors.errorContainer,
+                          child: Icon(
+                            value.passed
+                                ? Icons.check_rounded
+                                : Icons.error_outline,
+                            color: value.passed
+                                ? colors.onPrimaryContainer
+                                : colors.onErrorContainer,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                strings.text(
+                                  value.passed
+                                      ? 'Connection looks good'
+                                      : 'Connection has issues',
+                                ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                strings.format('Total latency: {ms} ms', {
+                                  'ms': value.totalMs,
+                                }),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: colors.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: strings.text('Copy'),
+                          onPressed: () => copyReport(value),
+                          icon: const Icon(Icons.copy),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  elevation: 0,
+                  child: _RoundedInkClip(
+                    child: Column(
+                      children: [
+                        _DiagnosticInfoTile(
+                          icon: Icons.dns_outlined,
+                          label: strings.text('Server'),
+                          value: value.serverUrl,
+                        ),
+                        const Divider(height: 1),
+                        _DiagnosticInfoTile(
+                          icon: Icons.public_outlined,
+                          label: strings.text('Image origin'),
+                          value: value.originUrl,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                for (final check in value.checks)
+                  Card(
+                    elevation: 0,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: Icon(
+                        check.ok
+                            ? Icons.check_circle_outline
+                            : Icons.error_outline,
+                        color: check.ok ? colors.primary : colors.error,
+                      ),
+                      title: Text(strings.text(check.name)),
+                      subtitle: SelectableText(
+                        check.detail.isEmpty ? '-' : check.detail,
+                      ),
+                      trailing: Text('${check.elapsedMs} ms'),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _DiagnosticInfoTile extends StatelessWidget {
+  const _DiagnosticInfoTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      subtitle: SelectableText(value),
+    );
+  }
+}
+
 class _LicenseNotice {
   const _LicenseNotice({required this.packages, required this.body});
 
@@ -2701,6 +2906,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final showLock = settingMatches(query, ['App lock', 'PIN', 'Security']);
     final showData = settingMatches(query, [
       'Refresh app data',
+      'Connection diagnostics',
+      'Network diagnostics',
+      'Server latency',
+      'API availability',
+      'Login status',
+      'Image domain',
       'Clear local cache',
       'Performance and cache',
       'Message cache',
@@ -3143,6 +3354,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               )
                             : const Icon(Icons.chevron_right),
                         onTap: refreshing ? null : refreshAll,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.network_check_outlined),
+                        title: Text(strings.text('Connection diagnostics')),
+                        subtitle: Text(
+                          strings.text(
+                            'Test server latency, API, login and image domain',
+                          ),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  NetworkDiagnosticsScreen(state: widget.state),
+                            ),
+                          );
+                        },
                       ),
                       const Divider(height: 1),
                       ListTile(

@@ -817,6 +817,11 @@ class CsacAppState extends ChangeNotifier {
     return cache.loadConversationMedia(conversation, kind: kind, query: query);
   }
 
+  Future<NetworkDiagnosticReport> runNetworkDiagnostics() async {
+    final imageUrl = await cache.latestImageUrl();
+    return client.runNetworkDiagnostics(imageUrl: imageUrl);
+  }
+
   Future<List<GroupMember>> loadGroupMembers(int roomId) {
     return client.groupMembers(roomId);
   }

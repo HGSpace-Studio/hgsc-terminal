@@ -22,6 +22,7 @@ import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_state.dart';
+import 'src/api_client.dart';
 import 'src/l10n.dart';
 import 'src/models.dart';
 import 'src/preferences.dart';

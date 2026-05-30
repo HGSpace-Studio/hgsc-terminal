@@ -552,6 +552,21 @@ class CsacLocalCache {
     return items;
   }
 
+  Future<String> latestImageUrl() async {
+    final db = await _database();
+    final rows = db.select('''
+      SELECT image_url
+      FROM messages
+      WHERE image_url <> ''
+      ORDER BY id DESC
+      LIMIT 1
+      ''');
+    if (rows.isEmpty) {
+      return '';
+    }
+    return normalizeApiUrl(asString(rows.first['image_url']));
+  }
+
   Future<void> saveMessages(
     Conversation conversation,
     List<ChatMessage> messages,

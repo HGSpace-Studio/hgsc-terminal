@@ -457,6 +457,8 @@ class ConversationScreen extends StatefulWidget {
   State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
+enum _ConversationGroupFilter { all, important, friends, groups, archived }
+
 class _ConversationScreenState extends State<ConversationScreen> {
   final search = TextEditingController();
   late final ScrollController conversationsScroll;
@@ -464,7 +466,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   Map<String, ConversationLocalPreference> conversationPrefs =
       const <String, ConversationLocalPreference>{};
   bool refreshing = false;
-  bool showArchived = false;
+  _ConversationGroupFilter groupFilter = _ConversationGroupFilter.all;
 
   @override
   void initState() {
@@ -516,8 +518,9 @@ class _ConversationScreenState extends State<ConversationScreen> {
     if (mounted) {
       setState(() {
         conversationPrefs = loaded;
-        if (!loaded.values.any((value) => value.archived)) {
-          showArchived = false;
+        if (groupFilter == _ConversationGroupFilter.archived &&
+            !loaded.values.any((value) => value.archived)) {
+          groupFilter = _ConversationGroupFilter.all;
         }
       });
     }
@@ -545,11 +548,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     .toLowerCase();
             return target.contains(query);
           }).toList();
-    final visible = searched
-        .where(
-          (conversation) => localPref(conversation).archived == showArchived,
-        )
-        .toList();
+    final visible = searched.where(conversationInCurrentGroup).toList();
     visible.sort((a, b) {
       final aPref = localPref(a);
       final bPref = localPref(b);
@@ -559,6 +558,59 @@ class _ConversationScreenState extends State<ConversationScreen> {
       return searched.indexOf(a).compareTo(searched.indexOf(b));
     });
     return visible;
+  }
+
+  bool conversationInCurrentGroup(Conversation conversation) {
+    final pref = localPref(conversation);
+    switch (groupFilter) {
+      case _ConversationGroupFilter.all:
+        return !pref.archived;
+      case _ConversationGroupFilter.important:
+        return !pref.archived && pref.pinned;
+      case _ConversationGroupFilter.friends:
+        return !pref.archived && conversation.type == ConversationType.private;
+      case _ConversationGroupFilter.groups:
+        return !pref.archived && conversation.type == ConversationType.group;
+      case _ConversationGroupFilter.archived:
+        return pref.archived;
+    }
+  }
+
+  int groupCount(_ConversationGroupFilter filter) {
+    return widget.state.conversations.where((conversation) {
+      final pref = localPref(conversation);
+      switch (filter) {
+        case _ConversationGroupFilter.all:
+          return !pref.archived;
+        case _ConversationGroupFilter.important:
+          return !pref.archived && pref.pinned;
+        case _ConversationGroupFilter.friends:
+          return !pref.archived &&
+              conversation.type == ConversationType.private;
+        case _ConversationGroupFilter.groups:
+          return !pref.archived && conversation.type == ConversationType.group;
+        case _ConversationGroupFilter.archived:
+          return pref.archived;
+      }
+    }).length;
+  }
+
+  String emptyMessageForGroup(String query) {
+    if (query.isNotEmpty) {
+      return 'No matching conversations.';
+    }
+    switch (groupFilter) {
+      case _ConversationGroupFilter.all:
+        return 'No active conversations.';
+      case _ConversationGroupFilter.important:
+        return 'No important conversations.';
+      case _ConversationGroupFilter.friends:
+        return 'No friend conversations.';
+      case _ConversationGroupFilter.groups:
+        return 'No group conversations.';
+      case _ConversationGroupFilter.archived:
+        return 'No archived conversations.';
+    }
   }
 
   Future<void> updateLocalPreference(
@@ -703,9 +755,13 @@ class _ConversationScreenState extends State<ConversationScreen> {
     final strings = context.strings;
     final query = search.text.trim().toLowerCase();
     final conversations = visibleConversations(query);
-    final archivedCount = widget.state.conversations
-        .where((conversation) => localPref(conversation).archived)
-        .length;
+    final groupFilters = <_ConversationGroupFilter>[
+      _ConversationGroupFilter.all,
+      _ConversationGroupFilter.important,
+      _ConversationGroupFilter.friends,
+      _ConversationGroupFilter.groups,
+      _ConversationGroupFilter.archived,
+    ];
     final content = RefreshIndicator(
       onRefresh: refresh,
       child: ListView(
@@ -797,44 +853,42 @@ class _ConversationScreenState extends State<ConversationScreen> {
               ),
             ),
           ),
-          if (archivedCount > 0)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
-              child: SegmentedButton<bool>(
-                segments: [
-                  ButtonSegment<bool>(
-                    value: false,
-                    icon: const Icon(Icons.chat_bubble_outline),
-                    label: Text(strings.text('Active')),
-                  ),
-                  ButtonSegment<bool>(
-                    value: true,
-                    icon: const Icon(Icons.archive_outlined),
-                    label: Text(
-                      strings.format('Archived ({count})', {
-                        'count': archivedCount,
-                      }),
-                    ),
-                  ),
-                ],
-                selected: {showArchived},
-                onSelectionChanged: (selection) {
-                  setState(() => showArchived = selection.first);
-                },
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+            child: ScrollConfiguration(
+              behavior: const _HorizontalDragScrollBehavior(),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final filter in groupFilters)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          showCheckmark: false,
+                          avatar: Icon(
+                            _conversationGroupIcon(filter),
+                            size: 18,
+                          ),
+                          label: Text(
+                            strings.format(_conversationGroupLabel(filter), {
+                              'count': groupCount(filter),
+                            }),
+                          ),
+                          selected: groupFilter == filter,
+                          onSelected: (_) =>
+                              setState(() => groupFilter = filter),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
+          ),
           if (widget.state.conversations.isEmpty)
             _EmptyPanel(message: strings.text('No conversations yet.'))
           else if (conversations.isEmpty)
-            _EmptyPanel(
-              message: strings.text(
-                showArchived
-                    ? 'No archived conversations.'
-                    : query.isEmpty
-                    ? 'No active conversations.'
-                    : 'No matching conversations.',
-              ),
-            )
+            _EmptyPanel(message: strings.text(emptyMessageForGroup(query)))
           else
             for (final entry in conversations.indexed)
               _MotionListItem(
@@ -929,6 +983,49 @@ class _ConversationScreenState extends State<ConversationScreen> {
       body: SafeArea(top: widget.embedded, child: content),
     );
   }
+}
+
+String _conversationGroupLabel(_ConversationGroupFilter filter) {
+  switch (filter) {
+    case _ConversationGroupFilter.all:
+      return 'All conversations ({count})';
+    case _ConversationGroupFilter.important:
+      return 'Important ({count})';
+    case _ConversationGroupFilter.friends:
+      return 'Friends ({count})';
+    case _ConversationGroupFilter.groups:
+      return 'Groups ({count})';
+    case _ConversationGroupFilter.archived:
+      return 'Archived ({count})';
+  }
+}
+
+IconData _conversationGroupIcon(_ConversationGroupFilter filter) {
+  switch (filter) {
+    case _ConversationGroupFilter.all:
+      return Icons.inbox_outlined;
+    case _ConversationGroupFilter.important:
+      return Icons.push_pin_outlined;
+    case _ConversationGroupFilter.friends:
+      return Icons.person_outline;
+    case _ConversationGroupFilter.groups:
+      return Icons.groups_outlined;
+    case _ConversationGroupFilter.archived:
+      return Icons.archive_outlined;
+  }
+}
+
+class _HorizontalDragScrollBehavior extends MaterialScrollBehavior {
+  const _HorizontalDragScrollBehavior();
+
+  @override
+  Set<ui.PointerDeviceKind> get dragDevices => const {
+    ui.PointerDeviceKind.touch,
+    ui.PointerDeviceKind.mouse,
+    ui.PointerDeviceKind.trackpad,
+    ui.PointerDeviceKind.stylus,
+    ui.PointerDeviceKind.unknown,
+  };
 }
 
 class _ConversationTile extends StatelessWidget {

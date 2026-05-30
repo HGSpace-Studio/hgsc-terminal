@@ -21,6 +21,38 @@ class CsacAuthException extends CsacApiException {
   const CsacAuthException(super.message);
 }
 
+class NetworkDiagnosticReport {
+  const NetworkDiagnosticReport({
+    required this.serverUrl,
+    required this.originUrl,
+    required this.startedAt,
+    required this.totalMs,
+    required this.checks,
+  });
+
+  final String serverUrl;
+  final String originUrl;
+  final DateTime startedAt;
+  final int totalMs;
+  final List<NetworkDiagnosticCheck> checks;
+
+  bool get passed => checks.every((check) => check.ok);
+}
+
+class NetworkDiagnosticCheck {
+  const NetworkDiagnosticCheck({
+    required this.name,
+    required this.ok,
+    required this.elapsedMs,
+    this.detail = '',
+  });
+
+  final String name;
+  final bool ok;
+  final int elapsedMs;
+  final String detail;
+}
+
 class CsacApiClient {
   CsacApiClient({http.Client? httpClient, String baseUrl = defaultBaseUrl})
     : _http = httpClient ?? http.Client(),
@@ -182,6 +214,69 @@ class CsacApiClient {
       throw const CsacApiException('Server did not return user info.');
     }
     return CsacUser.fromJson(user);
+  }
+
+  Future<NetworkDiagnosticReport> runNetworkDiagnostics({
+    String? imageUrl,
+  }) async {
+    final startedAt = DateTime.now();
+    final total = Stopwatch()..start();
+    final checks = <NetworkDiagnosticCheck>[];
+    checks.add(
+      await _diagnosticCheck('Server latency', () async {
+        final response = await _sendOnce(
+          http.Request('GET', Uri.parse(originUrl)),
+        ).timeout(const Duration(seconds: 8));
+        if (response.statusCode < 200 || response.statusCode >= 500) {
+          throw CsacApiException('HTTP ${response.statusCode}');
+        }
+        return 'HTTP ${response.statusCode}';
+      }),
+    );
+    checks.add(
+      await _diagnosticCheck('API availability', () async {
+        final data = await get('user/get_info');
+        return data['success'] == true
+            ? 'API returned success'
+            : 'API reachable';
+      }),
+    );
+    checks.add(
+      await _diagnosticCheck('Login status', () async {
+        final user = await currentUser();
+        final name = user.nickname.isNotEmpty ? user.nickname : user.username;
+        return name.isEmpty ? 'UID ${user.uid}' : '$name / UID ${user.uid}';
+      }),
+    );
+    final targetImage = imageUrl?.trim();
+    checks.add(
+      targetImage == null || targetImage.isEmpty
+          ? const NetworkDiagnosticCheck(
+              name: 'Image domain',
+              ok: true,
+              elapsedMs: 0,
+              detail: 'No image URL cached yet',
+            )
+          : await _diagnosticCheck('Image domain', () async {
+              final uri = Uri.parse(targetImage);
+              final response = await _sendOnce(
+                _binaryRequest(uri, 'image/*, */*'),
+              ).timeout(const Duration(seconds: 8));
+              if (response.statusCode < 200 || response.statusCode >= 400) {
+                throw CsacApiException('HTTP ${response.statusCode}');
+              }
+              final type = response.headers['content-type'] ?? 'unknown';
+              return '$type, ${response.bodyBytes.length} B';
+            }),
+    );
+    total.stop();
+    return NetworkDiagnosticReport(
+      serverUrl: baseUrl,
+      originUrl: originUrl,
+      startedAt: startedAt,
+      totalMs: total.elapsedMilliseconds,
+      checks: checks,
+    );
   }
 
   Future<void> updateNickname(String nickname) {
@@ -881,6 +976,31 @@ class CsacApiClient {
       );
     }
     return response.bodyBytes;
+  }
+
+  Future<NetworkDiagnosticCheck> _diagnosticCheck(
+    String name,
+    Future<String> Function() run,
+  ) async {
+    final timer = Stopwatch()..start();
+    try {
+      final detail = await run();
+      timer.stop();
+      return NetworkDiagnosticCheck(
+        name: name,
+        ok: true,
+        elapsedMs: timer.elapsedMilliseconds,
+        detail: detail,
+      );
+    } catch (err) {
+      timer.stop();
+      return NetworkDiagnosticCheck(
+        name: name,
+        ok: false,
+        elapsedMs: timer.elapsedMilliseconds,
+        detail: err.toString(),
+      );
+    }
   }
 
   http.Request _binaryRequest(Uri uri, String accept) {
