@@ -24,6 +24,12 @@ on:
         default: false
         type: boolean
 
+      version_changelog:
+        description: Version changelog used as the GitHub Release body
+        required: false
+        default: ""
+        type: string
+
 permissions:
   actions: read
   contents: write
@@ -416,8 +422,21 @@ jobs:
 
           sha256sum release-upload/* > release-upload/SHA256SUMS.txt
 
+      - name: Prepare release notes
+        env:
+          RELEASE_CHANGELOG: ${{ github.event.inputs.version_changelog }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${RELEASE_CHANGELOG//[[:space:]]/}" ]]; then
+            printf '%s\n' "$RELEASE_CHANGELOG" > release-body.md
+          else
+            printf 'No changelog provided.\n' > release-body.md
+          fi
+
       - name: Upload release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
+          body_path: release-body.md
           files: release-upload/*
