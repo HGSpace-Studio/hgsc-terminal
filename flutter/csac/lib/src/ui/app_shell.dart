@@ -350,7 +350,6 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   void maybePrimeLocalNotificationPermission() {
     if (localNotificationPermissionPrimed ||
         state.bootstrapping ||
-        state.user == null ||
         !state.preferences.localSystemNotificationsEnabled) {
       return;
     }

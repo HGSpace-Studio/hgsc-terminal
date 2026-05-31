@@ -27,7 +27,7 @@ import flutter_local_notifications
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  func application(
+  override func application(
     _ application: UIApplication,
     performFetchWithCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
   ) {
