@@ -8,6 +8,35 @@ String compactMessage(String text, {int max = 80}) {
   return '${value.substring(0, max - 3)}...';
 }
 
+double chatBubbleMaxWidth(BuildContext context, {bool showAvatar = false}) {
+  final screenWidth = MediaQuery.sizeOf(context).width;
+  final reservedWidth = showAvatar ? 64.0 : 24.0;
+  final available = math.max(180.0, screenWidth - reservedWidth);
+  return math.min(360.0, math.max(176.0, available * 0.72));
+}
+
+String chatMessagePlainText(ChatMessage message, CsacStrings strings) {
+  if (message.isRecalled) {
+    return strings.text('[recalled]');
+  }
+  if (message.emojiAddress.isNotEmpty || message.messageType == 5) {
+    final name = message.emojiAbbr.trim();
+    return name.isEmpty
+        ? strings.text('[emoji]')
+        : strings.format('[emoji] {abbr}', {'abbr': name});
+  }
+  if (message.imageUrl.isNotEmpty && message.body.startsWith('[image]')) {
+    return strings.text('[image]');
+  }
+  if (message.voiceUrl.isNotEmpty && message.body.startsWith('[voice]')) {
+    return strings.text('[voice]');
+  }
+  if (message.fileUrl.isNotEmpty && message.body.startsWith('[file]')) {
+    return strings.text('[file]');
+  }
+  return message.body;
+}
+
 CsacTimestampPattern timestampPatternForPreference(MessageTimeFormat format) {
   switch (format) {
     case MessageTimeFormat.slash:
@@ -112,23 +141,7 @@ String pickedImageFileName(XFile picked, ImageSource source) {
 }
 
 Future<String> persistChatBackground(XFile picked) async {
-  final support = await getApplicationSupportDirectory();
-  final directory = Directory(p.join(support.path, 'backgrounds'));
-  if (!directory.existsSync()) {
-    directory.createSync(recursive: true);
-  }
-  final extension = p.extension(picked.name).trim().isEmpty
-      ? '.jpg'
-      : p.extension(picked.name);
-  final target = File(
-    p.join(
-      directory.path,
-      'chat_background_${DateTime.now().millisecondsSinceEpoch}$extension',
-    ),
-  );
-  final bytes = await picked.readAsBytes();
-  await target.writeAsBytes(bytes, flush: true);
-  return target.path;
+  return persistChatBackgroundFile(picked);
 }
 
 extension FirstOrNullExtension<T> on Iterable<T> {

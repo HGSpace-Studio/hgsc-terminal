@@ -4073,18 +4073,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SwitchListTile(
-                secondary: const Icon(Icons.fingerprint),
-                title: Text(context.strings.text('Biometric unlock')),
-                subtitle: Text(
-                  context.strings.text('Use device biometrics when available'),
+              if (supportsLocalAuth) ...[
+                SwitchListTile(
+                  secondary: const Icon(Icons.fingerprint),
+                  title: Text(context.strings.text('Biometric unlock')),
+                  subtitle: Text(
+                    context.strings.text(
+                      'Use device biometrics when available',
+                    ),
+                  ),
+                  value: widget.state.preferences.appLockBiometricEnabled,
+                  onChanged: (value) => Navigator.of(
+                    context,
+                  ).pop(value ? 'biometricOn' : 'biometricOff'),
                 ),
-                value: widget.state.preferences.appLockBiometricEnabled,
-                onChanged: (value) => Navigator.of(
-                  context,
-                ).pop(value ? 'biometricOn' : 'biometricOff'),
-              ),
-              const Divider(height: 1),
+                const Divider(height: 1),
+              ],
               ListTile(
                 leading: const Icon(Icons.pin_outlined),
                 title: Text(context.strings.text('Change PIN')),
@@ -4220,35 +4224,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                context.strings.text('Theme color'),
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
+        child: _RoundedInkClip(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            child: SizedBox(
+              width: double.infinity,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final option in themeColorOptions)
-                    _ThemeColorButton(
-                      option: option,
-                      selected:
-                          option.color.toARGB32() ==
-                          widget.state.preferences.themeColorValue,
-                      onTap: () =>
-                          Navigator.of(context).pop(option.color.toARGB32()),
+                  Text(
+                    context.strings.text('Theme color'),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (final option in themeColorOptions)
+                        _ThemeColorButton(
+                          option: option,
+                          selected:
+                              option.color.toARGB32() ==
+                              widget.state.preferences.themeColorValue,
+                          onTap: () => Navigator.of(
+                            context,
+                          ).pop(option.color.toARGB32()),
+                        ),
+                    ],
+                  ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -4459,38 +4469,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                context.strings.text(title),
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
+        child: _RoundedInkClip(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            child: SizedBox(
+              width: double.infinity,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _FollowThemeColorButton(
-                    selected: current == defaultChatBubbleColorValue,
-                    onTap: () =>
-                        Navigator.of(context).pop(defaultChatBubbleColorValue),
-                  ),
-                  for (final option in chatBubbleColorOptions)
-                    _ThemeColorButton(
-                      option: option,
-                      selected: option.color.toARGB32() == current,
-                      onTap: () =>
-                          Navigator.of(context).pop(option.color.toARGB32()),
+                  Text(
+                    context.strings.text(title),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _FollowThemeColorButton(
+                        selected: current == defaultChatBubbleColorValue,
+                        onTap: () => Navigator.of(
+                          context,
+                        ).pop(defaultChatBubbleColorValue),
+                      ),
+                      for (final option in chatBubbleColorOptions)
+                        _ThemeColorButton(
+                          option: option,
+                          selected: option.color.toARGB32() == current,
+                          onTap: () => Navigator.of(
+                            context,
+                          ).pop(option.color.toARGB32()),
+                        ),
+                    ],
+                  ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -4515,6 +4532,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> chooseChatBackground() async {
+    if (isWebPlatform) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.strings.text(
+              'Chat background files are not supported on Web.',
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -4659,6 +4688,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'App logs',
       'View app logs',
       'Diagnostics',
+      'System notifications',
+      'Local notifications',
+      'New message alerts',
       'Low performance mode',
       'Cache',
       'Cached conversations and message history',
@@ -5223,6 +5255,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               )
                             : const Icon(Icons.chevron_right),
                         onTap: refreshing ? null : refreshAll,
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        secondary: const Icon(
+                          Icons.notifications_active_outlined,
+                        ),
+                        title: Text(strings.text('System notifications')),
+                        subtitle: Text(
+                          strings.text(
+                            'Show local system alerts for new messages',
+                          ),
+                        ),
+                        value: widget
+                            .state
+                            .preferences
+                            .localSystemNotificationsEnabled,
+                        onChanged: widget.state.updateLocalSystemNotifications,
                       ),
                       const Divider(height: 1),
                       ListTile(

@@ -31,7 +31,8 @@ class _AppLockScreenState extends State<AppLockScreen> {
   }
 
   Future<void> checkBiometric() async {
-    if (!widget.state.preferences.appLockBiometricEnabled) {
+    if (!supportsLocalAuth ||
+        !widget.state.preferences.appLockBiometricEnabled) {
       return;
     }
     try {
@@ -52,7 +53,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   }
 
   Future<void> unlockWithBiometric() async {
-    if (checkingBiometric) {
+    if (!supportsLocalAuth || checkingBiometric) {
       return;
     }
     setState(() {
@@ -145,7 +146,8 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     label: strings.text('PIN'),
                     helperText: strings.text('4-8 digits'),
                     leadingIcon:
-                        widget.state.preferences.appLockBiometricEnabled &&
+                        supportsLocalAuth &&
+                            widget.state.preferences.appLockBiometricEnabled &&
                             biometricAvailable
                         ? Icons.fingerprint
                         : null,

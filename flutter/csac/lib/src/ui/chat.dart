@@ -11,6 +11,7 @@ class _PendingSend {
     this.voiceBytes,
     this.voiceName = '',
     this.voiceDuration = 0,
+    this.emoji,
     this.replyTo = 0,
     this.mentionUids = const <int>[],
     this.status = _PendingSendStatus.sending,
@@ -24,6 +25,7 @@ class _PendingSend {
   final Uint8List? voiceBytes;
   final String voiceName;
   final int voiceDuration;
+  final EmojiSticker? emoji;
   final int replyTo;
   final List<int> mentionUids;
   final _PendingSendStatus status;
@@ -31,6 +33,7 @@ class _PendingSend {
 
   bool get hasImage => imageBytes != null;
   bool get hasVoice => voiceBytes != null;
+  bool get hasEmoji => emoji != null;
 
   _PendingSend copyWith({
     String? text,
@@ -39,6 +42,7 @@ class _PendingSend {
     Uint8List? voiceBytes,
     String? voiceName,
     int? voiceDuration,
+    EmojiSticker? emoji,
     int? replyTo,
     List<int>? mentionUids,
     _PendingSendStatus? status,
@@ -52,6 +56,7 @@ class _PendingSend {
       voiceBytes: voiceBytes ?? this.voiceBytes,
       voiceName: voiceName ?? this.voiceName,
       voiceDuration: voiceDuration ?? this.voiceDuration,
+      emoji: emoji ?? this.emoji,
       replyTo: replyTo ?? this.replyTo,
       mentionUids: mentionUids ?? this.mentionUids,
       status: status ?? this.status,
@@ -114,6 +119,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool recordingVoice = false;
   bool applyingDraft = false;
   bool mentionPickerOpening = false;
+  bool emojiPickerOpening = false;
   bool offline = false;
   bool nearBottom = true;
   bool loadingOlder = false;
@@ -152,6 +158,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return messages[index].id;
   }
 
+  int? get firstUnreadMessageIndex {
+    if (initialUnreadCount <= 0 || messages.isEmpty) {
+      return null;
+    }
+    return (messages.length - initialUnreadCount).clamp(0, messages.length - 1);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -163,6 +176,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     widget.state.markConversationRead(widget.conversation);
     input.addListener(scheduleDraftSave);
     input.addListener(handleMentionTrigger);
+    input.addListener(handleEmojiTrigger);
     input.addListener(handleInputChanged);
     scroll.addListener(handleScroll);
     bindVoicePlayer();
@@ -189,6 +203,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     scroll.removeListener(handleScroll);
     input.removeListener(scheduleDraftSave);
     input.removeListener(handleMentionTrigger);
+    input.removeListener(handleEmojiTrigger);
     input.removeListener(handleInputChanged);
     input.dispose();
     inputFocus.dispose();
@@ -382,6 +397,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         await chooseMentionTargets();
       } finally {
         mentionPickerOpening = false;
+      }
+    });
+  }
+
+  void handleEmojiTrigger() {
+    if (emojiPickerOpening || applyingDraft) {
+      return;
+    }
+    final selection = input.selection;
+    if (!selection.isValid || !selection.isCollapsed || selection.start <= 0) {
+      return;
+    }
+    final text = input.text;
+    final cursor = selection.start;
+    if (cursor > text.length || text[cursor - 1] != '#') {
+      return;
+    }
+    final beforeHash = cursor == 1 ? ' ' : text[cursor - 2];
+    if (beforeHash.trim().isNotEmpty) {
+      return;
+    }
+    emojiPickerOpening = true;
+    final triggerIndex = cursor - 1;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await openEmojiStickerPicker(triggerIndex: triggerIndex);
+      } finally {
+        emojiPickerOpening = false;
       }
     });
   }
@@ -841,6 +884,97 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> openEmojiStickerPicker({int? triggerIndex}) async {
+    try {
+      final stickers = await widget.state.loadEmojiStickers();
+      if (!mounted) {
+        return;
+      }
+      final recentStickers = await EmojiRecentStore.load();
+      if (!mounted) {
+        return;
+      }
+      final selected = await showModalBottomSheet<EmojiSticker>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        builder: (context) => _EmojiStickerPicker(
+          stickers: stickers,
+          recentStickers: recentStickers,
+        ),
+      );
+      if (!mounted || selected == null) {
+        return;
+      }
+      removeEmojiTrigger(triggerIndex);
+      await sendEmojiSticker(selected);
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      setState(
+        () => error = context.strings.format(
+          'Load emoji stickers failed: {error}',
+          {'error': err},
+        ),
+      );
+    }
+  }
+
+  void removeEmojiTrigger(int? triggerIndex) {
+    if (triggerIndex == null || triggerIndex < 0) {
+      return;
+    }
+    final text = input.text;
+    if (triggerIndex >= text.length || text[triggerIndex] != '#') {
+      return;
+    }
+    final selection = input.selection;
+    final nextText = text.replaceRange(triggerIndex, triggerIndex + 1, '');
+    final baseOffset = selection.isValid ? selection.baseOffset : triggerIndex;
+    final extentOffset = selection.isValid
+        ? selection.extentOffset
+        : triggerIndex;
+    final nextBase = math.max(
+      0,
+      baseOffset - (baseOffset > triggerIndex ? 1 : 0),
+    );
+    final nextExtent = math.max(
+      0,
+      extentOffset - (extentOffset > triggerIndex ? 1 : 0),
+    );
+    input.value = input.value.copyWith(
+      text: nextText,
+      selection: TextSelection(
+        baseOffset: nextBase.clamp(0, nextText.length),
+        extentOffset: nextExtent.clamp(0, nextText.length),
+      ),
+      composing: TextRange.empty,
+    );
+    unawaited(saveDraftNow());
+  }
+
+  Future<void> sendEmojiSticker(EmojiSticker sticker) async {
+    final pending = _PendingSend(
+      localId: nextPendingId--,
+      text: '',
+      emoji: sticker,
+      replyTo: replyTarget?.id ?? 0,
+      mentionUids: mentionTargets.map((member) => member.uid).toList(),
+    );
+    setState(() {
+      pendingSends.add(pending);
+      replyTarget = null;
+      mentionTargets.clear();
+      error = null;
+    });
+    await EmojiRecentStore.record(sticker);
+    await clearDraft();
+    scrollToEnd();
+    unawaited(performPendingSend(pending.localId));
+  }
+
   Future<void> pickAndSendVoice() async {
     if (pickingVoice) {
       return;
@@ -899,6 +1033,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> recordAndSendVoice() async {
+    if (!supportsVoiceRecording) {
+      setState(
+        () => error = context.strings.text(
+          'Voice recording is not supported on this platform.',
+        ),
+      );
+      return;
+    }
     if (recordingVoice) {
       return;
     }
@@ -912,8 +1054,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (!mounted || recorded == null) {
         return;
       }
-      final file = File(recorded.path);
-      if (!await file.exists()) {
+      final bytes = await readLocalFileBytes(recorded.path);
+      if (bytes == null) {
         if (mounted) {
           setState(
             () => error = context.strings.text('Recording file missing.'),
@@ -921,12 +1063,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         }
         return;
       }
-      final bytes = await file.readAsBytes();
       final pending = _PendingSend(
         localId: nextPendingId--,
         text: '',
         voiceBytes: bytes,
-        voiceName: p.basename(recorded.path),
+        voiceName: basenameOfPath(recorded.path),
         voiceDuration: recorded.durationSeconds,
         replyTo: replyTarget?.id ?? 0,
       );
@@ -1018,6 +1159,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           pending.voiceName,
           duration: pending.voiceDuration,
           replyTo: pending.replyTo,
+        );
+      } else if (pending.hasEmoji) {
+        await widget.state.sendEmojiMessage(
+          widget.conversation,
+          pending.emoji!,
         );
       } else {
         await widget.state.client.sendMessage(
@@ -1208,6 +1354,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final recalled = message.copyWith(
         body: recalledBody,
         imageUrl: '',
+        emojiAddress: '',
+        emojiAbbr: '',
         canRecall: false,
         isRecalled: true,
       );
@@ -1280,7 +1428,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         final time = displayMessageTime(message, widget.state.preferences);
         Clipboard.setData(
           ClipboardData(
-            text: '#${message.id} ${message.sender}\n$time\n\n${message.body}',
+            text:
+                '#${message.id} ${message.sender}\n$time\n\n${chatMessagePlainText(message, context.strings)}',
           ),
         );
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1357,10 +1506,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         label: strings.text('Take photo'),
       ),
       _ComposeMenuAction(
-        value: 'recordVoice',
-        icon: Icons.mic,
-        label: strings.text('Record voice'),
+        value: 'emoji',
+        icon: Icons.emoji_emotions_outlined,
+        label: strings.text('Emoji stickers'),
       ),
+      if (supportsVoiceRecording)
+        _ComposeMenuAction(
+          value: 'recordVoice',
+          icon: Icons.mic,
+          label: strings.text('Record voice'),
+        ),
       _ComposeMenuAction(
         value: 'voiceFile',
         icon: Icons.audio_file_outlined,
@@ -1383,11 +1538,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         icon: Icons.perm_media_outlined,
         label: strings.text('Media'),
       ),
-      _ComposeMenuAction(
-        value: 'export',
-        icon: Icons.ios_share_outlined,
-        label: strings.text('Export'),
-      ),
+      if (supportsLocalFiles)
+        _ComposeMenuAction(
+          value: 'export',
+          icon: Icons.ios_share_outlined,
+          label: strings.text('Export'),
+        ),
     ];
   }
 
@@ -1408,6 +1564,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         break;
       case 'camera':
         await pickAndSendImage(source: ImageSource.camera);
+        break;
+      case 'emoji':
+        await openEmojiStickerPicker();
         break;
       case 'recordVoice':
         await recordAndSendVoice();
@@ -1587,20 +1746,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return [
       '#${message.id} ${message.sender}',
       if (time.isNotEmpty) time,
-      if (message.body.trim().isNotEmpty) message.body.trim(),
+      if (chatMessagePlainText(message, context.strings).trim().isNotEmpty)
+        chatMessagePlainText(message, context.strings).trim(),
       if (message.imageUrl.isNotEmpty) message.imageUrl,
       if (message.voiceUrl.isNotEmpty) message.voiceUrl,
+      if (message.emojiAddress.isNotEmpty) message.emojiAddress,
     ].join('\n');
   }
 
   String formatMessageForForward(ChatMessage message) {
     return [
       '${message.sender}:',
-      if (message.body.trim().isNotEmpty) message.body.trim(),
+      if (chatMessagePlainText(message, context.strings).trim().isNotEmpty)
+        chatMessagePlainText(message, context.strings).trim(),
       if (message.imageUrl.isNotEmpty)
         context.strings.format('Image: {url}', {'url': message.imageUrl}),
       if (message.voiceUrl.isNotEmpty)
         context.strings.format('Voice: {url}', {'url': message.voiceUrl}),
+      if (message.emojiAbbr.isNotEmpty)
+        context.strings.format('Emoji: {abbr}', {'abbr': message.emojiAbbr}),
     ].join('\n');
   }
 
@@ -1622,6 +1786,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           await voicePlayer.setSpeed(voiceSpeed);
           await voicePlayer.play();
         }
+        return;
+      }
+      if (isWebPlatform) {
+        await voicePlayer.setUrl(message.voiceUrl);
+        setState(() {
+          playingVoiceMessageId = message.id;
+          voiceDuration = message.voiceDuration > 0
+              ? Duration(seconds: message.voiceDuration)
+              : Duration.zero;
+          voicePosition = Duration.zero;
+          voicePlayerState = PlayerState(true, ProcessingState.loading);
+        });
+        await voicePlayer.setSpeed(voiceSpeed);
+        await voicePlayer.play();
         return;
       }
       await voicePlayer.stop();
@@ -1660,43 +1838,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<String> cachedVoicePath(ChatMessage message) async {
     final existing = voiceCachePaths[message.id];
     if (existing != null &&
-        await File(existing).exists() &&
-        !await fileLooksLikeHtml(existing)) {
+        await localFileExists(existing) &&
+        !await localFileLooksLikeHtml(existing)) {
       return existing;
     }
     final uri = Uri.parse(message.voiceUrl);
-    final extension = p.extension(uri.path).isEmpty
-        ? '.m4a'
-        : p.extension(uri.path);
-    final directory = await getTemporaryDirectory();
-    final path = p.join(directory.path, 'csac_voice_${message.id}$extension');
-    final file = File(path);
-    if (await file.exists() &&
-        await file.length() > 0 &&
-        !await fileLooksLikeHtml(file.path)) {
-      voiceCachePaths[message.id] = path;
-      return path;
-    }
-    final bytes = await widget.state.client.getBinary(
-      uri.toString(),
-      accept: 'audio/*, application/octet-stream, */*',
+    final path = await cacheVoiceBytes(
+      messageId: message.id,
+      sourceUrl: uri.toString(),
+      loadBytes: () => widget.state.client.getBinary(
+        uri.toString(),
+        accept: 'audio/*, application/octet-stream, */*',
+      ),
     );
-    await file.writeAsBytes(bytes, flush: true);
     voiceCachePaths[message.id] = path;
     return path;
-  }
-
-  Future<bool> fileLooksLikeHtml(String path) async {
-    final file = File(path);
-    if (!await file.exists()) {
-      return false;
-    }
-    final stream = file.openRead(0, math.min(256, await file.length()));
-    final bytes = await stream.expand((chunk) => chunk).toList();
-    final text = String.fromCharCodes(bytes).trimLeft().toLowerCase();
-    return text.startsWith('<!doctype html') ||
-        text.startsWith('<html') ||
-        text.startsWith('<script');
   }
 
   Future<void> seekVoice(Duration position) async {
@@ -1869,6 +2025,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final announcement = groupProfile?.notice.trim() ?? '';
     final showEmpty = !loading && messages.isEmpty && pendingSends.isEmpty;
     final unreadMessageId = firstUnreadMessageId;
+    final unreadDividerIndex = firstUnreadMessageIndex;
     final backgroundPath = widget.state.preferences.chatBackgroundPath.trim();
     return Scaffold(
       appBar: AppBar(
@@ -1954,13 +2111,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         title: Text(strings.text('Media and files')),
                       ),
                     ),
-                    PopupMenuItem(
-                      value: 'export',
-                      child: ListTile(
-                        leading: const Icon(Icons.ios_share_outlined),
-                        title: Text(strings.text('Export chat history')),
+                    if (supportsLocalFiles)
+                      PopupMenuItem(
+                        value: 'export',
+                        child: ListTile(
+                          leading: const Icon(Icons.ios_share_outlined),
+                          title: Text(strings.text('Export chat history')),
+                        ),
                       ),
-                    ),
                   ],
                   icon: const Icon(Icons.more_vert),
                 ),
@@ -2064,7 +2222,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               itemCount:
                                   messages.length +
                                   pendingSends.length +
-                                  (loadingOlder ? 1 : 0),
+                                  (loadingOlder ? 1 : 0) +
+                                  (unreadDividerIndex == null ? 0 : 1),
                               itemBuilder: (context, index) {
                                 if (loadingOlder && index == 0) {
                                   return const Padding(
@@ -2080,8 +2239,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     ),
                                   );
                                 }
-                                final messageIndex =
+                                var messageIndex =
                                     index - (loadingOlder ? 1 : 0);
+                                if (unreadDividerIndex != null &&
+                                    messageIndex == unreadDividerIndex) {
+                                  return _MotionListItem(
+                                    index: messageIndex,
+                                    child: _UnreadDivider(
+                                      count: initialUnreadCount,
+                                    ),
+                                  );
+                                }
+                                if (unreadDividerIndex != null &&
+                                    messageIndex > unreadDividerIndex) {
+                                  messageIndex -= 1;
+                                }
                                 if (messageIndex >= messages.length) {
                                   final pending =
                                       pendingSends[messageIndex -
@@ -2657,6 +2829,12 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final memberLevelText = widget.showMemberLevel
         ? _memberLevelText(widget.message)
         : '';
+    final messageText = chatMessagePlainText(widget.message, strings);
+    final hasEmoji = widget.message.emojiAddress.isNotEmpty;
+    final maxBubbleWidth = chatBubbleMaxWidth(
+      context,
+      showAvatar: widget.showAvatar,
+    );
     final imageHeroTag = widget.message.imageUrl.isEmpty
         ? null
         : chatImageHeroTag(widget.message);
@@ -2710,7 +2888,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
           AnimatedContainer(
             duration: 180.ms,
             curve: Curves.easeOutCubic,
-            constraints: const BoxConstraints(maxWidth: 320),
+            constraints: BoxConstraints(
+              minWidth: widget.showReadStatus ? 76 : 0,
+              maxWidth: maxBubbleWidth,
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
               color: widget.pressed
@@ -2736,105 +2917,134 @@ class _MessageBubbleState extends State<_MessageBubble> {
                     ]
                   : null,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+            child: Stack(
+              clipBehavior: Clip.none,
               children: [
-                if (widget.message.replyTo > 0) ...[
-                  InkWell(
-                    onTap: widget.onReplyTap,
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: replyColor,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        widget.replyMessage == null
-                            ? strings.format('Reply #{id}', {
-                                'id': widget.message.replyTo,
-                              })
-                            : strings.format('Reply {sender}: {message}', {
-                                'sender': widget.replyMessage!.sender,
-                                'message': compactMessage(
-                                  widget.replyMessage!.body,
-                                ),
-                              }),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: secondaryTextColor,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
+                Padding(
+                  padding: EdgeInsets.only(
+                    bottom: widget.showReadStatus ? 18 : 0,
                   ),
-                  const SizedBox(height: 6),
-                ],
-                if (widget.message.isMentioned || widget.message.isEssence) ...[
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (widget.message.isMentioned)
-                        Chip(
-                          avatar: const Icon(Icons.alternate_email, size: 16),
-                          label: Text(strings.text('Mentioned')),
-                          visualDensity: VisualDensity.compact,
+                      if (widget.message.replyTo > 0) ...[
+                        InkWell(
+                          onTap: widget.onReplyTap,
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: replyColor,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              widget.replyMessage == null
+                                  ? strings.format('Reply #{id}', {
+                                      'id': widget.message.replyTo,
+                                    })
+                                  : strings
+                                        .format('Reply {sender}: {message}', {
+                                          'sender': widget.replyMessage!.sender,
+                                          'message': compactMessage(
+                                            chatMessagePlainText(
+                                              widget.replyMessage!,
+                                              strings,
+                                            ),
+                                          ),
+                                        }),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: secondaryTextColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
                         ),
-                      if (widget.message.isEssence)
-                        Chip(
-                          avatar: const Icon(Icons.star, size: 16),
-                          label: Text(strings.text('Essence')),
-                          visualDensity: VisualDensity.compact,
+                        const SizedBox(height: 6),
+                      ],
+                      if (widget.message.isMentioned ||
+                          widget.message.isEssence) ...[
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            if (widget.message.isMentioned)
+                              Chip(
+                                avatar: const Icon(
+                                  Icons.alternate_email,
+                                  size: 16,
+                                ),
+                                label: Text(strings.text('Mentioned')),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            if (widget.message.isEssence)
+                              Chip(
+                                avatar: const Icon(Icons.star, size: 16),
+                                label: Text(strings.text('Essence')),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      if (widget.message.imageUrl.isNotEmpty) ...[
+                        _MessageImage(
+                          url: widget.message.imageUrl,
+                          heroTag: imageHeroTag,
+                          onTap: widget.onImageTap,
+                        ),
+                        if (widget.message.body.isNotEmpty &&
+                            !widget.message.body.startsWith('[image]'))
+                          const SizedBox(height: 8),
+                      ],
+                      if (widget.message.voiceUrl.isNotEmpty) ...[
+                        _VoiceMessageTile(
+                          declaredDuration: widget.message.voiceDuration,
+                          position: widget.voicePosition,
+                          duration: widget.voiceDuration,
+                          playing: widget.voicePlaying,
+                          active: widget.voiceActive,
+                          speed: widget.voiceSpeed,
+                          textColor: textColor,
+                          onTap: widget.onVoiceTap,
+                          onSeek: widget.onVoiceSeek,
+                          onSpeed: widget.onVoiceSpeed,
+                        ),
+                        if (widget.message.body.isNotEmpty &&
+                            !widget.message.body.startsWith('[voice]'))
+                          const SizedBox(height: 8),
+                      ],
+                      if (hasEmoji) ...[
+                        _EmojiStickerImage(
+                          url: widget.message.emojiAddress,
+                          size: 118,
+                          fallbackLabel: messageText,
+                        ),
+                      ],
+                      if (messageText.isNotEmpty &&
+                          !hasEmoji &&
+                          !widget.message.body.startsWith('[image]') &&
+                          !widget.message.body.startsWith('[voice]'))
+                        Text(
+                          messageText,
+                          softWrap: true,
+                          style: TextStyle(color: textColor),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                ],
-                if (widget.message.imageUrl.isNotEmpty) ...[
-                  _MessageImage(
-                    url: widget.message.imageUrl,
-                    heroTag: imageHeroTag,
-                    onTap: widget.onImageTap,
-                  ),
-                  if (widget.message.body.isNotEmpty &&
-                      !widget.message.body.startsWith('[image]'))
-                    const SizedBox(height: 8),
-                ],
-                if (widget.message.voiceUrl.isNotEmpty) ...[
-                  _VoiceMessageTile(
-                    declaredDuration: widget.message.voiceDuration,
-                    position: widget.voicePosition,
-                    duration: widget.voiceDuration,
-                    playing: widget.voicePlaying,
-                    active: widget.voiceActive,
-                    speed: widget.voiceSpeed,
-                    textColor: textColor,
-                    onTap: widget.onVoiceTap,
-                    onSeek: widget.onVoiceSeek,
-                    onSpeed: widget.onVoiceSpeed,
-                  ),
-                  if (widget.message.body.isNotEmpty &&
-                      !widget.message.body.startsWith('[voice]'))
-                    const SizedBox(height: 8),
-                ],
-                if (widget.message.body.isNotEmpty &&
-                    !widget.message.body.startsWith('[image]') &&
-                    !widget.message.body.startsWith('[voice]'))
-                  Text(widget.message.body, style: TextStyle(color: textColor)),
-                if (widget.showReadStatus) ...[
-                  const SizedBox(height: 5),
-                  Align(
-                    alignment: Alignment.centerRight,
+                ),
+                if (widget.showReadStatus)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
                     child: _PrivateReadStatus(read: widget.message.isRead),
                   ),
-                ],
               ],
             ),
           ),
@@ -2927,13 +3137,14 @@ class _ChatBackground extends StatelessWidget {
     final overlay = colors.surface.withValues(
       alpha: Theme.of(context).brightness == Brightness.dark ? 0.78 : 0.68,
     );
-    if (path.isEmpty || !File(path).existsSync()) {
+    final image = localFileImageProvider(path);
+    if (image == null) {
       return ColoredBox(color: colors.surface);
     }
     return DecoratedBox(
       decoration: BoxDecoration(
         image: DecorationImage(
-          image: FileImage(File(path)),
+          image: image,
           fit: BoxFit.cover,
           colorFilter: ColorFilter.mode(overlay, BlendMode.srcOver),
         ),
@@ -2982,9 +3193,7 @@ class _SystemMessagePillState extends State<_SystemMessagePill> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final reduceMotion = _MotionPreference.reduceOf(context);
-    final body = widget.message.isRecalled
-        ? context.strings.text('[recalled]')
-        : widget.message.body;
+    final body = chatMessagePlainText(widget.message, context.strings);
     final time = displayMessageTime(widget.message, widget.preferences);
     final canToggleTime = time.isNotEmpty;
     final text = showTime && canToggleTime ? time : body;
@@ -3034,6 +3243,55 @@ class _SystemMessagePillState extends State<_SystemMessagePill> {
             child: child,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _UnreadDivider extends StatelessWidget {
+  const _UnreadDivider({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final strings = context.strings;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Divider(
+              height: 1,
+              color: colors.primary.withValues(alpha: 0.38),
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              color: colors.primaryContainer,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: colors.primary.withValues(alpha: 0.2)),
+            ),
+            child: Text(
+              strings.format('Unread messages below ({count})', {
+                'count': count,
+              }),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colors.onPrimaryContainer,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Divider(
+              height: 1,
+              color: colors.primary.withValues(alpha: 0.38),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3601,6 +3859,350 @@ class _ComposeMenuTile extends StatelessWidget {
   }
 }
 
+class _EmojiStickerPicker extends StatefulWidget {
+  const _EmojiStickerPicker({
+    required this.stickers,
+    required this.recentStickers,
+  });
+
+  final List<EmojiSticker> stickers;
+  final List<EmojiSticker> recentStickers;
+
+  @override
+  State<_EmojiStickerPicker> createState() => _EmojiStickerPickerState();
+}
+
+class _EmojiStickerPickerState extends State<_EmojiStickerPicker> {
+  final search = TextEditingController();
+
+  @override
+  void dispose() {
+    search.dispose();
+    super.dispose();
+  }
+
+  List<EmojiSticker> filterStickers(List<EmojiSticker> stickers) {
+    final query = search.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return stickers;
+    }
+    return stickers.where((sticker) {
+      return sticker.fullName.toLowerCase().contains(query) ||
+          sticker.abbr.toLowerCase().contains(query);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final reduceMotion = _MotionPreference.reduceOf(context);
+    final maxHeight = math.min(MediaQuery.sizeOf(context).height * 0.72, 620.0);
+    final availableByAbbr = <String, EmojiSticker>{
+      for (final sticker in widget.stickers) sticker.abbr: sticker,
+    };
+    final resolvedRecent = <EmojiSticker>[
+      for (final sticker in widget.recentStickers)
+        if (availableByAbbr.containsKey(sticker.abbr))
+          availableByAbbr[sticker.abbr]!
+        else
+          sticker,
+    ];
+    final filteredRecent = filterStickers(resolvedRecent);
+    final recentAbbrs = filteredRecent.map((sticker) => sticker.abbr).toSet();
+    final allStickers = [
+      for (final sticker in filterStickers(widget.stickers))
+        if (!recentAbbrs.contains(sticker.abbr)) sticker,
+    ];
+    final hasMatches = filteredRecent.isNotEmpty || allStickers.isNotEmpty;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 2, 20, 12),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.emoji_emotions_outlined,
+                    color: colors.primary,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      strings.text('Emoji stickers'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+              child: TextField(
+                controller: search,
+                onChanged: (_) => setState(() {}),
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: strings.text('Search stickers'),
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: search.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: strings.text('Clear'),
+                          onPressed: () => setState(search.clear),
+                          icon: const Icon(Icons.close),
+                        ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  isDense: true,
+                ),
+              ),
+            ),
+            if (widget.stickers.isEmpty)
+              Flexible(
+                child: _EmptyPanel(message: strings.text('No emoji stickers.')),
+              )
+            else if (!hasMatches)
+              Flexible(
+                child: _EmptyPanel(
+                  message: strings.text('No matching stickers.'),
+                ),
+              )
+            else
+              Flexible(
+                child: CustomScrollView(
+                  slivers: [
+                    if (filteredRecent.isNotEmpty) ...[
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
+                        sliver: SliverToBoxAdapter(
+                          child: _EmojiPickerSectionHeader(
+                            label: strings.text('Recent stickers'),
+                          ),
+                        ),
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
+                        sliver: _EmojiStickerGrid(
+                          stickers: filteredRecent,
+                          reduceMotion: reduceMotion,
+                          onSelected: (sticker) =>
+                              Navigator.of(context).pop(sticker),
+                        ),
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                        sliver: SliverToBoxAdapter(
+                          child: _EmojiPickerSectionHeader(
+                            label: strings.text('All stickers'),
+                          ),
+                        ),
+                      ),
+                    ],
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
+                      sliver: _EmojiStickerGrid(
+                        stickers: allStickers,
+                        reduceMotion: reduceMotion,
+                        onSelected: (sticker) =>
+                            Navigator.of(context).pop(sticker),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmojiPickerSectionHeader extends StatelessWidget {
+  const _EmojiPickerSectionHeader({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          color: colors.onSurfaceVariant,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _EmojiStickerGrid extends StatelessWidget {
+  const _EmojiStickerGrid({
+    required this.stickers,
+    required this.reduceMotion,
+    required this.onSelected,
+  });
+
+  final List<EmojiSticker> stickers;
+  final bool reduceMotion;
+  final ValueChanged<EmojiSticker> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverGrid.builder(
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 116,
+        mainAxisExtent: 128,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
+      itemCount: stickers.length,
+      itemBuilder: (context, index) {
+        final sticker = stickers[index];
+        final tile = _EmojiStickerTile(
+          sticker: sticker,
+          onTap: () => onSelected(sticker),
+        );
+        if (reduceMotion) {
+          return tile;
+        }
+        return tile
+            .animate(delay: Duration(milliseconds: index * 18))
+            .fadeIn(duration: 160.ms, curve: Curves.easeOutCubic)
+            .scale(
+              begin: const Offset(0.92, 0.92),
+              end: const Offset(1, 1),
+              duration: 300.ms,
+              curve: Curves.easeOutBack,
+            );
+      },
+    );
+  }
+}
+
+class _EmojiStickerTile extends StatelessWidget {
+  const _EmojiStickerTile({required this.sticker, required this.onTap});
+
+  final EmojiSticker sticker;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Material(
+      color: colors.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+          child: Column(
+            children: [
+              Expanded(
+                child: Center(
+                  child: _EmojiStickerImage(
+                    url: sticker.address,
+                    size: 72,
+                    fallbackLabel: sticker.fullName,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                sticker.fullName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmojiStickerImage extends StatelessWidget {
+  const _EmojiStickerImage({
+    required this.url,
+    required this.size,
+    this.fallbackLabel = '',
+  });
+
+  final String url;
+  final double size;
+  final String fallbackLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final fallback = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: colors.secondaryContainer,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Icon(
+        Icons.emoji_emotions_outlined,
+        color: colors.onSecondaryContainer,
+        size: size * 0.46,
+      ),
+    );
+    if (url.trim().isEmpty) {
+      return Semantics(label: fallbackLabel, child: fallback);
+    }
+    return Semantics(
+      label: fallbackLabel,
+      image: true,
+      child: Image.network(
+        url,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, _, _) => fallback,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) {
+            return child;
+          }
+          return SizedBox(
+            width: size,
+            height: size,
+            child: Center(
+              child: SizedBox.square(
+                dimension: math.max(18, size * 0.28),
+                child: const CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _VoiceMessageTile extends StatelessWidget {
   const _VoiceMessageTile({
     required this.declaredDuration,
@@ -3647,10 +4249,14 @@ class _VoiceMessageTile extends StatelessWidget {
         ? context.strings.text('Paused')
         : context.strings.text('Voice message');
     final progress = totalMs > 0 ? positionMs / totalMs : 0.0;
+    final maxWidth = chatBubbleMaxWidth(context) - 24;
     return AnimatedContainer(
       duration: 180.ms,
       curve: Curves.easeOutCubic,
-      constraints: const BoxConstraints(minWidth: 220, maxWidth: 320),
+      constraints: BoxConstraints(
+        minWidth: math.min(220.0, maxWidth),
+        maxWidth: maxWidth,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       decoration: BoxDecoration(
         color: active
@@ -3895,10 +4501,7 @@ class _VoiceRecorderDialogState extends State<_VoiceRecorderDialog> {
         });
         return;
       }
-      final directory = await getTemporaryDirectory();
-      final fileName =
-          'csac_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      final path = p.join(directory.path, fileName);
+      final path = await createTemporaryVoicePath();
       await recorder.start(
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
@@ -3952,9 +4555,7 @@ class _VoiceRecorderDialogState extends State<_VoiceRecorderDialog> {
     } catch (_) {
       final path = outputPath;
       if (path != null) {
-        unawaited(
-          File(path).delete().catchError((_) => File(path)).then((_) {}),
-        );
+        unawaited(deleteLocalFileIfExists(path));
       }
     }
     if (mounted) {
@@ -3976,7 +4577,7 @@ class _VoiceRecorderDialogState extends State<_VoiceRecorderDialog> {
       if (!mounted || cancelled) {
         return;
       }
-      if (path == null || !await File(path).exists()) {
+      if (path == null || !await localFileExists(path)) {
         setState(() {
           stopping = false;
           error = missingFileMessage;
@@ -4136,6 +4737,7 @@ class _PendingMessageBubbleState extends State<_PendingMessageBubble>
     final strings = context.strings;
     final failed = widget.pending.status == _PendingSendStatus.failed;
     final sent = widget.pending.status == _PendingSendStatus.sent;
+    final maxBubbleWidth = chatBubbleMaxWidth(context);
     final foreground = failed
         ? colors.onErrorContainer
         : colors.onPrimaryContainer;
@@ -4174,7 +4776,7 @@ class _PendingMessageBubbleState extends State<_PendingMessageBubble>
               AnimatedContainer(
                     duration: 180.ms,
                     curve: Curves.easeOutCubic,
-                    constraints: const BoxConstraints(maxWidth: 320),
+                    constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 9,
@@ -4249,6 +4851,14 @@ class _PendingMessageBubbleState extends State<_PendingMessageBubble>
                           if (widget.pending.text.isNotEmpty)
                             const SizedBox(height: 8),
                         ],
+                        if (widget.pending.hasEmoji) ...[
+                          _EmojiStickerImage(
+                            url: widget.pending.emoji!.address,
+                            size: 104,
+                            fallbackLabel: widget.pending.emoji!.fullName,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                         if (widget.pending.text.isNotEmpty)
                           Text(
                             widget.pending.text,
@@ -4297,6 +4907,14 @@ class _PendingMessageBubbleState extends State<_PendingMessageBubble>
                   )
                   .animate()
                   .fadeIn(duration: 160.ms, curve: Curves.easeOutCubic)
+                  .scale(
+                    begin: widget.pending.hasEmoji
+                        ? const Offset(0.72, 0.72)
+                        : const Offset(1, 1),
+                    end: const Offset(1, 1),
+                    duration: widget.pending.hasEmoji ? 360.ms : 1.ms,
+                    curve: Curves.easeOutBack,
+                  )
                   .slideY(
                     begin: 0.16,
                     end: 0,
@@ -4948,7 +5566,7 @@ class _EssenceMessagesScreenState extends State<EssenceMessagesScreen> {
         ? messages
         : messages.where((message) {
             final target =
-                '${message.sender} ${message.body} ${message.time} ${message.imageUrl} ${message.voiceUrl} ${message.fileUrl}'
+                '${message.sender} ${chatMessagePlainText(message, strings)} ${message.time} ${message.imageUrl} ${message.voiceUrl} ${message.fileUrl} ${message.emojiAddress} ${message.emojiAbbr}'
                     .toLowerCase();
             return target.contains(query);
           }).toList();
@@ -5362,7 +5980,10 @@ class _EssenceMessageTile extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          [if (time.isNotEmpty) time, message.body].join(' | '),
+          [
+            if (time.isNotEmpty) time,
+            chatMessagePlainText(message, context.strings),
+          ].join(' | '),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),

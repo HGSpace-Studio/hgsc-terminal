@@ -176,10 +176,7 @@ class _RoundedInkClip extends StatelessWidget {
 }
 
 void _hidePlatformTextInput() {
-  FocusManager.instance.primaryFocus?.unfocus();
-  if (Platform.isIOS || Platform.isAndroid) {
-    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
-  }
+  hidePlatformTextInput();
 }
 
 class _PinEntryPad extends StatelessWidget {

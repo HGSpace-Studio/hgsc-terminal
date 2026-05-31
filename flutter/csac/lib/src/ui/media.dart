@@ -10,14 +10,15 @@ class _MessageImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final width = math.min(260.0, chatBubbleMaxWidth(context) - 24);
     final image = Image.network(
       url,
-      width: 260,
+      width: width,
       height: 180,
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) {
         return Container(
-          width: 260,
+          width: width,
           height: 120,
           color: colors.surfaceContainerHighest,
           alignment: Alignment.center,
@@ -33,7 +34,7 @@ class _MessageImage extends StatelessWidget {
           return child;
         }
         return Container(
-          width: 260,
+          width: width,
           height: 120,
           alignment: Alignment.center,
           child: const CircularProgressIndicator(strokeWidth: 2),
@@ -676,6 +677,16 @@ Future<void> downloadUrl(
   List<String> extensions = const <String>[],
 }) async {
   final strings = context.strings;
+  if (isWebPlatform) {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(strings.text('Link copied'))));
+    return;
+  }
   try {
     final response = await http.get(Uri.parse(url));
     if (response.statusCode < 200 || response.statusCode >= 300) {

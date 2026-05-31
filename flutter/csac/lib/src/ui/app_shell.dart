@@ -102,8 +102,10 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     with WidgetsBindingObserver {
   late final CsacAppState state;
   final updateChecker = VersionUpdateChecker();
+  final localNotifications = CsacLocalNotificationService.instance;
   final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   final navigatorKey = GlobalKey<NavigatorState>();
+  StreamSubscription<Conversation>? notificationTapSub;
   bool locked = false;
   bool wasBackgrounded = false;
   bool appLockSessionUnlocked = false;
@@ -119,6 +121,8 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     state = CsacAppState();
     state.addListener(handleStateChanged);
     unawaited(state.initialize());
+    unawaited(localNotifications.initialize());
+    notificationTapSub = localNotifications.taps.listen(openNotificationChat);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       maybeCheckForUpdatesOnStartup();
     });
@@ -128,8 +132,33 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   void dispose() {
     state.removeListener(handleStateChanged);
     WidgetsBinding.instance.removeObserver(this);
+    notificationTapSub?.cancel();
     updateChecker.close();
     super.dispose();
+  }
+
+  Future<void> openNotificationChat(Conversation tapped) async {
+    final context = navigatorKey.currentContext;
+    if (context == null || !context.mounted || state.user == null) {
+      return;
+    }
+    final conversation = state.conversations
+        .where((item) => item.type == tapped.type && item.id == tapped.id)
+        .firstOrNull;
+    if (conversation == null) {
+      return;
+    }
+    if (state.isActiveConversation(conversation)) {
+      return;
+    }
+    await navigatorKey.currentState?.push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChatScreen(
+          state: state,
+          conversation: conversation.copyWith(unreadCount: 0),
+        ),
+      ),
+    );
   }
 
   @override
@@ -277,7 +306,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
         return MaterialApp(
           title: CsacStrings(
             localeForLanguage(state.preferences.language),
-          ).text('CsAC Mobile'),
+          ).text('CsAC'),
           scaffoldMessengerKey: scaffoldMessengerKey,
           navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
@@ -300,6 +329,19 @@ class _CsacMobileAppState extends State<CsacMobileApp>
             state.preferences.fontStyle,
           ),
           themeMode: state.preferences.themeMode,
+          builder: (context, child) {
+            return _DesktopCommandPaletteHost(
+              state: state,
+              navigatorKey: navigatorKey,
+              scaffoldMessengerKey: scaffoldMessengerKey,
+              enabled:
+                  isDesktopPlatform &&
+                  !locked &&
+                  !state.bootstrapping &&
+                  state.user != null,
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           home: _MotionPreference(
             reduceMotion: state.preferences.reduceMotion,
             child: Stack(
@@ -479,11 +521,11 @@ String? fontFamilyForStyle(CsacFontStyle style) {
     case CsacFontStyle.system:
       return null;
     case CsacFontStyle.serif:
-      return Platform.isIOS || Platform.isMacOS ? 'Times New Roman' : 'serif';
+      return isApplePlatform ? 'Times New Roman' : 'serif';
     case CsacFontStyle.rounded:
-      return Platform.isIOS || Platform.isMacOS ? 'SF Pro Rounded' : null;
+      return isApplePlatform ? 'SF Pro Rounded' : null;
     case CsacFontStyle.monospace:
-      return Platform.isIOS || Platform.isMacOS ? 'Menlo' : 'monospace';
+      return isApplePlatform ? 'Menlo' : 'monospace';
   }
 }
 
@@ -530,7 +572,7 @@ class SplashScreen extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             Text(
-              context.strings.text('CsAC Mobile'),
+              context.strings.text('CsAC'),
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 10),
@@ -684,7 +726,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    strings.text('CsAC Mobile'),
+                    strings.text('CsAC'),
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w800,

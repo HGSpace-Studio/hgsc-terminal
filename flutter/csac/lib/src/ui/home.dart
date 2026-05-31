@@ -35,6 +35,11 @@ class _MainShellState extends State<MainShell> {
   Future<void> refreshHomeWithHint() async {
     final strings = context.strings;
     final messenger = ScaffoldMessenger.of(context);
+    final beforeUnread = <String, int>{
+      for (final conversation in widget.state.conversations)
+        '${conversation.type.name}:${conversation.id}':
+            conversation.unreadCount,
+    };
     try {
       await widget.state.refreshHome();
     } catch (_) {
@@ -70,8 +75,32 @@ class _MainShellState extends State<MainShell> {
         'count': after - lastUnreadChats,
       });
       messenger.showSnackBar(SnackBar(content: Text(message)));
+      await showNewMessageNotifications(beforeUnread);
     }
     lastUnreadChats = after;
+  }
+
+  Future<void> showNewMessageNotifications(
+    Map<String, int> beforeUnread,
+  ) async {
+    if (!widget.state.preferences.localSystemNotificationsEnabled) {
+      return;
+    }
+    for (final conversation in widget.state.conversations) {
+      if (widget.state.isActiveConversation(conversation)) {
+        continue;
+      }
+      final key = '${conversation.type.name}:${conversation.id}';
+      final previous = beforeUnread[key] ?? 0;
+      final delta = conversation.unreadCount - previous;
+      if (delta > 0) {
+        await CsacLocalNotificationService.instance
+            .showConversationNotification(
+              conversation: conversation,
+              newCount: delta,
+            );
+      }
+    }
   }
 
   @override
