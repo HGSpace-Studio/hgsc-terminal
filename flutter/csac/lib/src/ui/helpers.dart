@@ -37,6 +37,87 @@ String chatMessagePlainText(ChatMessage message, CsacStrings strings) {
   return message.body;
 }
 
+String notificationTextForMessage(ChatMessage message, CsacStrings strings) {
+  final text = chatMessagePlainText(message, strings).trim();
+  if (text.isEmpty) {
+    return strings.text('New message');
+  }
+  return compactMessage(text, max: 120);
+}
+
+String notificationTitleForConversation(
+  Conversation conversation,
+  ChatMessage? message,
+) {
+  if (conversation.type == ConversationType.group) {
+    return conversation.name.trim().isEmpty ? 'CsAC' : conversation.name;
+  }
+  final sender = message?.sender.trim() ?? '';
+  if (sender.isNotEmpty && !sender.startsWith('UID 0')) {
+    return sender;
+  }
+  return conversation.name.trim().isEmpty ? 'CsAC' : conversation.name;
+}
+
+String notificationBodyForConversation(
+  Conversation conversation,
+  int newCount,
+  ChatMessage? message,
+  CsacStrings strings,
+) {
+  if (message != null) {
+    final text = notificationTextForMessage(message, strings);
+    if (conversation.type == ConversationType.group) {
+      final sender = message.sender.trim();
+      return sender.isEmpty || sender.startsWith('UID 0')
+          ? text
+          : '$sender: $text';
+    }
+    return text;
+  }
+  final subtitle = conversation.subtitle.trim();
+  if (subtitle.isNotEmpty) {
+    return compactMessage(subtitle, max: 120);
+  }
+  return strings.format('New messages: {count}', {'count': newCount});
+}
+
+ChatMessage? latestIncomingNotificationMessage(
+  Conversation conversation,
+  List<ChatMessage> messages, {
+  required int currentUserId,
+}) {
+  final incoming = messages.where((message) {
+    if (message.id <= 0) {
+      return false;
+    }
+    if (currentUserId > 0 && message.senderId == currentUserId) {
+      return false;
+    }
+    return conversation.type == ConversationType.group ||
+        message.senderId == conversation.id ||
+        message.senderId != 0;
+  }).toList();
+  if (incoming.isEmpty) {
+    return null;
+  }
+  incoming.sort((a, b) => a.id.compareTo(b.id));
+  return incoming.last;
+}
+
+int latestIncomingNotificationMessageId(
+  Conversation conversation,
+  List<ChatMessage> messages, {
+  required int currentUserId,
+}) {
+  return latestIncomingNotificationMessage(
+        conversation,
+        messages,
+        currentUserId: currentUserId,
+      )?.id ??
+      0;
+}
+
 CsacTimestampPattern timestampPatternForPreference(MessageTimeFormat format) {
   switch (format) {
     case MessageTimeFormat.slash:

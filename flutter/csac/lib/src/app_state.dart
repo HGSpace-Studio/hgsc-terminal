@@ -64,6 +64,7 @@ class CsacAppState extends ChangeNotifier {
   bool loading = false;
   bool offlineMode = false;
   bool sessionExpired = false;
+  bool appInForeground = true;
   String restoreStatus = const CsacStrings(
     Locale('zh', 'CN'),
   ).text('Restoring session...');
@@ -502,6 +503,14 @@ class CsacAppState extends ChangeNotifier {
         activeConversation?.id == conversation.id;
   }
 
+  bool isVisibleActiveConversation(Conversation conversation) {
+    return appInForeground && isActiveConversation(conversation);
+  }
+
+  void setAppInForeground(bool value) {
+    appInForeground = value;
+  }
+
   void setActiveConversation(Conversation? conversation) {
     activeConversation = conversation;
   }
@@ -558,7 +567,7 @@ class CsacAppState extends ChangeNotifier {
   }
 
   Conversation _normalizeConversation(Conversation conversation) {
-    return isActiveConversation(conversation)
+    return isVisibleActiveConversation(conversation)
         ? conversation.copyWith(unreadCount: 0)
         : conversation;
   }

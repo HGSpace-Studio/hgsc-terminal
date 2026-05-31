@@ -103,6 +103,9 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   late final CsacAppState state;
   final updateChecker = VersionUpdateChecker();
   final localNotifications = CsacLocalNotificationService.instance;
+  final backgroundRefreshChannel = const MethodChannel(
+    'ink.jjmm.csacflutter/background_refresh',
+  );
   final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   final navigatorKey = GlobalKey<NavigatorState>();
   StreamSubscription<Conversation>? notificationTapSub;
@@ -112,7 +115,19 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   bool appLockStateSeen = false;
   bool lastCanUseAppLock = false;
   bool startupUpdateCheckStarted = false;
+  bool localNotificationPermissionPrimed = false;
   int appLockUserId = 0;
+
+  Map<String, int> unreadSnapshot() {
+    return <String, int>{
+      for (final conversation in state.conversations)
+        conversationKey(conversation): conversation.unreadCount,
+    };
+  }
+
+  String conversationKey(Conversation conversation) {
+    return '${conversation.type.name}:${conversation.id}';
+  }
 
   @override
   void initState() {
@@ -120,6 +135,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     WidgetsBinding.instance.addObserver(this);
     state = CsacAppState();
     state.addListener(handleStateChanged);
+    backgroundRefreshChannel.setMethodCallHandler(handleBackgroundRefreshCall);
     unawaited(state.initialize());
     unawaited(localNotifications.initialize());
     notificationTapSub = localNotifications.taps.listen(openNotificationChat);
@@ -132,6 +148,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   void dispose() {
     state.removeListener(handleStateChanged);
     WidgetsBinding.instance.removeObserver(this);
+    backgroundRefreshChannel.setMethodCallHandler(null);
     notificationTapSub?.cancel();
     updateChecker.close();
     super.dispose();
@@ -161,11 +178,35 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     );
   }
 
+  Future<dynamic> handleBackgroundRefreshCall(MethodCall call) async {
+    if (call.method != 'performBackgroundFetch') {
+      throw MissingPluginException('Unknown method ${call.method}');
+    }
+    if (state.user == null || state.bootstrapping) {
+      return false;
+    }
+    final wasForeground = state.appInForeground;
+    state.setAppInForeground(false);
+    final beforeUnread = unreadSnapshot();
+    try {
+      await state.refreshHome();
+      final newCount = await showNewMessageNotificationsFromSnapshot(
+        beforeUnread,
+      );
+      return newCount > 0;
+    } catch (_) {
+      return false;
+    } finally {
+      state.setAppInForeground(wasForeground);
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
     if (lifecycleState == AppLifecycleState.paused ||
         lifecycleState == AppLifecycleState.hidden ||
         lifecycleState == AppLifecycleState.inactive) {
+      state.setAppInForeground(false);
       wasBackgrounded = true;
       if (canUseAppLock()) {
         appLockSessionUnlocked = false;
@@ -177,12 +218,107 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     }
     if (lifecycleState == AppLifecycleState.resumed && wasBackgrounded) {
       wasBackgrounded = false;
+      unawaited(refreshAfterResume());
       lockIfNeeded();
+      return;
     }
+    if (lifecycleState == AppLifecycleState.resumed) {
+      state.setAppInForeground(true);
+    }
+  }
+
+  Future<void> refreshAfterResume() async {
+    if (state.user == null || state.bootstrapping) {
+      state.setAppInForeground(true);
+      return;
+    }
+    final beforeUnread = unreadSnapshot();
+    try {
+      await state.refreshHome();
+      await showNewMessageNotificationsFromSnapshot(beforeUnread);
+    } catch (_) {
+      // Resume refresh should not interrupt unlock or normal foregrounding.
+    } finally {
+      state.setAppInForeground(true);
+    }
+  }
+
+  Future<int> showNewMessageNotificationsFromSnapshot(
+    Map<String, int> beforeUnread,
+  ) async {
+    if (!state.preferences.localSystemNotificationsEnabled) {
+      return 0;
+    }
+    var newCount = 0;
+    for (final conversation in state.conversations) {
+      if (state.isVisibleActiveConversation(conversation)) {
+        continue;
+      }
+      final previous = beforeUnread[conversationKey(conversation)] ?? 0;
+      final delta = conversation.unreadCount - previous;
+      if (delta <= 0) {
+        continue;
+      }
+      newCount += delta;
+      final latestMessage = await latestNotificationMessage(conversation);
+      await localNotifications.showConversationNotification(
+        conversation: conversation,
+        newCount: delta,
+        title: notificationTitleForConversation(conversation, latestMessage),
+        body: notificationBodyForConversation(
+          conversation,
+          delta,
+          latestMessage,
+          CsacStrings(localeForLanguage(state.preferences.language)),
+        ),
+      );
+    }
+    return newCount;
+  }
+
+  Future<ChatMessage?> latestNotificationMessage(
+    Conversation conversation,
+  ) async {
+    if (conversation.type == ConversationType.group) {
+      final cached = await state.loadCachedMessages(conversation);
+      final afterId = cached.isEmpty ? 0 : cached.last.id;
+      final previousIncomingId = latestIncomingNotificationMessageId(
+        conversation,
+        cached,
+        currentUserId: state.user?.uid ?? 0,
+      );
+      final loaded = await state.syncMessages(conversation, afterId: afterId);
+      final latestIncoming = latestIncomingNotificationMessage(
+        conversation,
+        loaded,
+        currentUserId: state.user?.uid ?? 0,
+      );
+      if (latestIncoming != null && latestIncoming.id > previousIncomingId) {
+        return latestIncoming;
+      }
+      return null;
+    }
+    final cached = await state.loadCachedMessages(conversation);
+    return latestIncomingNotificationMessage(
+      conversation,
+      cached,
+      currentUserId: state.user?.uid ?? 0,
+    );
+  }
+
+  Future<ChatMessage?> latestCachedMessage(Conversation conversation) async {
+    final cached = await state.loadCachedMessages(conversation);
+    return latestIncomingNotificationMessage(
+          conversation,
+          cached,
+          currentUserId: state.user?.uid ?? 0,
+        ) ??
+        (cached.isEmpty ? null : cached.last);
   }
 
   void handleStateChanged() {
     maybeCheckForUpdatesOnStartup();
+    maybePrimeLocalNotificationPermission();
     final userId = state.user?.uid ?? 0;
     if (userId != appLockUserId) {
       appLockUserId = userId;
@@ -209,6 +345,17 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     if (!locked && !appLockSessionUnlocked) {
       setState(() => locked = true);
     }
+  }
+
+  void maybePrimeLocalNotificationPermission() {
+    if (localNotificationPermissionPrimed ||
+        state.bootstrapping ||
+        state.user == null ||
+        !state.preferences.localSystemNotificationsEnabled) {
+      return;
+    }
+    localNotificationPermissionPrimed = true;
+    unawaited(localNotifications.ensurePermissions());
   }
 
   void maybeCheckForUpdatesOnStartup() {

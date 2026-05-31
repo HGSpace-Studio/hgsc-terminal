@@ -32,13 +32,31 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
+  String conversationKey(Conversation conversation) {
+    return '${conversation.type.name}:${conversation.id}';
+  }
+
+  int newUnreadDelta(Map<String, int> beforeUnread) {
+    var total = 0;
+    for (final conversation in widget.state.conversations) {
+      if (widget.state.isVisibleActiveConversation(conversation)) {
+        continue;
+      }
+      final previous = beforeUnread[conversationKey(conversation)] ?? 0;
+      final delta = conversation.unreadCount - previous;
+      if (delta > 0) {
+        total += delta;
+      }
+    }
+    return total;
+  }
+
   Future<void> refreshHomeWithHint() async {
     final strings = context.strings;
     final messenger = ScaffoldMessenger.of(context);
     final beforeUnread = <String, int>{
       for (final conversation in widget.state.conversations)
-        '${conversation.type.name}:${conversation.id}':
-            conversation.unreadCount,
+        conversationKey(conversation): conversation.unreadCount,
     };
     try {
       await widget.state.refreshHome();
@@ -63,16 +81,19 @@ class _MainShellState extends State<MainShell> {
         if (selectedConversation != null) {
           selectedConversation = latestSelected.copyWith(unreadCount: 0);
         }
-        await widget.state.markConversationRead(
-          latestSelected,
-          syncServer: false,
-        );
+        if (widget.state.appInForeground) {
+          await widget.state.markConversationRead(
+            latestSelected,
+            syncServer: false,
+          );
+        }
       }
     }
+    final newCount = newUnreadDelta(beforeUnread);
     final after = totalUnreadChats();
-    if (after > lastUnreadChats) {
+    if (newCount > 0) {
       final message = strings.format('New messages: {count}', {
-        'count': after - lastUnreadChats,
+        'count': newCount,
       });
       messenger.showSnackBar(SnackBar(content: Text(message)));
       await showNewMessageNotifications(beforeUnread);
@@ -87,20 +108,78 @@ class _MainShellState extends State<MainShell> {
       return;
     }
     for (final conversation in widget.state.conversations) {
-      if (widget.state.isActiveConversation(conversation)) {
+      if (widget.state.isVisibleActiveConversation(conversation)) {
         continue;
       }
-      final key = '${conversation.type.name}:${conversation.id}';
+      final key = conversationKey(conversation);
       final previous = beforeUnread[key] ?? 0;
       final delta = conversation.unreadCount - previous;
       if (delta > 0) {
+        final strings = context.strings;
+        final latestMessage = await latestNotificationMessage(conversation);
+        if (!mounted) {
+          return;
+        }
         await CsacLocalNotificationService.instance
             .showConversationNotification(
               conversation: conversation,
               newCount: delta,
+              title: notificationTitleForConversation(
+                conversation,
+                latestMessage,
+              ),
+              body: notificationBodyForConversation(
+                conversation,
+                delta,
+                latestMessage,
+                strings,
+              ),
             );
       }
     }
+  }
+
+  Future<ChatMessage?> latestNotificationMessage(
+    Conversation conversation,
+  ) async {
+    if (conversation.type == ConversationType.group) {
+      final cached = await widget.state.loadCachedMessages(conversation);
+      final afterId = cached.isEmpty ? 0 : cached.last.id;
+      final previousIncomingId = latestIncomingNotificationMessageId(
+        conversation,
+        cached,
+        currentUserId: widget.state.user?.uid ?? 0,
+      );
+      final loaded = await widget.state.syncMessages(
+        conversation,
+        afterId: afterId,
+      );
+      final latestIncoming = latestIncomingNotificationMessage(
+        conversation,
+        loaded,
+        currentUserId: widget.state.user?.uid ?? 0,
+      );
+      if (latestIncoming != null && latestIncoming.id > previousIncomingId) {
+        return latestIncoming;
+      }
+      return null;
+    }
+    final cached = await widget.state.loadCachedMessages(conversation);
+    return latestIncomingNotificationMessage(
+      conversation,
+      cached,
+      currentUserId: widget.state.user?.uid ?? 0,
+    );
+  }
+
+  Future<ChatMessage?> latestCachedMessage(Conversation conversation) async {
+    final cached = await widget.state.loadCachedMessages(conversation);
+    return latestIncomingNotificationMessage(
+          conversation,
+          cached,
+          currentUserId: widget.state.user?.uid ?? 0,
+        ) ??
+        (cached.isEmpty ? null : cached.last);
   }
 
   @override
