@@ -4631,10 +4631,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'App information',
       'Open-source licenses',
       'Version',
-      'Version updates',
-      'Check for updates',
-      'Automatic update checks',
-      'Release notes',
+      if (supportsVersionUpdateChecks) ...[
+        'Version updates',
+        'Check for updates',
+        'Automatic update checks',
+        'Release notes',
+      ],
       'Source code',
       'License',
     ]);
@@ -4799,40 +4801,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
                       const Divider(height: 1),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.event_repeat_outlined),
-                        title: Text(strings.text('Automatic update checks')),
-                        subtitle: Text(
-                          strings.text(
-                            'Silently check GitHub Releases once on startup',
+                      if (supportsVersionUpdateChecks) ...[
+                        SwitchListTile(
+                          secondary: const Icon(Icons.event_repeat_outlined),
+                          title: Text(strings.text('Automatic update checks')),
+                          subtitle: Text(
+                            strings.text(
+                              'Silently check GitHub Releases once on startup',
+                            ),
                           ),
+                          value:
+                              widget.state.preferences.autoCheckVersionUpdates,
+                          onChanged: widget.state.updateAutoCheckVersionUpdates,
                         ),
-                        value: widget.state.preferences.autoCheckVersionUpdates,
-                        onChanged: widget.state.updateAutoCheckVersionUpdates,
-                      ),
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: const Icon(Icons.update),
-                        title: Text(strings.text('Check for updates')),
-                        subtitle: Text(
-                          strings.text(
-                            'Check the latest GitHub Release manually',
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.update),
+                          title: Text(strings.text('Check for updates')),
+                          subtitle: Text(
+                            strings.text(
+                              'Check the latest GitHub Release manually',
+                            ),
                           ),
+                          trailing: checkingVersionUpdate
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.chevron_right),
+                          onTap: checkingVersionUpdate
+                              ? null
+                              : checkVersionUpdateManually,
                         ),
-                        trailing: checkingVersionUpdate
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.chevron_right),
-                        onTap: checkingVersionUpdate
-                            ? null
-                            : checkVersionUpdateManually,
-                      ),
-                      const Divider(height: 1),
+                        const Divider(height: 1),
+                      ],
                       ListTile(
                         leading: const Icon(Icons.article_outlined),
                         title: Text(strings.text('Open-source licenses')),

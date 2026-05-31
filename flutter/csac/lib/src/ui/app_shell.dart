@@ -359,6 +359,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
 
   void maybeCheckForUpdatesOnStartup() {
     if (startupUpdateCheckStarted ||
+        !supportsVersionUpdateChecks ||
         state.bootstrapping ||
         !state.preferences.autoCheckVersionUpdates) {
       return;
@@ -475,17 +476,23 @@ class _CsacMobileAppState extends State<CsacMobileApp>
             state.preferences.fontStyle,
           ),
           themeMode: state.preferences.themeMode,
+          color: Colors.transparent,
           builder: (context, child) {
-            return _DesktopCommandPaletteHost(
-              state: state,
-              navigatorKey: navigatorKey,
-              scaffoldMessengerKey: scaffoldMessengerKey,
-              enabled:
-                  isDesktopPlatform &&
-                  !locked &&
-                  !state.bootstrapping &&
-                  state.user != null,
-              child: child ?? const SizedBox.shrink(),
+            return _MaterialYouDesktopWindowFrame(
+              title: CsacStrings(
+                localeForLanguage(state.preferences.language),
+              ).text('CsAC'),
+              child: _DesktopCommandPaletteHost(
+                state: state,
+                navigatorKey: navigatorKey,
+                scaffoldMessengerKey: scaffoldMessengerKey,
+                enabled:
+                    isDesktopPlatform &&
+                    !locked &&
+                    !state.bootstrapping &&
+                    state.user != null,
+                child: child ?? const SizedBox.shrink(),
+              ),
             );
           },
           home: _MotionPreference(
@@ -571,6 +578,261 @@ class _StartupTransition extends StatelessWidget {
         );
       },
       child: child,
+    );
+  }
+}
+
+class _MaterialYouDesktopWindowFrame extends StatelessWidget {
+  const _MaterialYouDesktopWindowFrame({
+    required this.title,
+    required this.child,
+  });
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!supportsCustomDesktopWindowChrome) {
+      return child;
+    }
+    return buildDesktopWindowStateListener(
+      builder: (context, frameState) {
+        final colors = Theme.of(context).colorScheme;
+        final expanded = frameState.isExpanded;
+        final radius = expanded ? 0.0 : 10.0;
+        final borderColor =
+            (frameState.isFocused ? colors.primary : colors.outlineVariant)
+                .withValues(alpha: frameState.isFocused ? 0.48 : 0.40);
+        final window = DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: BorderRadius.circular(radius),
+            border: expanded
+                ? null
+                : Border.all(color: borderColor, width: 1.2),
+            boxShadow: [
+              if (!expanded)
+                BoxShadow(
+                  color: colors.shadow.withValues(
+                    alpha: frameState.isFocused ? 0.18 : 0.10,
+                  ),
+                  blurRadius: frameState.isFocused ? 24 : 14,
+                  offset: const Offset(0, 10),
+                ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: Column(
+              children: [
+                _MaterialYouDesktopTitleBar(
+                  title: title,
+                  isMaximized: frameState.isMaximized,
+                  isFocused: frameState.isFocused,
+                  expanded: expanded,
+                ),
+                Expanded(
+                  child: ClipRect(
+                    child: ColoredBox(color: colors.surface, child: child),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        return buildDesktopWindowResizeFrame(enabled: !expanded, child: window);
+      },
+    );
+  }
+}
+
+class _MaterialYouDesktopTitleBar extends StatelessWidget {
+  const _MaterialYouDesktopTitleBar({
+    required this.title,
+    required this.isMaximized,
+    required this.isFocused,
+    required this.expanded,
+  });
+
+  final String title;
+  final bool isMaximized;
+  final bool isFocused;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      color: (isFocused ? colors.onSurface : colors.onSurfaceVariant)
+          .withValues(alpha: isFocused ? 1 : 0.74),
+      fontWeight: FontWeight.w700,
+    );
+    final bar = ColoredBox(
+      color: Color.alphaBlend(
+        colors.primary.withValues(alpha: isFocused ? 0.025 : 0.0),
+        colors.surface,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: colors.outlineVariant.withValues(alpha: 0.46),
+            ),
+          ),
+        ),
+        child: SizedBox(
+          height: 48,
+          child: Padding(
+            padding: EdgeInsetsDirectional.only(
+              start: expanded ? 12 : 14,
+              end: 6,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: buildDesktopWindowMoveArea(
+                    child: Row(
+                      children: [
+                        _DesktopWindowBrandMark(isFocused: isFocused),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: titleStyle,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                _MaterialYouWindowControlButton(
+                  tooltip: 'Minimize',
+                  icon: Icons.remove_rounded,
+                  onPressed: () => unawaited(minimizeDesktopWindow()),
+                ),
+                _MaterialYouWindowControlButton(
+                  tooltip: isMaximized ? 'Restore' : 'Maximize',
+                  icon: isMaximized
+                      ? Icons.filter_none_rounded
+                      : Icons.crop_square_rounded,
+                  onPressed: () => unawaited(toggleMaximizeDesktopWindow()),
+                ),
+                _MaterialYouWindowControlButton(
+                  tooltip: 'Close',
+                  icon: Icons.close_rounded,
+                  isClose: true,
+                  onPressed: () => unawaited(closeDesktopWindow()),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    return Material(color: Colors.transparent, child: bar);
+  }
+}
+
+class _DesktopWindowBrandMark extends StatelessWidget {
+  const _DesktopWindowBrandMark({required this.isFocused});
+
+  final bool isFocused;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: isFocused
+            ? colors.primaryContainer
+            : colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colors.outlineVariant.withValues(alpha: 0.44),
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.chat_bubble_rounded,
+        size: 14,
+        color: isFocused ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+class _MaterialYouWindowControlButton extends StatefulWidget {
+  const _MaterialYouWindowControlButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    this.isClose = false,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final bool isClose;
+
+  @override
+  State<_MaterialYouWindowControlButton> createState() =>
+      _MaterialYouWindowControlButtonState();
+}
+
+class _MaterialYouWindowControlButtonState
+    extends State<_MaterialYouWindowControlButton> {
+  bool hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final foreground = widget.isClose && hovering
+        ? colors.onError
+        : colors.onSurfaceVariant;
+    final hoverBackground = widget.isClose
+        ? colors.error
+        : colors.secondaryContainer.withValues(alpha: 0.92);
+    return Semantics(
+      button: true,
+      label: widget.tooltip,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => hovering = true),
+        onExit: (_) => setState(() => hovering = false),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: IconButton(
+            onPressed: widget.onPressed,
+            icon: Icon(widget.icon),
+            iconSize: 17,
+            color: foreground,
+            splashRadius: 16,
+            style: ButtonStyle(
+              minimumSize: const WidgetStatePropertyAll(Size(32, 32)),
+              fixedSize: const WidgetStatePropertyAll(Size(32, 32)),
+              padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: const WidgetStatePropertyAll(CircleBorder()),
+              backgroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.pressed)) {
+                  return widget.isClose
+                      ? colors.error.withValues(alpha: 0.86)
+                      : colors.secondaryContainer.withValues(alpha: 0.72);
+                }
+                if (states.contains(WidgetState.hovered)) {
+                  return hoverBackground;
+                }
+                return Colors.transparent;
+              }),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

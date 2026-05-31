@@ -401,12 +401,15 @@ class _BottomTabSwitcherState extends State<_BottomTabSwitcher>
       animation: controller,
       builder: (context, _) {
         final curved = Curves.easeOutCubic.transform(controller.value);
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            for (var i = 0; i < widget.children.length; i++)
-              _buildPage(i, curved, forward),
-          ],
+        return ClipRect(
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            fit: StackFit.expand,
+            children: [
+              for (var i = 0; i < widget.children.length; i++)
+                _buildPage(i, curved, forward),
+            ],
+          ),
         );
       },
     );

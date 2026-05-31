@@ -692,15 +692,18 @@ class _CommandPaletteOverlayState extends State<_CommandPaletteOverlay> {
       },
       child: Focus(
         autofocus: true,
-        child: Material(
-          color: colors.scrim.withValues(alpha: 0.42),
-          child: InkWell(
-            onTap: () => Navigator.of(context).pop(),
-            child: Center(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Material(
+              color: colors.scrim.withValues(alpha: 0.42),
+              child: InkWell(onTap: () => Navigator.of(context).pop()),
+            ),
+            Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: InkWell(
-                  onTap: () {},
+                child: Material(
+                  color: Colors.transparent,
                   child: reduceMotion
                       ? panel
                       : panel
@@ -724,7 +727,7 @@ class _CommandPaletteOverlayState extends State<_CommandPaletteOverlay> {
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );

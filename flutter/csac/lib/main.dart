@@ -24,6 +24,7 @@ import 'src/api_client.dart';
 import 'src/l10n.dart';
 import 'src/models.dart';
 import 'src/notification_service.dart';
+import 'src/platform/desktop_window_chrome.dart';
 import 'src/platform/chat_export_writer.dart';
 import 'src/platform/platform_support.dart';
 import 'src/preferences.dart';
@@ -45,6 +46,8 @@ part 'src/ui/media.dart';
 part 'src/ui/conversation_media.dart';
 part 'src/ui/helpers.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await configureDesktopWindowChrome();
   runApp(const CsacMobileApp());
 }
