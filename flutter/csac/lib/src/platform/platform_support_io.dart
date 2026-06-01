@@ -24,6 +24,10 @@ bool get isApplePlatform => Platform.isIOS || Platform.isMacOS;
 
 bool get shouldForceHideMobileTextInput => Platform.isIOS || Platform.isAndroid;
 
+void configureInsecureHttpsOverrides() {
+  HttpOverrides.global = _CsacHttpOverrides(HttpOverrides.current);
+}
+
 void hidePlatformTextInput() {
   FocusManager.instance.primaryFocus?.unfocus();
   if (shouldForceHideMobileTextInput) {
@@ -125,5 +129,19 @@ Future<void> deleteLocalFileIfExists(String path) async {
   final file = File(path);
   if (await file.exists()) {
     await file.delete();
+  }
+}
+
+class _CsacHttpOverrides extends HttpOverrides {
+  _CsacHttpOverrides(this.parent);
+
+  final HttpOverrides? parent;
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client =
+        parent?.createHttpClient(context) ?? super.createHttpClient(context);
+    client.badCertificateCallback = (_, _, _) => true;
+    return client;
   }
 }

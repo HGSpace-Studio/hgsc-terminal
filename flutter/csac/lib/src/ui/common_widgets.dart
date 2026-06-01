@@ -216,76 +216,99 @@ class _PinEntryPad extends StatelessWidget {
     onChanged(value.substring(0, value.length - 1));
   }
 
+  KeyEventResult handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final character = event.character;
+    if (character != null && RegExp(r'^\d$').hasMatch(character)) {
+      appendDigit(character);
+      return KeyEventResult.handled;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.backspace ||
+        key == LogicalKeyboardKey.delete) {
+      backspace();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (label.isNotEmpty) ...[
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: colors.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
+    return Focus(
+      autofocus: true,
+      canRequestFocus: true,
+      onKeyEvent: handleKeyEvent,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (label.isNotEmpty) ...[
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: colors.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-        ],
-        Semantics(
-          label: label,
-          value: '${value.length} / $maxLength',
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (var index = 0; index < maxLength; index++) ...[
-                AnimatedContainer(
-                  duration: 150.ms,
-                  curve: Curves.easeOutCubic,
-                  width: index < value.length ? 12 : 9,
-                  height: index < value.length ? 12 : 9,
-                  decoration: BoxDecoration(
-                    color: index < value.length
-                        ? colors.primary
-                        : colors.outlineVariant,
-                    shape: BoxShape.circle,
+            const SizedBox(height: 10),
+          ],
+          Semantics(
+            label: label,
+            value: '${value.length} / $maxLength',
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var index = 0; index < maxLength; index++) ...[
+                  AnimatedContainer(
+                    duration: 150.ms,
+                    curve: Curves.easeOutCubic,
+                    width: index < value.length ? 12 : 9,
+                    height: index < value.length ? 12 : 9,
+                    decoration: BoxDecoration(
+                      color: index < value.length
+                          ? colors.primary
+                          : colors.outlineVariant,
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                ),
-                if (index != maxLength - 1) const SizedBox(width: 8),
+                  if (index != maxLength - 1) const SizedBox(width: 8),
+                ],
               ],
-            ],
-          ),
-        ),
-        if (helperText.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            helperText,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
             ),
           ),
-        ],
-        const SizedBox(height: 18),
-        _PinKeypadRows(
-          leading: leadingIcon == null
-              ? const _PinKeypadPlaceholder()
-              : _PinIconButton(
-                  tooltip: leadingTooltip,
-                  onPressed: onLeadingPressed,
-                  icon: Icon(leadingIcon),
-                ),
-          trailing: _PinIconButton(
-            tooltip: context.strings.text('Delete'),
-            onPressed: value.isEmpty ? null : backspace,
-            icon: const Icon(Icons.backspace_outlined),
+          if (helperText.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              helperText,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ],
+          const SizedBox(height: 18),
+          _PinKeypadRows(
+            leading: leadingIcon == null
+                ? const _PinKeypadPlaceholder()
+                : _PinIconButton(
+                    tooltip: leadingTooltip,
+                    onPressed: onLeadingPressed,
+                    icon: Icon(leadingIcon),
+                  ),
+            trailing: _PinIconButton(
+              tooltip: context.strings.text('Delete'),
+              onPressed: value.isEmpty ? null : backspace,
+              icon: const Icon(Icons.backspace_outlined),
+            ),
+            digitBuilder: (digit) =>
+                _PinDigitButton(digit: digit, onTap: () => appendDigit(digit)),
           ),
-          digitBuilder: (digit) =>
-              _PinDigitButton(digit: digit, onTap: () => appendDigit(digit)),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

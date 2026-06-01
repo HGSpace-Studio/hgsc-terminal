@@ -7,6 +7,8 @@ enum ConversationMediaKind { all, image, voice, file }
 enum CsacTimestampPattern { slash, dash, compact, timeOnly }
 
 const defaultPatAction = '\u62cd\u4e86\u62cd';
+const csacClientName = 'flutter';
+const csacClientBranch = 'leon';
 
 class CsacUser {
   const CsacUser({
@@ -16,6 +18,7 @@ class CsacUser {
     this.avatar = '',
     this.onlineStatus = '',
     this.patAction = defaultPatAction,
+    this.platform = 'none',
   });
 
   final int uid;
@@ -24,6 +27,7 @@ class CsacUser {
   final String avatar;
   final String onlineStatus;
   final String patAction;
+  final String platform;
 
   factory CsacUser.fromJson(Map<String, dynamic> json) {
     return CsacUser(
@@ -37,6 +41,10 @@ class CsacUser {
       patAction: firstString(json, const ['pat_action', 'patAction']).isEmpty
           ? defaultPatAction
           : firstString(json, const ['pat_action', 'patAction']),
+      platform: firstString(json, const [
+        'platform',
+        'client_platform',
+      ]).ifEmpty('none'),
     );
   }
 }
@@ -224,6 +232,7 @@ class UserProfile {
     this.avatar = '',
     this.remark = '',
     this.onlineStatus = '',
+    this.platform = 'none',
     this.isFriend = false,
     this.canAddFriend = false,
   });
@@ -234,6 +243,7 @@ class UserProfile {
   final String avatar;
   final String remark;
   final String onlineStatus;
+  final String platform;
   final bool isFriend;
   final bool canAddFriend;
 
@@ -251,6 +261,7 @@ class UserProfile {
     return [
       if (username.isNotEmpty) '@$username',
       if (onlineStatus.isNotEmpty) onlineStatus,
+      if (platform.trim().isNotEmpty && platform != 'none') platform,
       if (isFriend) 'friend',
     ].join(' | ');
   }
@@ -264,6 +275,10 @@ class UserProfile {
       avatar: normalizeApiUrl(asString(json['avatar'])),
       remark: asString(json['remark']),
       onlineStatus: asString(json['online_status']),
+      platform: firstString(json, const [
+        'platform',
+        'client_platform',
+      ]).ifEmpty('none'),
       isFriend: asBool(json['is_friend']),
       canAddFriend: asBool(json['can_add_friend']),
     );
@@ -1854,7 +1869,7 @@ String formatLocalTime(DateTime value) {
   return '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
 }
 
-String _apiAssetBaseUrl = 'https://cschat.ccccocccc.cc';
+String _apiAssetBaseUrl = 'https://103.40.14.14:14660';
 
 void configureApiAssetBaseUrl(String apiBaseUrl) {
   _apiAssetBaseUrl = apiOriginFromBaseUrl(apiBaseUrl);
@@ -1863,7 +1878,7 @@ void configureApiAssetBaseUrl(String apiBaseUrl) {
 String apiOriginFromBaseUrl(String apiBaseUrl) {
   final uri = Uri.tryParse(apiBaseUrl.trim());
   if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-    return 'https://cschat.ccccocccc.cc';
+    return 'https://103.40.14.14:14660';
   }
   return Uri(
     scheme: uri.scheme,

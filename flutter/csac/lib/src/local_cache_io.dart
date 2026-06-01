@@ -70,7 +70,8 @@ class CsacLocalCache {
   Future<CsacUser?> loadUser() async {
     final db = await _database();
     final rows = db.select('''
-      SELECT uid, nickname, username, avatar, online_status, pat_action
+      SELECT uid, nickname, username, avatar, online_status, pat_action,
+        platform
       FROM session_user
       ORDER BY saved_at DESC
       LIMIT 1
@@ -86,6 +87,7 @@ class CsacLocalCache {
       avatar: row['avatar'] as String,
       onlineStatus: row['online_status'] as String,
       patAction: row['pat_action'] as String,
+      platform: asString(row['platform']).ifEmpty('none'),
     );
   }
 
@@ -95,9 +97,10 @@ class CsacLocalCache {
     db.execute(
       '''
       INSERT INTO session_user (
-        uid, nickname, username, avatar, online_status, pat_action, saved_at
+        uid, nickname, username, avatar, online_status, pat_action, platform,
+        saved_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         user.uid,
@@ -106,6 +109,7 @@ class CsacLocalCache {
         user.avatar,
         user.onlineStatus,
         user.patAction,
+        user.platform,
         DateTime.now().millisecondsSinceEpoch,
       ],
     );
@@ -679,6 +683,52 @@ class CsacLocalCache {
     await saveMessages(conversation, messages);
   }
 
+  Future<void> removeMessagesMissingFromWindow(
+    Conversation conversation,
+    List<ChatMessage> serverMessages,
+  ) async {
+    final firstId = serverMessages.isEmpty ? 0 : serverMessages.first.id;
+    if (firstId < 0) {
+      return;
+    }
+    final serverIds = serverMessages.map((message) => message.id).toSet();
+    final db = await _database();
+    final type = _conversationTypeName(conversation.type);
+    final rows = db.select(
+      '''
+      SELECT id
+      FROM messages
+      WHERE conversation_type = ?
+        AND conversation_id = ?
+        AND id >= ?
+      ''',
+      [type, conversation.id, firstId],
+    );
+    final missingIds = rows
+        .map((row) => asInt(row['id']))
+        .where((id) => id > 0 && !serverIds.contains(id))
+        .toList();
+    if (missingIds.isEmpty) {
+      return;
+    }
+    final statement = db.prepare('''
+      DELETE FROM messages
+      WHERE conversation_type = ? AND conversation_id = ? AND id = ?
+      ''');
+    try {
+      db.execute('BEGIN IMMEDIATE');
+      for (final id in missingIds) {
+        statement.execute([type, conversation.id, id]);
+      }
+      db.execute('COMMIT');
+    } catch (_) {
+      db.execute('ROLLBACK');
+      rethrow;
+    } finally {
+      statement.dispose();
+    }
+  }
+
   Future<List<ChatMessage>> filterLocallyDeletedMessages(
     Conversation conversation,
     List<ChatMessage> messages,
@@ -775,6 +825,7 @@ class CsacLocalCache {
         avatar TEXT NOT NULL DEFAULT '',
         online_status TEXT NOT NULL DEFAULT '',
         pat_action TEXT NOT NULL DEFAULT '$defaultPatAction',
+        platform TEXT NOT NULL DEFAULT 'none',
         saved_at INTEGER NOT NULL DEFAULT 0
       )
       ''');
@@ -783,6 +834,12 @@ class CsacLocalCache {
       'session_user',
       'pat_action',
       "TEXT NOT NULL DEFAULT '$defaultPatAction'",
+    );
+    _addColumnIfMissing(
+      db,
+      'session_user',
+      'platform',
+      "TEXT NOT NULL DEFAULT 'none'",
     );
     db.execute('''
       CREATE TABLE IF NOT EXISTS conversations (

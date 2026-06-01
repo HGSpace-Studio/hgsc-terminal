@@ -7,6 +7,7 @@ import 'package:pointycastle/export.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
+import 'platform/api_http_client.dart';
 
 class CsacApiException implements Exception {
   const CsacApiException(this.message);
@@ -82,12 +83,12 @@ class ApiDebugResponse {
 
 class CsacApiClient {
   CsacApiClient({http.Client? httpClient, String baseUrl = defaultBaseUrl})
-    : _http = httpClient ?? http.Client(),
+    : _http = httpClient ?? createApiHttpClient(),
       _baseUrl = normalizeServerUrl(baseUrl) {
     configureApiAssetBaseUrl(_baseUrl);
   }
 
-  static const defaultBaseUrl = 'http://103.40.14.14:24582/rpc/UniCsAC.php';
+  static const defaultBaseUrl = 'https://103.40.14.14:14660/rpc/UniCsAC.php';
   static const _defaultApiPath = '/rpc/UniCsAC.php';
   static const _sessionKey = 'csac.cookies';
 
@@ -111,7 +112,7 @@ class CsacApiClient {
     if (value.isEmpty) {
       return defaultBaseUrl;
     }
-    final withScheme = value.contains('://') ? value : 'http://$value';
+    final withScheme = value.contains('://') ? value : 'https://$value';
     final uri = Uri.tryParse(withScheme);
     if (uri == null ||
         !uri.hasScheme ||
@@ -172,10 +173,15 @@ class CsacApiClient {
     await prefs.remove(_sessionKey);
   }
 
-  Future<CsacUser> login(String username, String password) async {
+  Future<CsacUser> login(
+    String username,
+    String password, {
+    required String platform,
+  }) async {
     final data = await postForm('auth/login', <String, String>{
       'username': username,
       'pwd': password,
+      'platform': platform,
     });
     final user = data['user'];
     if (user is! Map<String, dynamic>) {

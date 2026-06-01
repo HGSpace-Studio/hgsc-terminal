@@ -17,6 +17,7 @@ on:
           - android-apk
           - ios
           - ios-unsigned-ipa
+          - web
 
       upload_release:
         description: Upload built artifacts to GitHub Release
@@ -162,6 +163,7 @@ jobs:
             aria2 \
             clang \
             cmake \
+            libayatana-appindicator3-dev \
             libgtk-3-dev \
             ninja-build \
             pkg-config \
@@ -386,6 +388,48 @@ jobs:
           name: ${{ env.APP_NAME }}-ios
           path: flutter/csac/build/ios/ipa/${{ env.APP_NAME }}-ios-unsigned.ipa
 
+  web:
+    name: Web
+    if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'web' }}
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: flutter/csac
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Check Flutter
+        run: flutter --version
+
+      - name: Enable Web
+        run: flutter config --enable-web
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Read app version
+        run: |
+          version=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          echo "APP_BUILD_NAME=${version%%+*}" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=${version##*+}" >> "$GITHUB_ENV"
+
+      - name: Build Web release
+        run: flutter build web --release --build-name "$APP_BUILD_NAME" --build-number "$APP_BUILD_NUMBER"
+
+      - name: Upload Web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-web
+          path: flutter/csac/build/web
+
   release:
     name: Release
     if: ${{ always() && github.event.inputs.upload_release == 'true' }}
@@ -394,6 +438,7 @@ jobs:
       - linux
       - android
       - ios
+      - web
 
     runs-on: ubuntu-latest
 
@@ -453,6 +498,13 @@ jobs:
             cp \
               "release-assets/${APP_NAME}-ios/${APP_NAME}-ios-unsigned.ipa" \
               "release-upload/${APP_NAME}-${version}-ios-unsigned.ipa"
+          fi
+
+          if [[ -d release-assets/${APP_NAME}-web ]]; then
+            (
+              cd "release-assets/${APP_NAME}-web"
+              zip -r "../../release-upload/${APP_NAME}-${version}-web.zip" .
+            )
           fi
 
           if ! compgen -G "release-upload/*" > /dev/null; then

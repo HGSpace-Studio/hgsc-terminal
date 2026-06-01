@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -62,6 +63,7 @@ func NewUniCsACClient(baseURL string) *UniCsACClient {
 			Jar:     jar,
 			Transport: &http.Transport{
 				DisableKeepAlives: true,
+				TLSClientConfig:   &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
 			},
 		},
 	}
@@ -100,7 +102,11 @@ func (c *UniCsACClient) SetSessionCookies(cookies []*http.Cookie) error {
 
 func (c *UniCsACClient) Login(username, password string) (*User, error) {
 	var out APIResponse
-	if err := c.PostForm("auth/login", url.Values{"username": {username}, "pwd": {password}}, &out); err != nil {
+	if err := c.PostForm("auth/login", url.Values{
+		"username": {username},
+		"pwd":      {password},
+		"platform": {ClientPlatform},
+	}, &out); err != nil {
 		return nil, err
 	}
 	if out.User == nil {
@@ -884,11 +890,19 @@ func (c *UniCsACClient) prepareHeaders(req *http.Request) {
 		req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	}
 	if req.Header.Get("Referer") == "" {
-		req.Header.Set("Referer", "https://cschat.ccccocccc.cc/")
+		req.Header.Set("Referer", c.originURL()+"/")
 	}
 	if req.Method == http.MethodPost && req.Header.Get("Origin") == "" {
-		req.Header.Set("Origin", "https://cschat.ccccocccc.cc")
+		req.Header.Set("Origin", c.originURL())
 	}
+}
+
+func (c *UniCsACClient) originURL() string {
+	u, err := url.Parse(c.baseURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "https://103.40.14.14:14660"
+	}
+	return (&url.URL{Scheme: u.Scheme, Host: u.Host}).String()
 }
 
 func (c *UniCsACClient) doOnce(req *http.Request) (*http.Response, []byte, error) {

@@ -8,7 +8,7 @@
 AppId={{C50B3E07-1D21-43E9-B94E-9C86E8B19D54}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppPublisher=VasilyZa
+AppPublisher=LeonMMcoset
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes

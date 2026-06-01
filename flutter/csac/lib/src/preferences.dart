@@ -189,7 +189,7 @@ class CsacPreferences {
       ),
       chatBubbleOpacity: _chatBubbleOpacityFromPrefs(prefs),
       chatBackgroundPath: prefs.getString(_chatBackgroundPathKey) ?? '',
-      serverUrl: (prefs.getString(_serverUrlKey) ?? '').trim(),
+      serverUrl: _serverUrlFromPrefs(prefs.getString(_serverUrlKey)),
       reduceMotion: prefs.getBool(_reduceMotionKey) ?? false,
       showChatAvatars: prefs.getBool(_showChatAvatarsKey) ?? true,
       enablePat: prefs.getBool(_enablePatKey) ?? true,
@@ -290,6 +290,20 @@ class CsacPreferences {
       return defaultChatBubbleOpacity;
     }
     return value.clamp(0.45, 1.0).toDouble();
+  }
+
+  static String _serverUrlFromPrefs(String? raw) {
+    final value = (raw ?? '').trim();
+    if (value.isEmpty) {
+      return '';
+    }
+    final normalized = value.toLowerCase().replaceAll(RegExp(r'/+$'), '');
+    const oldHosts = <String>{
+      'http://103.40.14.14:24582',
+      'http://103.40.14.14:24582/rpc',
+      'http://103.40.14.14:24582/rpc/unicsac.php',
+    };
+    return oldHosts.contains(normalized) ? '' : value;
   }
 
   static CsacLanguage _languageFromName(String? value) {

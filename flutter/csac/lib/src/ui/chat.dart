@@ -137,6 +137,52 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   bool get canSendText => input.text.trim().isNotEmpty;
 
+  String? repeatMessageKey(ChatMessage message) {
+    if (message.isRecalled) {
+      return null;
+    }
+    if (message.messageType == 5 && message.emojiAbbr.trim().isNotEmpty) {
+      return 'emoji:${message.emojiAbbr.trim()}';
+    }
+    final plainText = chatMessagePlainText(message, context.strings).trim();
+    final canRepeatText =
+        message.messageType == 1 &&
+        plainText.isNotEmpty &&
+        message.imageUrl.isEmpty &&
+        message.voiceUrl.isEmpty &&
+        message.fileUrl.isEmpty;
+    return canRepeatText ? 'text:$plainText' : null;
+  }
+
+  bool areRepeatableMessagesSame(ChatMessage first, ChatMessage second) {
+    final firstKey = repeatMessageKey(first);
+    return firstKey != null && firstKey == repeatMessageKey(second);
+  }
+
+  ChatMessage? get repeatablePreviousMessage {
+    if (widget.conversation.type != ConversationType.group) {
+      return null;
+    }
+    if (messages.length < 2) {
+      return null;
+    }
+    final previous = messages[messages.length - 2];
+    final current = messages.last;
+    return areRepeatableMessagesSame(previous, current) ? current : null;
+  }
+
+  bool shouldShowRepeatPlusOne(int messageIndex) {
+    if (widget.conversation.type != ConversationType.group ||
+        messageIndex != messages.length - 1 ||
+        messages.length < 2) {
+      return false;
+    }
+    return areRepeatableMessagesSame(
+      messages[messageIndex - 1],
+      messages[messageIndex],
+    );
+  }
+
   void setExporting(bool value) {
     setState(() => refreshing = value);
   }
@@ -600,7 +646,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       setState(() {
         messages
           ..clear()
-          ..addAll(merged);
+          ..addAll(
+            widget.conversation.type == ConversationType.private &&
+                    loaded.isNotEmpty
+                ? reconcilePrivateMessages(merged, loaded)
+                : merged,
+          );
         offline = false;
       });
       await markCurrentConversationRead();
@@ -636,7 +687,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     return message.senderId == widget.state.user?.uid &&
                         !message.isRead;
                   })));
-      if (shouldFullReload) {
+      final shouldReconcilePrivateDeletes =
+          widget.conversation.type == ConversationType.private &&
+          silent &&
+          refreshTicks % 3 == 0;
+      if (shouldFullReload || shouldReconcilePrivateDeletes) {
         final loaded = await widget.state.reloadMessagesFromNetwork(
           widget.conversation,
         );
@@ -653,7 +708,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {
           messages
             ..clear()
-            ..addAll(merged);
+            ..addAll(
+              widget.conversation.type == ConversationType.private
+                  ? reconcilePrivateMessages(merged, loaded)
+                  : merged,
+            );
           offline = false;
         });
         await markCurrentConversationRead();
@@ -734,6 +793,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     }
     return widget.state.loadCachedMessages(widget.conversation);
+  }
+
+  List<ChatMessage> reconcilePrivateMessages(
+    List<ChatMessage> currentMessages,
+    List<ChatMessage> serverMessages,
+  ) {
+    if (serverMessages.isEmpty) {
+      return const <ChatMessage>[];
+    }
+    final firstServerId = serverMessages.first.id;
+    final serverIds = serverMessages.map((message) => message.id).toSet();
+    return currentMessages
+        .where(
+          (message) =>
+              message.id < firstServerId || serverIds.contains(message.id),
+        )
+        .toList();
   }
 
   Future<void> loadOlderMessages() async {
@@ -971,6 +1047,37 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
     await EmojiRecentStore.record(sticker);
     await clearDraft();
+    scrollToEnd();
+    unawaited(performPendingSend(pending.localId));
+  }
+
+  Future<void> repeatPreviousMessage() async {
+    if (widget.conversation.type != ConversationType.group) {
+      return;
+    }
+    final previous = repeatablePreviousMessage;
+    if (previous == null) {
+      return;
+    }
+    HapticFeedback.selectionClick();
+    if (previous.emojiAddress.isNotEmpty || previous.messageType == 5) {
+      final sticker = EmojiSticker(
+        fullName: previous.emojiAbbr,
+        address: previous.emojiAddress,
+        abbr: previous.emojiAbbr,
+      );
+      await sendEmojiSticker(sticker);
+      return;
+    }
+    final text = chatMessagePlainText(previous, context.strings).trim();
+    if (text.isEmpty) {
+      return;
+    }
+    final pending = _PendingSend(localId: nextPendingId--, text: text);
+    setState(() {
+      pendingSends.add(pending);
+      error = null;
+    });
     scrollToEnd();
     unawaited(performPendingSend(pending.localId));
   }
@@ -2292,6 +2399,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 final selected = selectedMessageIds.contains(
                                   message.id,
                                 );
+                                final showRepeatPlusOne =
+                                    shouldShowRepeatPlusOne(messageIndex);
                                 final replyMessage = messages
                                     .where((item) => item.id == message.replyTo)
                                     .cast<ChatMessage?>()
@@ -2324,9 +2433,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     selected: selected,
                                     selectionMode: selectionMode,
                                     pressed: pressedMessageId == message.id,
+                                    showRepeatPlusOne: showRepeatPlusOne,
                                     preferences: widget.state.preferences,
                                     onTap: selectionMode
                                         ? () => toggleMessageSelection(message)
+                                        : null,
+                                    onRepeatPlusOne: showRepeatPlusOne
+                                        ? repeatPreviousMessage
                                         : null,
                                     onLongPress: selectionMode
                                         ? null
@@ -2664,8 +2777,10 @@ class _MessageBubble extends StatefulWidget {
     this.selected = false,
     this.selectionMode = false,
     this.pressed = false,
+    this.showRepeatPlusOne = false,
     required this.preferences,
     this.onTap,
+    this.onRepeatPlusOne,
     this.onLongPress,
     this.onSwipeReply,
     this.onAvatarDoubleTap,
@@ -2692,8 +2807,10 @@ class _MessageBubble extends StatefulWidget {
   final bool selected;
   final bool selectionMode;
   final bool pressed;
+  final bool showRepeatPlusOne;
   final CsacPreferences preferences;
   final VoidCallback? onTap;
+  final VoidCallback? onRepeatPlusOne;
   final VoidCallback? onLongPress;
   final VoidCallback? onSwipeReply;
   final VoidCallback? onAvatarDoubleTap;
@@ -3056,7 +3173,15 @@ class _MessageBubbleState extends State<_MessageBubble> {
         avatar,
         const SizedBox(width: 8),
       ],
+      if (widget.mine && widget.showRepeatPlusOne) ...[
+        _RepeatPreviousButton(onPressed: widget.onRepeatPlusOne),
+        const SizedBox(width: 6),
+      ],
       Flexible(child: bubble),
+      if (!widget.mine && widget.showRepeatPlusOne) ...[
+        const SizedBox(width: 6),
+        _RepeatPreviousButton(onPressed: widget.onRepeatPlusOne),
+      ],
       if (widget.showAvatar && widget.mine) ...[
         const SizedBox(width: 8),
         avatar,
@@ -3695,6 +3820,47 @@ class _AnimatedSendButton extends StatelessWidget {
               Icons.send_rounded,
               key: ValueKey<bool>(active),
               color: foreground,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RepeatPreviousButton extends StatelessWidget {
+  const _RepeatPreviousButton({this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AnimatedScale(
+      scale: 1,
+      duration: 180.ms,
+      curve: Curves.easeOutBack,
+      child: Material(
+        color: colors.secondaryContainer,
+        shape: const CircleBorder(),
+        elevation: 1,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onPressed,
+          child: Tooltip(
+            message: context.strings.text('Repeat previous message'),
+            child: SizedBox(
+              width: 36,
+              height: 36,
+              child: Center(
+                child: Text(
+                  '+1',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: colors.onSecondaryContainer,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
             ),
           ),
         ),

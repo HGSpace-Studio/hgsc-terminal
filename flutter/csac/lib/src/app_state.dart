@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'api_client.dart';
 import 'l10n.dart';
@@ -126,7 +127,11 @@ class CsacAppState extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      user = await client.login(username, password);
+      user = await client.login(
+        username,
+        password,
+        platform: await currentClientPlatform(),
+      );
       await cache.saveUser(user!);
       await LoginAccountStore.upsert(
         user: user!,
@@ -452,6 +457,20 @@ class CsacAppState extends ChangeNotifier {
 
   void _applyPreferredServer() {
     client.setBaseUrl(preferences.serverUrl);
+  }
+
+  Future<String> currentClientPlatform() async {
+    var rawVersion = '0.0.0';
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (packageInfo.version.trim().isNotEmpty) {
+        rawVersion = packageInfo.version.trim();
+      }
+    } catch (_) {
+      // Login should still work if package metadata is unavailable.
+    }
+    final version = rawVersion.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '.');
+    return '$csacClientName-$csacClientBranch-$version';
   }
 
   Future<List<LoginAccountRecord>> loadLoginAccounts() {
@@ -1165,7 +1184,16 @@ class CsacAppState extends ChangeNotifier {
     Conversation conversation,
   ) async {
     if (conversation.type == ConversationType.private) {
-      final loaded = await client.messages(conversation);
+      var loaded = await client.messages(conversation);
+      if (loaded.isEmpty) {
+        loaded = await client.messages(conversation, limit: 20);
+        if (loaded.isEmpty) {
+          await cache.replaceMessages(conversation, const <ChatMessage>[]);
+          await _applyConversationActivity(conversation, const <ChatMessage>[]);
+          return const <ChatMessage>[];
+        }
+      }
+      await cache.removeMessagesMissingFromWindow(conversation, loaded);
       await cache.saveMessages(conversation, loaded);
       await _applyConversationActivity(conversation, loaded);
       return cache.filterLocallyDeletedMessages(conversation, loaded);

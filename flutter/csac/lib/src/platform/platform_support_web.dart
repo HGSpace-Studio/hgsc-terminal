@@ -19,6 +19,8 @@ bool get isApplePlatform => false;
 
 bool get shouldForceHideMobileTextInput => false;
 
+void configureInsecureHttpsOverrides() {}
+
 void hidePlatformTextInput() {
   FocusManager.instance.primaryFocus?.unfocus();
 }

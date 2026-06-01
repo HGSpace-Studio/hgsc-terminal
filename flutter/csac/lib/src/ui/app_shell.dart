@@ -1007,6 +1007,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final username = TextEditingController();
   final password = TextEditingController();
   final passwordFocus = FocusNode();
+  final scrollController = ScrollController();
+  final developerOptionsKey = GlobalKey();
   List<LoginAccountRecord> accounts = const <LoginAccountRecord>[];
   bool loadingAccounts = true;
   String? error;
@@ -1022,6 +1024,7 @@ class _LoginScreenState extends State<LoginScreen> {
     username.dispose();
     password.dispose();
     passwordFocus.dispose();
+    scrollController.dispose();
     super.dispose();
   }
 
@@ -1089,6 +1092,24 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> openServerSettings() async {
+    final keyContext = developerOptionsKey.currentContext;
+    if (keyContext != null) {
+      await Scrollable.ensureVisible(
+        keyContext,
+        duration: 320.ms,
+        curve: Curves.easeOutCubic,
+        alignment: 0.7,
+      );
+    } else if (scrollController.hasClients) {
+      await scrollController.animateTo(
+        scrollController.position.maxScrollExtent,
+        duration: 320.ms,
+        curve: Curves.easeOutCubic,
+      );
+    }
+    if (!mounted) {
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SettingsScreen(
@@ -1121,6 +1142,7 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
+            controller: scrollController,
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 430),
@@ -1250,6 +1272,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
+                    key: developerOptionsKey,
                     onPressed: openServerSettings,
                     icon: const Icon(Icons.developer_mode_outlined),
                     label: Text(strings.text('Developer options')),

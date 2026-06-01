@@ -1073,7 +1073,7 @@ class _CacheMetricTile extends StatelessWidget {
 }
 
 const _csacAppName = 'CsAC';
-const _csacAppBranch = 'Leon';
+const _csacAppBranch = csacClientBranch;
 const _csacSourceUrl =
     'https://github.com/Leonmmcoset/csac-terminal/tree/main/flutter/csac';
 const _csacAuthorUrl = 'https://github.com/Leonmmcoset';
@@ -3470,6 +3470,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController serverUrl;
   late final TextEditingController settingsSearch;
   late final ScrollController settingsScroll;
+  final developerOptionsKey = GlobalKey();
   bool clearing = false;
   bool refreshing = false;
   bool savingServer = false;
@@ -3515,6 +3516,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     settingsSearch = TextEditingController()..addListener(handleSearchChanged);
     developerOptionsExpanded = widget.initialDeveloperOptionsExpanded;
     unawaited(loadPerformanceStats());
+    if (developerOptionsExpanded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final context = developerOptionsKey.currentContext;
+        if (context == null) {
+          return;
+        }
+        Scrollable.ensureVisible(
+          context,
+          duration: 360.ms,
+          curve: Curves.easeOutCubic,
+          alignment: 0.05,
+        );
+      });
+    }
   }
 
   @override
@@ -4748,6 +4763,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 12),
             if (showAccount) ...[
               Card(
+                key: developerOptionsKey,
                 elevation: 0,
                 child: _RoundedInkClip(
                   child: ListTile(

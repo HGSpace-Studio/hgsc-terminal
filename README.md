@@ -6,7 +6,7 @@ CsAC-Terminal is a Go TUI client for the UniCsAC HTTP API. The UI is built with
 It uses the API entrypoint:
 
 ```text
-https://cschat.ccccocccc.cc/rpc/UniCsAC.php
+https://103.40.14.14:14660/rpc/UniCsAC.php
 ```
 
 ## Features

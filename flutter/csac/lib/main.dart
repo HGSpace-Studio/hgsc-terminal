@@ -27,6 +27,7 @@ import 'src/notification_service.dart';
 import 'src/platform/desktop_window_chrome.dart';
 import 'src/platform/chat_export_writer.dart';
 import 'src/platform/platform_support.dart';
+import 'src/platform/windows_tray.dart';
 import 'src/preferences.dart';
 import 'src/update_checker.dart';
 
@@ -48,6 +49,8 @@ part 'src/ui/helpers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  configureInsecureHttpsOverrides();
   await configureDesktopWindowChrome();
+  await configureWindowsTray();
   runApp(const CsacMobileApp());
 }
