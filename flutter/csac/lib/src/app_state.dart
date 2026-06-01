@@ -370,6 +370,7 @@ class CsacAppState extends ChangeNotifier {
     await cache.clear();
     await EmojiStickerStore.clear();
     await EmojiRecentStore.clear();
+    await EmojiPinnedStore.clear();
     user = null;
     conversations = const <Conversation>[];
     notificationCounts = const NotificationCounts();
@@ -399,6 +400,7 @@ class CsacAppState extends ChangeNotifier {
     await ConversationDraftStore.clearAll();
     await EmojiStickerStore.clear();
     await EmojiRecentStore.clear();
+    await EmojiPinnedStore.clear();
     user = null;
     conversations = const <Conversation>[];
     notificationCounts = const NotificationCounts();

@@ -967,6 +967,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return;
       }
       final recentStickers = await EmojiRecentStore.load();
+      final pinnedStickers = await EmojiPinnedStore.load();
       if (!mounted) {
         return;
       }
@@ -978,6 +979,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         builder: (context) => _EmojiStickerPicker(
           stickers: stickers,
           recentStickers: recentStickers,
+          pinnedStickers: pinnedStickers,
         ),
       );
       if (!mounted || selected == null) {
@@ -2948,10 +2950,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
         : '';
     final messageText = chatMessagePlainText(widget.message, strings);
     final hasEmoji = widget.message.emojiAddress.isNotEmpty;
-    final maxBubbleWidth = chatBubbleMaxWidth(
-      context,
-      showAvatar: widget.showAvatar,
-    );
+    final maxBubbleWidth =
+        chatBubbleMaxWidth(context, showAvatar: widget.showAvatar) -
+        (widget.showRepeatPlusOne ? 42 : 0);
     final imageHeroTag = widget.message.imageUrl.isEmpty
         ? null
         : chatImageHeroTag(widget.message);
@@ -3002,168 +3003,188 @@ class _MessageBubbleState extends State<_MessageBubble> {
             ],
           ),
           const SizedBox(height: 3),
-          AnimatedContainer(
-            duration: 180.ms,
-            curve: Curves.easeOutCubic,
-            constraints: BoxConstraints(
-              minWidth: widget.showReadStatus ? 76 : 0,
-              maxWidth: maxBubbleWidth,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: widget.pressed
-                  ? Color.alphaBlend(
-                      colors.primary.withValues(alpha: 0.08),
-                      color,
-                    )
-                  : color,
-              borderRadius: borderRadius,
-              border: Border.all(
-                color: highlighted ? colors.primary : borderColor,
-                width: highlighted ? 2 : 1,
-              ),
-              boxShadow: armed || widget.pressed
-                  ? [
-                      BoxShadow(
-                        color: colors.primary.withValues(
-                          alpha: widget.pressed ? 0.26 : 0.22,
-                        ),
-                        blurRadius: widget.pressed ? 22 : 18,
-                        offset: const Offset(0, 8),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Padding(
-                  padding: EdgeInsets.only(
-                    bottom: widget.showReadStatus ? 18 : 0,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (widget.message.replyTo > 0) ...[
-                        InkWell(
-                          onTap: widget.onReplyTap,
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: replyColor,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              widget.replyMessage == null
-                                  ? strings.format('Reply #{id}', {
-                                      'id': widget.message.replyTo,
-                                    })
-                                  : strings
-                                        .format('Reply {sender}: {message}', {
-                                          'sender': widget.replyMessage!.sender,
-                                          'message': compactMessage(
-                                            chatMessagePlainText(
-                                              widget.replyMessage!,
-                                              strings,
-                                            ),
-                                          ),
-                                        }),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: secondaryTextColor,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                      ],
-                      if (widget.message.isMentioned ||
-                          widget.message.isEssence) ...[
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          children: [
-                            if (widget.message.isMentioned)
-                              Chip(
-                                avatar: const Icon(
-                                  Icons.alternate_email,
-                                  size: 16,
-                                ),
-                                label: Text(strings.text('Mentioned')),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                            if (widget.message.isEssence)
-                              Chip(
-                                avatar: const Icon(Icons.star, size: 16),
-                                label: Text(strings.text('Essence')),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                      ],
-                      if (widget.message.imageUrl.isNotEmpty) ...[
-                        _MessageImage(
-                          url: widget.message.imageUrl,
-                          heroTag: imageHeroTag,
-                          onTap: widget.onImageTap,
-                        ),
-                        if (widget.message.body.isNotEmpty &&
-                            !widget.message.body.startsWith('[image]'))
-                          const SizedBox(height: 8),
-                      ],
-                      if (widget.message.voiceUrl.isNotEmpty) ...[
-                        _VoiceMessageTile(
-                          declaredDuration: widget.message.voiceDuration,
-                          position: widget.voicePosition,
-                          duration: widget.voiceDuration,
-                          playing: widget.voicePlaying,
-                          active: widget.voiceActive,
-                          speed: widget.voiceSpeed,
-                          textColor: textColor,
-                          onTap: widget.onVoiceTap,
-                          onSeek: widget.onVoiceSeek,
-                          onSpeed: widget.onVoiceSpeed,
-                        ),
-                        if (widget.message.body.isNotEmpty &&
-                            !widget.message.body.startsWith('[voice]'))
-                          const SizedBox(height: 8),
-                      ],
-                      if (hasEmoji) ...[
-                        _EmojiStickerImage(
-                          url: widget.message.emojiAddress,
-                          size: 118,
-                          fallbackLabel: messageText,
-                        ),
-                      ],
-                      if (messageText.isNotEmpty &&
-                          !hasEmoji &&
-                          !widget.message.body.startsWith('[image]') &&
-                          !widget.message.body.startsWith('[voice]'))
-                        Text(
-                          messageText,
-                          softWrap: true,
-                          style: TextStyle(color: textColor),
-                        ),
-                    ],
-                  ),
-                ),
-                if (widget.showReadStatus)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: _PrivateReadStatus(read: widget.message.isRead),
-                  ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (widget.mine && widget.showRepeatPlusOne) ...[
+                _RepeatPreviousButton(onPressed: widget.onRepeatPlusOne),
+                const SizedBox(width: 6),
               ],
-            ),
+              AnimatedContainer(
+                duration: 180.ms,
+                curve: Curves.easeOutCubic,
+                constraints: BoxConstraints(
+                  minWidth: widget.showReadStatus ? 76 : 0,
+                  maxWidth: maxBubbleWidth,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: widget.pressed
+                      ? Color.alphaBlend(
+                          colors.primary.withValues(alpha: 0.08),
+                          color,
+                        )
+                      : color,
+                  borderRadius: borderRadius,
+                  border: Border.all(
+                    color: highlighted ? colors.primary : borderColor,
+                    width: highlighted ? 2 : 1,
+                  ),
+                  boxShadow: armed || widget.pressed
+                      ? [
+                          BoxShadow(
+                            color: colors.primary.withValues(
+                              alpha: widget.pressed ? 0.26 : 0.22,
+                            ),
+                            blurRadius: widget.pressed ? 22 : 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.only(
+                        bottom: widget.showReadStatus ? 18 : 0,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (widget.message.replyTo > 0) ...[
+                            InkWell(
+                              onTap: widget.onReplyTap,
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: replyColor,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  widget.replyMessage == null
+                                      ? strings.format('Reply #{id}', {
+                                          'id': widget.message.replyTo,
+                                        })
+                                      : strings.format(
+                                          'Reply {sender}: {message}',
+                                          {
+                                            'sender':
+                                                widget.replyMessage!.sender,
+                                            'message': compactMessage(
+                                              chatMessagePlainText(
+                                                widget.replyMessage!,
+                                                strings,
+                                              ),
+                                            ),
+                                          },
+                                        ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: secondaryTextColor,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                          ],
+                          if (widget.message.isMentioned ||
+                              widget.message.isEssence) ...[
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                if (widget.message.isMentioned)
+                                  Chip(
+                                    avatar: const Icon(
+                                      Icons.alternate_email,
+                                      size: 16,
+                                    ),
+                                    label: Text(strings.text('Mentioned')),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                if (widget.message.isEssence)
+                                  Chip(
+                                    avatar: const Icon(Icons.star, size: 16),
+                                    label: Text(strings.text('Essence')),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                          ],
+                          if (widget.message.imageUrl.isNotEmpty) ...[
+                            _MessageImage(
+                              url: widget.message.imageUrl,
+                              heroTag: imageHeroTag,
+                              onTap: widget.onImageTap,
+                            ),
+                            if (widget.message.body.isNotEmpty &&
+                                !widget.message.body.startsWith('[image]'))
+                              const SizedBox(height: 8),
+                          ],
+                          if (widget.message.voiceUrl.isNotEmpty) ...[
+                            _VoiceMessageTile(
+                              declaredDuration: widget.message.voiceDuration,
+                              position: widget.voicePosition,
+                              duration: widget.voiceDuration,
+                              playing: widget.voicePlaying,
+                              active: widget.voiceActive,
+                              speed: widget.voiceSpeed,
+                              textColor: textColor,
+                              onTap: widget.onVoiceTap,
+                              onSeek: widget.onVoiceSeek,
+                              onSpeed: widget.onVoiceSpeed,
+                            ),
+                            if (widget.message.body.isNotEmpty &&
+                                !widget.message.body.startsWith('[voice]'))
+                              const SizedBox(height: 8),
+                          ],
+                          if (hasEmoji) ...[
+                            _EmojiStickerImage(
+                              url: widget.message.emojiAddress,
+                              size: 118,
+                              fallbackLabel: messageText,
+                            ),
+                          ],
+                          if (messageText.isNotEmpty &&
+                              !hasEmoji &&
+                              !widget.message.body.startsWith('[image]') &&
+                              !widget.message.body.startsWith('[voice]'))
+                            Text(
+                              messageText,
+                              softWrap: true,
+                              style: TextStyle(color: textColor),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (widget.showReadStatus)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: _PrivateReadStatus(read: widget.message.isRead),
+                      ),
+                  ],
+                ),
+              ),
+              if (!widget.mine && widget.showRepeatPlusOne) ...[
+                const SizedBox(width: 6),
+                _RepeatPreviousButton(onPressed: widget.onRepeatPlusOne),
+              ],
+            ],
           ),
         ],
       ),
@@ -3173,15 +3194,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
         avatar,
         const SizedBox(width: 8),
       ],
-      if (widget.mine && widget.showRepeatPlusOne) ...[
-        _RepeatPreviousButton(onPressed: widget.onRepeatPlusOne),
-        const SizedBox(width: 6),
-      ],
       Flexible(child: bubble),
-      if (!widget.mine && widget.showRepeatPlusOne) ...[
-        const SizedBox(width: 6),
-        _RepeatPreviousButton(onPressed: widget.onRepeatPlusOne),
-      ],
       if (widget.showAvatar && widget.mine) ...[
         const SizedBox(width: 8),
         avatar,
@@ -4029,10 +4042,12 @@ class _EmojiStickerPicker extends StatefulWidget {
   const _EmojiStickerPicker({
     required this.stickers,
     required this.recentStickers,
+    required this.pinnedStickers,
   });
 
   final List<EmojiSticker> stickers;
   final List<EmojiSticker> recentStickers;
+  final List<EmojiSticker> pinnedStickers;
 
   @override
   State<_EmojiStickerPicker> createState() => _EmojiStickerPickerState();
@@ -4040,6 +4055,7 @@ class _EmojiStickerPicker extends StatefulWidget {
 
 class _EmojiStickerPickerState extends State<_EmojiStickerPicker> {
   final search = TextEditingController();
+  late List<EmojiSticker> pinnedStickers = widget.pinnedStickers;
 
   @override
   void dispose() {
@@ -4056,6 +4072,31 @@ class _EmojiStickerPickerState extends State<_EmojiStickerPicker> {
       return sticker.fullName.toLowerCase().contains(query) ||
           sticker.abbr.toLowerCase().contains(query);
     }).toList();
+  }
+
+  bool isPinned(EmojiSticker sticker) {
+    return pinnedStickers.any((item) => item.abbr == sticker.abbr);
+  }
+
+  Future<void> togglePinned(EmojiSticker sticker) async {
+    HapticFeedback.mediumImpact();
+    final pinned = await EmojiPinnedStore.toggle(sticker);
+    if (!mounted) {
+      return;
+    }
+    final latest = await EmojiPinnedStore.load();
+    if (!mounted) {
+      return;
+    }
+    setState(() => pinnedStickers = latest);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          context.strings.text(pinned ? 'Sticker pinned' : 'Sticker unpinned'),
+        ),
+        duration: 1200.ms,
+      ),
+    );
   }
 
   @override
@@ -4075,13 +4116,28 @@ class _EmojiStickerPickerState extends State<_EmojiStickerPicker> {
         else
           sticker,
     ];
+    final resolvedPinned = <EmojiSticker>[
+      for (final sticker in pinnedStickers)
+        if (availableByAbbr.containsKey(sticker.abbr))
+          availableByAbbr[sticker.abbr]!
+        else
+          sticker,
+    ];
+    final filteredPinned = filterStickers(resolvedPinned);
+    final pinnedAbbrs = filteredPinned.map((sticker) => sticker.abbr).toSet();
     final filteredRecent = filterStickers(resolvedRecent);
-    final recentAbbrs = filteredRecent.map((sticker) => sticker.abbr).toSet();
+    final recentAbbrs = {
+      ...pinnedAbbrs,
+      ...filteredRecent.map((sticker) => sticker.abbr),
+    };
     final allStickers = [
       for (final sticker in filterStickers(widget.stickers))
         if (!recentAbbrs.contains(sticker.abbr)) sticker,
     ];
-    final hasMatches = filteredRecent.isNotEmpty || allStickers.isNotEmpty;
+    final hasMatches =
+        filteredPinned.isNotEmpty ||
+        filteredRecent.isNotEmpty ||
+        allStickers.isNotEmpty;
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
@@ -4149,9 +4205,35 @@ class _EmojiStickerPickerState extends State<_EmojiStickerPicker> {
               Flexible(
                 child: CustomScrollView(
                   slivers: [
-                    if (filteredRecent.isNotEmpty) ...[
+                    if (filteredPinned.isNotEmpty) ...[
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
+                        sliver: SliverToBoxAdapter(
+                          child: _EmojiPickerSectionHeader(
+                            label: strings.text('Pinned stickers'),
+                          ),
+                        ),
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
+                        sliver: _EmojiStickerGrid(
+                          stickers: filteredPinned,
+                          reduceMotion: reduceMotion,
+                          pinnedAbbrs: pinnedAbbrs,
+                          onSelected: (sticker) =>
+                              Navigator.of(context).pop(sticker),
+                          onLongPress: togglePinned,
+                        ),
+                      ),
+                    ],
+                    if (filteredRecent.isNotEmpty) ...[
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          18,
+                          filteredPinned.isEmpty ? 8 : 0,
+                          18,
+                          10,
+                        ),
                         sliver: SliverToBoxAdapter(
                           child: _EmojiPickerSectionHeader(
                             label: strings.text('Recent stickers'),
@@ -4163,8 +4245,10 @@ class _EmojiStickerPickerState extends State<_EmojiStickerPicker> {
                         sliver: _EmojiStickerGrid(
                           stickers: filteredRecent,
                           reduceMotion: reduceMotion,
+                          pinnedAbbrs: pinnedAbbrs,
                           onSelected: (sticker) =>
                               Navigator.of(context).pop(sticker),
+                          onLongPress: togglePinned,
                         ),
                       ),
                       SliverPadding(
@@ -4181,8 +4265,10 @@ class _EmojiStickerPickerState extends State<_EmojiStickerPicker> {
                       sliver: _EmojiStickerGrid(
                         stickers: allStickers,
                         reduceMotion: reduceMotion,
+                        pinnedAbbrs: pinnedAbbrs,
                         onSelected: (sticker) =>
                             Navigator.of(context).pop(sticker),
+                        onLongPress: togglePinned,
                       ),
                     ),
                   ],
@@ -4220,12 +4306,16 @@ class _EmojiStickerGrid extends StatelessWidget {
   const _EmojiStickerGrid({
     required this.stickers,
     required this.reduceMotion,
+    required this.pinnedAbbrs,
     required this.onSelected,
+    required this.onLongPress,
   });
 
   final List<EmojiSticker> stickers;
   final bool reduceMotion;
+  final Set<String> pinnedAbbrs;
   final ValueChanged<EmojiSticker> onSelected;
+  final ValueChanged<EmojiSticker> onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -4241,7 +4331,9 @@ class _EmojiStickerGrid extends StatelessWidget {
         final sticker = stickers[index];
         final tile = _EmojiStickerTile(
           sticker: sticker,
+          pinned: pinnedAbbrs.contains(sticker.abbr),
           onTap: () => onSelected(sticker),
+          onLongPress: () => onLongPress(sticker),
         );
         if (reduceMotion) {
           return tile;
@@ -4261,47 +4353,90 @@ class _EmojiStickerGrid extends StatelessWidget {
 }
 
 class _EmojiStickerTile extends StatelessWidget {
-  const _EmojiStickerTile({required this.sticker, required this.onTap});
+  const _EmojiStickerTile({
+    required this.sticker,
+    required this.pinned,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   final EmojiSticker sticker;
+  final bool pinned;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Material(
-      color: colors.surfaceContainerHighest,
+      color: pinned
+          ? colors.primaryContainer.withValues(alpha: 0.55)
+          : colors.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-          child: Column(
-            children: [
-              Expanded(
-                child: Center(
-                  child: _EmojiStickerImage(
-                    url: sticker.address,
-                    size: 72,
-                    fallbackLabel: sticker.fullName,
+        onLongPress: onLongPress,
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: _EmojiStickerImage(
+                        url: sticker.address,
+                        size: 72,
+                        fallbackLabel: sticker.fullName,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    sticker.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 7,
+              right: 7,
+              child: AnimatedScale(
+                scale: pinned ? 1 : 0,
+                duration: 160.ms,
+                curve: Curves.easeOutBack,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: colors.primary,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: colors.shadow.withValues(alpha: 0.18),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.push_pin,
+                    size: 14,
+                    color: colors.onPrimary,
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                sticker.fullName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
