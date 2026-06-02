@@ -95,6 +95,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final mentionTargets = <GroupMember>[];
   final selectedMessageIds = <int>{};
   final memberAvatars = <int, String>{};
+  final groupMembersByUid = <int, GroupMember>{};
   Timer? timer;
   Timer? draftTimer;
   StreamSubscription<PlayerState>? voicePlayerStateSub;
@@ -136,6 +137,49 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool get selectionMode => selectedMessageIds.isNotEmpty;
 
   bool get canSendText => input.text.trim().isNotEmpty;
+
+  Conversation get displayedConversation {
+    final latest = widget.state.conversations
+        .where(
+          (conversation) =>
+              conversation.type == widget.conversation.type &&
+              conversation.id == widget.conversation.id,
+        )
+        .firstOrNull;
+    if (latest == null) {
+      return widget.conversation;
+    }
+    return latest.copyWith(
+      name: latest.name.trim().isEmpty ? widget.conversation.name : latest.name,
+      avatar: latest.avatar.trim().isEmpty
+          ? widget.conversation.avatar
+          : latest.avatar,
+      subtitle: latest.subtitle.trim().isEmpty
+          ? widget.conversation.subtitle
+          : latest.subtitle,
+      statusSubtitle: latest.statusSubtitle.trim().isEmpty
+          ? widget.conversation.statusSubtitle
+          : latest.statusSubtitle,
+      lastMessagePreview: latest.lastMessagePreview.trim().isEmpty
+          ? widget.conversation.lastMessagePreview
+          : latest.lastMessagePreview,
+    );
+  }
+
+  GroupProfile? get displayedGroupProfile {
+    final profile = groupProfile;
+    if (profile != null) {
+      return profile;
+    }
+    if (widget.conversation.type != ConversationType.group) {
+      return null;
+    }
+    return GroupProfile(
+      id: widget.conversation.id,
+      name: displayedConversation.name,
+      avatar: displayedConversation.avatar,
+    );
+  }
 
   String? repeatMessageKey(ChatMessage message) {
     if (message.isRecalled) {
@@ -287,7 +331,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     if (widget.state.preferences.showChatAvatars &&
         widget.conversation.type == ConversationType.group &&
-        memberAvatars.isEmpty) {
+        groupMembersByUid.isEmpty) {
       unawaited(loadMemberAvatars());
     }
     setState(() {});
@@ -499,7 +543,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> loadMemberAvatars() async {
     if (widget.conversation.type != ConversationType.group ||
-        !widget.state.preferences.showChatAvatars ||
         loadingMemberAvatars) {
       return;
     }
@@ -512,6 +555,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return;
       }
       setState(() {
+        groupMembersByUid
+          ..clear()
+          ..addEntries(members.map((member) => MapEntry(member.uid, member)));
         memberAvatars
           ..clear()
           ..addEntries(
@@ -529,7 +575,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   String avatarForMessage(ChatMessage message, bool mine) {
     if (mine) {
-      return widget.state.user?.avatar ?? '';
+      return widget.state.currentUserAvatar;
     }
     if (message.senderAvatar.trim().isNotEmpty) {
       return message.senderAvatar;
@@ -539,9 +585,72 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return memberAvatar;
     }
     if (widget.conversation.type == ConversationType.private) {
-      return widget.conversation.avatar;
+      return displayedConversation.avatar;
     }
     return '';
+  }
+
+  GroupMember memberForMessage(ChatMessage message) {
+    final cached = groupMembersByUid[message.senderId];
+    if (cached != null) {
+      return cached;
+    }
+    return GroupMember(
+      uid: message.senderId,
+      name: message.sender.trim().isEmpty
+          ? 'UID ${message.senderId}'
+          : message.sender,
+      avatar: avatarForMessage(message, false),
+      memberTitle: message.memberTitle,
+      memberLevel: message.memberLevel,
+    );
+  }
+
+  void mentionMessageSender(ChatMessage message) {
+    if (widget.conversation.type != ConversationType.group ||
+        message.senderId <= 0) {
+      return;
+    }
+    final member = memberForMessage(message);
+    setState(() {
+      if (!mentionTargets.any((item) => item.uid == member.uid)) {
+        mentionTargets.add(member);
+      }
+    });
+    final mentionText = '@${member.name} ';
+    if (!input.text.endsWith(mentionText)) {
+      final selection = input.selection;
+      final insertAt = selection.isValid ? selection.end : input.text.length;
+      final prefix = input.text.substring(0, insertAt);
+      final suffix = input.text.substring(insertAt);
+      final spacer = prefix.isEmpty || RegExp(r'\s$').hasMatch(prefix)
+          ? ''
+          : ' ';
+      final nextText = '$prefix$spacer$mentionText$suffix';
+      final nextOffset = ('$prefix$spacer$mentionText').length;
+      input.value = input.value.copyWith(
+        text: nextText,
+        selection: TextSelection.collapsed(offset: nextOffset),
+        composing: TextRange.empty,
+      );
+    }
+    inputFocus.requestFocus();
+    unawaited(saveDraftNow());
+  }
+
+  Future<void> openMessageSenderProfile(ChatMessage message) async {
+    if (message.senderId <= 0) {
+      return;
+    }
+    await openUserProfile(
+      context,
+      widget.state,
+      message.senderId,
+      group: displayedGroupProfile,
+      member: widget.conversation.type == ConversationType.group
+          ? memberForMessage(message)
+          : null,
+    );
   }
 
   Future<void> markCurrentConversationRead() async {
@@ -1289,15 +1398,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         localId,
         (item) => item.copyWith(status: _PendingSendStatus.sent, error: ''),
       );
-      await Future<void>.delayed(260.ms);
+      await widget.state.markConversationRead(widget.conversation);
+      await refresh(silent: true);
+      if (!pendingWasHydrated(pending)) {
+        await Future<void>.delayed(650.ms);
+        if (!mounted) {
+          return;
+        }
+        await refresh(silent: true);
+      }
       if (!mounted) {
         return;
       }
-      setState(
-        () => pendingSends.removeWhere((item) => item.localId == localId),
-      );
-      await widget.state.markConversationRead(widget.conversation);
-      await refresh(silent: true);
+      if (pendingWasHydrated(pending)) {
+        setState(
+          () => pendingSends.removeWhere((item) => item.localId == localId),
+        );
+      }
       scrollToEnd();
     } catch (err) {
       replacePendingSend(
@@ -1308,6 +1425,33 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ),
       );
     }
+  }
+
+  bool pendingWasHydrated(_PendingSend pending) {
+    final currentUid = widget.state.user?.uid ?? 0;
+    final recent = messages.reversed.take(16);
+    return recent.any((message) {
+      if (currentUid > 0 && message.senderId != currentUid) {
+        return false;
+      }
+      if (pending.hasEmoji) {
+        return message.messageType == 5 &&
+            message.emojiAbbr.trim() == pending.emoji?.abbr.trim();
+      }
+      if (pending.hasImage) {
+        return message.imageUrl.isNotEmpty &&
+            (pending.text.trim().isEmpty ||
+                chatMessagePlainText(
+                  message,
+                  context.strings,
+                ).contains(pending.text.trim()));
+      }
+      if (pending.hasVoice) {
+        return message.voiceUrl.isNotEmpty;
+      }
+      return chatMessagePlainText(message, context.strings).trim() ==
+          pending.text.trim();
+    });
   }
 
   Future<void> sendPat(ChatMessage message) async {
@@ -2131,6 +2275,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final conversation = displayedConversation;
     final announcement = groupProfile?.notice.trim() ?? '';
     final showEmpty = !loading && messages.isEmpty && pendingSends.isEmpty;
     final unreadMessageId = firstUnreadMessageId;
@@ -2157,14 +2302,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             : Row(
                 children: [
                   _ConversationAvatarHero(
-                    conversation: widget.conversation,
+                    conversation: conversation,
                     enabled: !widget.embedded,
                     radius: 16,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: _ConversationTitleHero(
-                      conversation: widget.conversation,
+                      conversation: conversation,
                       enabled: !widget.embedded,
                     ),
                   ),
@@ -2379,6 +2524,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 final message = messages[messageIndex];
                                 final mine =
                                     widget.state.user?.uid == message.senderId;
+                                final member = memberForMessage(message);
                                 if (message.messageType == 4 ||
                                     message.isRecalled) {
                                   return _MotionListItem(
@@ -2415,6 +2561,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       () => GlobalKey(),
                                     ),
                                     message: message,
+                                    member: member,
                                     replyMessage: replyMessage,
                                     mine: mine,
                                     showAvatar: showAvatar,
@@ -2459,6 +2606,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                 .enablePat &&
                                             !mine
                                         ? () => sendPat(message)
+                                        : null,
+                                    onAvatarTap: selectionMode
+                                        ? null
+                                        : () =>
+                                              openMessageSenderProfile(message),
+                                    onAvatarLongPress:
+                                        widget.conversation.type ==
+                                                ConversationType.group &&
+                                            !mine &&
+                                            !selectionMode
+                                        ? () => mentionMessageSender(message)
                                         : null,
                                     onReplyTap: message.replyTo > 0
                                         ? () => scrollToMessage(message.replyTo)
@@ -2769,6 +2927,7 @@ class _MessageBubble extends StatefulWidget {
   const _MessageBubble({
     super.key,
     required this.message,
+    this.member,
     this.replyMessage,
     required this.mine,
     this.showAvatar = false,
@@ -2785,6 +2944,8 @@ class _MessageBubble extends StatefulWidget {
     this.onRepeatPlusOne,
     this.onLongPress,
     this.onSwipeReply,
+    this.onAvatarTap,
+    this.onAvatarLongPress,
     this.onAvatarDoubleTap,
     this.onReplyTap,
     this.onImageTap,
@@ -2799,6 +2960,7 @@ class _MessageBubble extends StatefulWidget {
   });
 
   final ChatMessage message;
+  final GroupMember? member;
   final ChatMessage? replyMessage;
   final bool mine;
   final bool showAvatar;
@@ -2815,6 +2977,8 @@ class _MessageBubble extends StatefulWidget {
   final VoidCallback? onRepeatPlusOne;
   final VoidCallback? onLongPress;
   final VoidCallback? onSwipeReply;
+  final VoidCallback? onAvatarTap;
+  final VoidCallback? onAvatarLongPress;
   final VoidCallback? onAvatarDoubleTap;
   final VoidCallback? onReplyTap;
   final VoidCallback? onImageTap;
@@ -2941,12 +3105,19 @@ class _MessageBubbleState extends State<_MessageBubble> {
             url: widget.avatarUrl,
             mine: widget.mine,
             name: widget.message.sender,
+            onTap: widget.onAvatarTap,
+            onLongPress: widget.onAvatarLongPress,
             onDoubleTap: widget.onAvatarDoubleTap,
           )
         : const SizedBox.shrink();
     final messageTime = displayMessageTime(widget.message, widget.preferences);
     final memberLevelText = widget.showMemberLevel
-        ? _memberLevelText(widget.message)
+        ? _groupMemberBadgeText(
+            widget.message,
+            widget.member,
+            widget.preferences,
+            strings,
+          )
         : '';
     final messageText = chatMessagePlainText(widget.message, strings);
     final hasEmoji = widget.message.emojiAddress.isNotEmpty;
@@ -3163,10 +3334,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
                               !hasEmoji &&
                               !widget.message.body.startsWith('[image]') &&
                               !widget.message.body.startsWith('[voice]'))
-                            Text(
-                              messageText,
-                              softWrap: true,
-                              style: TextStyle(color: textColor),
+                            _ChatMarkdownText(
+                              text: messageText,
+                              textColor: textColor,
+                              secondaryTextColor: secondaryTextColor,
                             ),
                         ],
                       ),
@@ -3291,15 +3462,122 @@ class _ChatBackground extends StatelessWidget {
   }
 }
 
-String _memberLevelText(ChatMessage message) {
-  if (message.memberLevel <= 0) {
-    return '';
+String _groupMemberBadgeText(
+  ChatMessage message,
+  GroupMember? member,
+  CsacPreferences preferences,
+  CsacStrings strings,
+) {
+  final level = member?.memberLevel == 0 || member?.memberLevel == null
+      ? message.memberLevel
+      : member!.memberLevel;
+  final levelText = level > 0 ? 'Lv.$level' : '';
+  final title = [
+    member?.memberTitle.trim() ?? '',
+    message.memberTitle.trim(),
+  ].firstWhere((value) => value.isNotEmpty, orElse: () => '');
+  switch (preferences.groupMemberBadgeMode) {
+    case GroupMemberBadgeMode.title:
+      return [levelText, title]
+          .where((value) => value.trim().isNotEmpty)
+          .join(' ');
+    case GroupMemberBadgeMode.role:
+      final role = (member?.hasOwnerRole ?? false)
+          ? strings.text('Owner')
+          : (member?.hasAdminRole ?? false)
+          ? strings.text('Admin')
+          : strings.text('Member');
+      return [levelText, role]
+          .where((value) => value.trim().isNotEmpty)
+          .join(' ');
   }
-  final title = message.memberTitle.trim();
-  if (title.isEmpty) {
-    return 'Lv.${message.memberLevel}';
+}
+
+String _escapeMarkdownHtml(String value) {
+  return value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+}
+
+class _ChatMarkdownText extends StatelessWidget {
+  const _ChatMarkdownText({
+    required this.text,
+    required this.textColor,
+    required this.secondaryTextColor,
+  });
+
+  final String text;
+  final Color textColor;
+  final Color secondaryTextColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final codeBackground = Color.alphaBlend(
+      textColor.withValues(alpha: 0.09),
+      Colors.transparent,
+    );
+    final base = theme.textTheme.bodyMedium?.copyWith(color: textColor);
+    final codeStyle = base?.copyWith(
+      color: textColor,
+      fontFamily: 'monospace',
+      backgroundColor: codeBackground,
+    );
+    return MarkdownBody(
+      data: _escapeMarkdownHtml(text),
+      selectable: false,
+      shrinkWrap: true,
+      fitContent: true,
+      softLineBreak: true,
+      sizedImageBuilder: (config) {
+        final label = (config.alt ?? config.uri.toString()).trim();
+        return Text(
+          label.isEmpty ? config.uri.toString() : label,
+          style: base?.copyWith(
+            color: secondaryTextColor,
+            fontStyle: FontStyle.italic,
+          ),
+        );
+      },
+      onTapLink: (_, href, _) {
+        final uri = Uri.tryParse(href ?? '');
+        if (uri == null || !uri.hasScheme) {
+          return;
+        }
+        unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+      },
+      styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+        a: base?.copyWith(
+          color: theme.colorScheme.primary,
+          decoration: TextDecoration.underline,
+        ),
+        p: base,
+        strong: base?.copyWith(fontWeight: FontWeight.w800),
+        em: base?.copyWith(fontStyle: FontStyle.italic),
+        del: base?.copyWith(decoration: TextDecoration.lineThrough),
+        code: codeStyle,
+        codeblockDecoration: BoxDecoration(
+          color: codeBackground,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        blockquote: base?.copyWith(color: secondaryTextColor),
+        blockquoteDecoration: BoxDecoration(
+          color: codeBackground,
+          borderRadius: BorderRadius.circular(6),
+          border: Border(
+            left: BorderSide(
+              color: secondaryTextColor.withValues(alpha: 0.5),
+              width: 3,
+            ),
+          ),
+        ),
+        listBullet: base,
+        tableBody: base,
+        tableHead: base?.copyWith(fontWeight: FontWeight.w800),
+      ),
+    );
   }
-  return 'Lv.${message.memberLevel} $title';
 }
 
 class _SystemMessagePill extends StatefulWidget {
@@ -3507,12 +3785,16 @@ class _ChatMessageAvatar extends StatefulWidget {
     required this.url,
     required this.mine,
     required this.name,
+    this.onTap,
+    this.onLongPress,
     this.onDoubleTap,
   });
 
   final String url;
   final bool mine;
   final String name;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final VoidCallback? onDoubleTap;
 
   @override
@@ -3551,7 +3833,11 @@ class _ChatMessageAvatarState extends State<_ChatMessageAvatar> {
             : colors.onSurfaceVariant,
       ),
     );
-    if (widget.onDoubleTap == null) {
+    final canInteract =
+        widget.onTap != null ||
+        widget.onLongPress != null ||
+        widget.onDoubleTap != null;
+    if (!canInteract) {
       return avatar;
     }
     final animatedAvatar = reduceMotion
@@ -3604,9 +3890,19 @@ class _ChatMessageAvatarState extends State<_ChatMessageAvatar> {
               ],
             ),
           );
+    final child = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
+      onDoubleTap: widget.onDoubleTap == null ? null : triggerPat,
+      child: animatedAvatar,
+    );
+    if (widget.onDoubleTap == null) {
+      return child;
+    }
     return Tooltip(
       message: context.strings.text('Double tap to pat'),
-      child: GestureDetector(onDoubleTap: triggerPat, child: animatedAvatar),
+      child: child,
     );
   }
 }
@@ -5051,7 +5347,7 @@ class _PendingMessageBubbleState extends State<_PendingMessageBubble>
         );
       },
       child: AnimatedOpacity(
-        opacity: sent ? 0 : 1,
+        opacity: sent ? 0.72 : 1,
         duration: 240.ms,
         curve: Curves.easeOutCubic,
         child: Padding(

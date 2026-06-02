@@ -56,8 +56,11 @@ class Friend {
     required this.name,
     this.avatar = '',
     this.subtitle = '',
+    this.statusSubtitle = '',
+    this.lastMessagePreview = '',
     this.unreadCount = 0,
     this.searchText = '',
+    this.lastMessageAt = 0,
   });
 
   final int id;
@@ -65,13 +68,21 @@ class Friend {
   final String name;
   final String avatar;
   final String subtitle;
+  final String statusSubtitle;
+  final String lastMessagePreview;
   final int unreadCount;
   final String searchText;
+  final int lastMessageAt;
 
   factory Friend.fromJson(Map<String, dynamic> json) {
-    final id = asInt(json['friend_id']) == 0
-        ? asInt(json['uid'])
-        : asInt(json['friend_id']);
+    final uid = firstInt(json, const [
+      'uid',
+      'friend_uid',
+      'friend_id',
+      'user_id',
+      'id',
+    ]);
+    final id = firstInt(json, const ['friend_id', 'id', 'uid']);
     final remark = asString(json['remark']);
     final nickname = asString(json['nickname']);
     final last = asString(json['last_message']).isEmpty
@@ -84,18 +95,21 @@ class Friend {
       'updated_at',
     ]);
     final online = asString(json['online_status']);
+    final statusSubtitle = [
+      online,
+    ].where((part) => part.trim().isNotEmpty).join(' | ');
+    final lastMessagePreview = [
+      last,
+      lastTime,
+    ].where((part) => part.trim().isNotEmpty).join(' | ');
     return Friend(
       id: id,
-      uid: asInt(json['uid']),
-      name: remark.isEmpty
-          ? (nickname.isEmpty ? 'User $id' : nickname)
-          : remark,
+      uid: uid,
+      name: remark.isEmpty ? (nickname.isEmpty ? 'User $uid' : nickname) : remark,
       avatar: normalizeApiUrl(asString(json['avatar'])),
-      subtitle: [
-        online,
-        last,
-        lastTime,
-      ].where((part) => part.trim().isNotEmpty).join(' | '),
+      subtitle: statusSubtitle.isNotEmpty ? statusSubtitle : lastMessagePreview,
+      statusSubtitle: statusSubtitle,
+      lastMessagePreview: lastMessagePreview,
       unreadCount: asInt(json['unread_count']),
       searchText: [
         remark,
@@ -104,7 +118,9 @@ class Friend {
         online,
         last,
         lastTime,
+        '$uid',
       ].where((part) => part.trim().isNotEmpty).join(' | '),
+      lastMessageAt: timestampForSort(lastTime),
     );
   }
 }
@@ -115,16 +131,22 @@ class Group {
     required this.name,
     this.avatar = '',
     this.subtitle = '',
+    this.statusSubtitle = '',
+    this.lastMessagePreview = '',
     this.unreadCount = 0,
     this.searchText = '',
+    this.lastMessageAt = 0,
   });
 
   final int id;
   final String name;
   final String avatar;
   final String subtitle;
+  final String statusSubtitle;
+  final String lastMessagePreview;
   final int unreadCount;
   final String searchText;
+  final int lastMessageAt;
 
   factory Group.fromJson(Map<String, dynamic> json) {
     final id = asInt(json['room_id']) == 0
@@ -136,15 +158,33 @@ class Group {
     final description = asString(json['description']);
     final notice = asString(json['notice']);
     final members = asInt(json['member_count']);
+    final onlineMembers = firstInt(json, const [
+      'online_count',
+      'online_members',
+      'online_member_count',
+    ]);
+    final last = firstString(json, const [
+      'last_message',
+      'last_msg',
+      'last_content',
+      'last_message_content',
+    ]);
     final lastTime = firstReadableTime(json, const [
       'last_time',
       'last_msg_time',
       'last_message_time',
       'updated_at',
     ]);
-    final parts = <String>[
+    final statusParts = <String>[
       if (members > 0) '$members members',
+      if (onlineMembers > 0) '$onlineMembers online',
+    ];
+    final lastMessagePreview = <String>[
+      if (last.isNotEmpty) last,
       if (lastTime.isNotEmpty) lastTime,
+    ].join(' | ');
+    final parts = <String>[
+      ...statusParts,
       if (description.isNotEmpty) description,
       if (notice.isNotEmpty) notice,
     ];
@@ -161,15 +201,20 @@ class Group {
         ]),
       ),
       subtitle: parts.join(' | '),
+      statusSubtitle: statusParts.join(' | '),
+      lastMessagePreview: lastMessagePreview,
       unreadCount: asInt(json['unread_count']),
       searchText: [
         roomName,
         description,
         notice,
+        last,
+        lastTime,
         asString(json['intro']),
         asString(json['room_intro']),
         asString(json['announcement']),
       ].where((part) => part.trim().isNotEmpty).join(' | '),
+      lastMessageAt: timestampForSort(lastTime),
     );
   }
 }
@@ -181,6 +226,8 @@ class Conversation {
     required this.name,
     this.avatar = '',
     this.subtitle = '',
+    this.statusSubtitle = '',
+    this.lastMessagePreview = '',
     this.unreadCount = 0,
     this.searchText = '',
     this.lastMessageAt = 0,
@@ -192,6 +239,8 @@ class Conversation {
   final String name;
   final String avatar;
   final String subtitle;
+  final String statusSubtitle;
+  final String lastMessagePreview;
   final int unreadCount;
   final String searchText;
   final int lastMessageAt;
@@ -203,6 +252,8 @@ class Conversation {
     String? name,
     String? avatar,
     String? subtitle,
+    String? statusSubtitle,
+    String? lastMessagePreview,
     int? unreadCount,
     String? searchText,
     int? lastMessageAt,
@@ -214,6 +265,8 @@ class Conversation {
       name: name ?? this.name,
       avatar: avatar ?? this.avatar,
       subtitle: subtitle ?? this.subtitle,
+      statusSubtitle: statusSubtitle ?? this.statusSubtitle,
+      lastMessagePreview: lastMessagePreview ?? this.lastMessagePreview,
       unreadCount: unreadCount ?? this.unreadCount,
       searchText: searchText ?? this.searchText,
       lastMessageAt: lastMessageAt ?? this.lastMessageAt,
@@ -730,6 +783,43 @@ class ChatMessage {
       replyTo: firstInt(json, const ['reply_to', 'reply_msg_id']),
     );
   }
+}
+
+String compactConversationPreviewText(ChatMessage message, {int max = 96}) {
+  String marker(String value) => value;
+  if (message.isRecalled) {
+    return marker('[recalled]');
+  }
+  if (message.emojiAddress.isNotEmpty || message.messageType == 5) {
+    final abbr = message.emojiAbbr.trim();
+    return abbr.isEmpty ? marker('[emoji]') : '${marker('[emoji]')} $abbr';
+  }
+  if (message.imageUrl.isNotEmpty && message.body.startsWith('[image]')) {
+    return marker('[image]');
+  }
+  if (message.voiceUrl.isNotEmpty && message.body.startsWith('[voice]')) {
+    return marker('[voice]');
+  }
+  if (message.fileUrl.isNotEmpty && message.body.startsWith('[file]')) {
+    return marker('[file]');
+  }
+  final value = message.body.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (value.length <= max) {
+    return value;
+  }
+  return '${value.substring(0, max - 3)}...';
+}
+
+String displayConversationPreviewTime(ChatMessage message) {
+  final timestamp = message.timeSortValue > 0
+      ? message.timeSortValue
+      : timestampForSort(message.time);
+  if (timestamp <= 0) {
+    return message.time;
+  }
+  return formatCompactLocalDateTime(
+    DateTime.fromMillisecondsSinceEpoch(timestamp).toLocal(),
+  );
 }
 
 class EssenceStats {

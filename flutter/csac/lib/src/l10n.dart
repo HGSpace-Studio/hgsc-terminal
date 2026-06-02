@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'preferences.dart';
@@ -12,9 +15,10 @@ Locale localeForLanguage(CsacLanguage language) {
 }
 
 class CsacStrings {
-  const CsacStrings(this.locale);
+  const CsacStrings(this.locale, [this.overrides = const <String, String>{}]);
 
   final Locale locale;
+  final Map<String, String> overrides;
 
   bool get isZh => locale.languageCode == 'zh';
 
@@ -24,6 +28,10 @@ class CsacStrings {
   }
 
   String text(String key) {
+    final override = overrides[key];
+    if (override != null && override.trim().isNotEmpty) {
+      return override;
+    }
     if (!isZh) {
       return key;
     }
@@ -49,11 +57,30 @@ class CsacStringsDelegate extends LocalizationsDelegate<CsacStrings> {
 
   @override
   Future<CsacStrings> load(Locale locale) async {
-    return CsacStrings(locale);
+    return CsacStrings(locale, await _loadL10nOverrides(locale));
   }
 
   @override
   bool shouldReload(CsacStringsDelegate old) => false;
+}
+
+Future<Map<String, String>> _loadL10nOverrides(Locale locale) async {
+  final candidates = <String>[
+    if (locale.countryCode?.trim().isNotEmpty == true)
+      '${locale.languageCode}-${locale.countryCode}',
+    locale.languageCode,
+  ];
+  for (final name in candidates) {
+    try {
+      final raw = await rootBundle.loadString('lib/l10n/$name.json');
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        continue;
+      }
+      return decoded.map((key, value) => MapEntry(key, '$value'));
+    } catch (_) {}
+  }
+  return const <String, String>{};
 }
 
 extension CsacStringsContext on BuildContext {
@@ -263,10 +290,15 @@ const _zh = <String, String>{
   'Softer iOS-style rounded text': '更柔和的 iOS 圆角文字风格',
   'Fixed-width terminal-like text': '固定宽度的终端风格文字',
   'Conversation sorting': '会话排序',
+  'Conversation subtitle': '会话副标题',
   'Latest message': '最新消息',
+  'Recent message': '最近一条消息',
   'Conversation type': '会话类型',
+  'Members and online status': '群员数量/在线情况',
   'Show chats with recent activity first': '优先显示最近有新消息的会话',
+  'Show the latest message in each chat row': '在每个会话项中显示最近一条消息',
   'Group friends and groups separately': '按好友和群组分组显示',
+  'Show group member count and online status': '显示群成员数量和在线状态',
   'Message time format': '消息时间格式',
   'Chat bubble theme': '聊天气泡主题',
   'Own bubble color': '自己气泡颜色',
@@ -296,6 +328,11 @@ const _zh = <String, String>{
   'Double tap a group member avatar to send a pat': '双击群成员头像发送拍一拍',
   'Show group member level': '显示群成员等级',
   'Display member level beside names in group chats': '在群聊昵称旁显示成员等级',
+  'Group badge content': '群消息徽标内容',
+  'Member role': '成员身份',
+  'Display group titles set by admins': '显示群主或管理员设置的头衔',
+  'Display member level badges': '显示成员等级徽标',
+  'Display owner/admin/member role': '显示群主、管理员或成员身份',
   'Reduce motion': '减少动画',
   'Use simpler transitions and fewer decorative animations':
       '使用更简单的过渡，并减少装饰性动画。',

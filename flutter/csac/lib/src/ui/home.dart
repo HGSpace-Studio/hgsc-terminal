@@ -887,7 +887,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   child: Row(
                     children: [
                       _Avatar(
-                        url: user?.avatar ?? '',
+                        url: widget.state.currentUserAvatar,
                         fallback: Icons.person_rounded,
                         radius: 19,
                       ),
@@ -1008,6 +1008,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   conversation: entry.$2,
                   draft: drafts[draftKey(entry.$2)],
                   preference: localPref(entry.$2),
+                  subtitleMode:
+                      widget.state.preferences.conversationSubtitleMode,
                   selected:
                       widget.selectedConversation?.type == entry.$2.type &&
                       widget.selectedConversation?.id == entry.$2.id,
@@ -1146,12 +1148,14 @@ class _ConversationTile extends StatelessWidget {
     required this.onLongPress,
     this.draft,
     this.preference = ConversationLocalPreference.defaults,
+    this.subtitleMode = ConversationSubtitleMode.recentMessage,
     this.selected = false,
   });
 
   final Conversation conversation;
   final ConversationDraft? draft;
   final ConversationLocalPreference preference;
+  final ConversationSubtitleMode subtitleMode;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final bool selected;
@@ -1165,11 +1169,21 @@ class _ConversationTile extends StatelessWidget {
     final fallbackSubtitle = conversation.subtitle.isEmpty
         ? context.strings.text(isGroup ? 'Group chat' : 'Private chat')
         : conversation.subtitle;
+    final preferredSubtitle = switch (subtitleMode) {
+      ConversationSubtitleMode.recentMessage =>
+        conversation.lastMessagePreview.trim().isNotEmpty
+            ? conversation.lastMessagePreview.trim()
+            : fallbackSubtitle,
+      ConversationSubtitleMode.status =>
+        conversation.statusSubtitle.trim().isNotEmpty
+            ? conversation.statusSubtitle.trim()
+            : fallbackSubtitle,
+    };
     final subtitleText = hasDraft
         ? context.strings.format('Draft: {text}', {
             'text': compactDraftText(draft.previewText, max: 72),
           })
-        : fallbackSubtitle;
+        : preferredSubtitle;
     return GestureDetector(
       onSecondaryTap: onLongPress,
       child: Card(

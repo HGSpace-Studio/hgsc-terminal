@@ -38,7 +38,7 @@ class ProfileScreen extends StatelessWidget {
               child: _RoundedInkClip(
                 child: ListTile(
                   leading: _Avatar(
-                    url: user?.avatar ?? '',
+                    url: state.currentUserAvatar,
                     fallback: Icons.person_rounded,
                   ),
                   title: Text(user?.nickname ?? strings.text('Not logged in')),
@@ -378,7 +378,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 child: Row(
                   children: [
                     _Avatar(
-                      url: user?.avatar ?? '',
+                      url: widget.state.currentUserAvatar,
                       fallback: Icons.person_rounded,
                     ),
                     const SizedBox(width: 14),
@@ -3602,6 +3602,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  String get conversationSubtitleModeLabel {
+    final strings = context.strings;
+    switch (widget.state.preferences.conversationSubtitleMode) {
+      case ConversationSubtitleMode.recentMessage:
+        return strings.text('Recent message');
+      case ConversationSubtitleMode.status:
+        return strings.text('Members and online status');
+    }
+  }
+
+  String get groupMemberBadgeModeLabel {
+    final strings = context.strings;
+    switch (widget.state.preferences.groupMemberBadgeMode) {
+      case GroupMemberBadgeMode.title:
+        return strings.text('Member title');
+      case GroupMemberBadgeMode.role:
+        return strings.text('Member role');
+    }
+  }
+
   String get messageTimeFormatLabel {
     return messageTimeFormatLabelFor(
       context,
@@ -4413,6 +4433,107 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> chooseConversationSubtitleMode() async {
+    final selected = await showModalBottomSheet<ConversationSubtitleMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading:
+                    widget.state.preferences.conversationSubtitleMode ==
+                        ConversationSubtitleMode.recentMessage
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: Text(context.strings.text('Recent message')),
+                subtitle: Text(
+                  context.strings.text(
+                    'Show the latest message in each chat row',
+                  ),
+                ),
+                onTap: () => Navigator.of(
+                  context,
+                ).pop(ConversationSubtitleMode.recentMessage),
+              ),
+              ListTile(
+                leading:
+                    widget.state.preferences.conversationSubtitleMode ==
+                        ConversationSubtitleMode.status
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: Text(context.strings.text('Members and online status')),
+                subtitle: Text(
+                  context.strings.text(
+                    'Show group member count and online status',
+                  ),
+                ),
+                onTap: () =>
+                    Navigator.of(context).pop(ConversationSubtitleMode.status),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      await widget.state.updateConversationSubtitleMode(selected);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  Future<void> chooseGroupMemberBadgeMode() async {
+    final selected = await showModalBottomSheet<GroupMemberBadgeMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading:
+                    widget.state.preferences.groupMemberBadgeMode ==
+                        GroupMemberBadgeMode.title
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: Text(context.strings.text('Member title')),
+                subtitle: Text(
+                  context.strings.text('Display group titles set by admins'),
+                ),
+                onTap: () =>
+                    Navigator.of(context).pop(GroupMemberBadgeMode.title),
+              ),
+              ListTile(
+                leading:
+                    widget.state.preferences.groupMemberBadgeMode ==
+                        GroupMemberBadgeMode.role
+                    ? const Icon(Icons.check)
+                    : const SizedBox(width: 24),
+                title: Text(context.strings.text('Member role')),
+                subtitle: Text(
+                  context.strings.text('Display owner/admin/member role'),
+                ),
+                onTap: () =>
+                    Navigator.of(context).pop(GroupMemberBadgeMode.role),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      await widget.state.updateGroupMemberBadgeMode(selected);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
   Future<void> chooseMessageTimeFormat() async {
     final selected = await showModalBottomSheet<MessageTimeFormat>(
       context: context,
@@ -4670,6 +4791,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Font',
       'Typography',
       'Conversation sorting',
+      'Conversation subtitle',
+      'Recent message',
+      'Members and online status',
       'Message time format',
       'Chat bubble theme',
       'Own bubble color',
@@ -4683,6 +4807,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Double tap avatar pat',
       'Pat',
       'Group member level',
+      'Group badge content',
+      'Member title',
+      'Member role',
       'Level',
       'Reduce motion',
       'Animation',
@@ -4768,7 +4895,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: _RoundedInkClip(
                   child: ListTile(
                     leading: _Avatar(
-                      url: user?.avatar ?? '',
+                      url: widget.state.currentUserAvatar,
                       fallback: Icons.person_rounded,
                     ),
                     title: Text(
@@ -4956,6 +5083,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const Divider(height: 1),
                       ListTile(
+                        leading: const Icon(Icons.subject_outlined),
+                        title: Text(strings.text('Conversation subtitle')),
+                        subtitle: Text(conversationSubtitleModeLabel),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: chooseConversationSubtitleMode,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
                         leading: const Icon(Icons.schedule_outlined),
                         title: Text(strings.text('Message time format')),
                         subtitle: Text(messageTimeFormatLabel),
@@ -5096,6 +5231,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         value: widget.state.preferences.showGroupMemberLevel,
                         onChanged: widget.state.updateShowGroupMemberLevel,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.badge_outlined),
+                        title: Text(strings.text('Group badge content')),
+                        subtitle: Text(groupMemberBadgeModeLabel),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: widget.state.preferences.showGroupMemberLevel
+                            ? chooseGroupMemberBadgeMode
+                            : null,
                       ),
                       const Divider(height: 1),
                       SwitchListTile(

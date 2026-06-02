@@ -501,9 +501,19 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   Future<void> inviteMember(GroupProfile profile) async {
+    var friends = const <Friend>[];
+    try {
+      friends = await widget.state.client.friends();
+    } catch (_) {}
+    if (!mounted) {
+      return;
+    }
     final targetUid = await showDialog<int>(
       context: context,
-      builder: (context) => const _InviteMemberDialog(),
+      builder: (context) => _InviteMemberDialog(
+        friends: friends,
+        excludedUids: members.map((member) => member.uid).toSet(),
+      ),
     );
     if (targetUid == null || !mounted) {
       return;
@@ -1004,7 +1014,13 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 }
 
 class _InviteMemberDialog extends StatefulWidget {
-  const _InviteMemberDialog();
+  const _InviteMemberDialog({
+    this.friends = const <Friend>[],
+    this.excludedUids = const <int>{},
+  });
+
+  final List<Friend> friends;
+  final Set<int> excludedUids;
 
   @override
   State<_InviteMemberDialog> createState() => _InviteMemberDialogState();
@@ -1012,6 +1028,21 @@ class _InviteMemberDialog extends StatefulWidget {
 
 class _InviteMemberDialogState extends State<_InviteMemberDialog> {
   late final TextEditingController uid;
+
+  List<Friend> get visibleFriends {
+    final query = uid.text.trim().toLowerCase();
+    final friends = widget.friends
+        .where((friend) => !widget.excludedUids.contains(friend.uid))
+        .toList();
+    if (query.isEmpty) {
+      return friends;
+    }
+    return friends.where((friend) {
+      return friend.name.toLowerCase().contains(query) ||
+          friend.searchText.toLowerCase().contains(query) ||
+          '${friend.uid}'.contains(query);
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -1037,19 +1068,56 @@ class _InviteMemberDialogState extends State<_InviteMemberDialog> {
   Widget build(BuildContext context) {
     final strings = context.strings;
     final validUid = (int.tryParse(uid.text.trim()) ?? 0) > 0;
+    final friends = visibleFriends;
     return AlertDialog(
       title: Text(strings.text('Invite member')),
-      content: TextField(
-        controller: uid,
-        autofocus: true,
-        keyboardType: TextInputType.number,
-        textInputAction: TextInputAction.done,
-        decoration: InputDecoration(
-          labelText: strings.text('User UID'),
-          helperText: strings.text('Enter the UID to invite into this group'),
-          border: const OutlineInputBorder(),
+      content: SizedBox(
+        width: 420,
+        height: 380,
+        child: Column(
+          children: [
+            TextField(
+              controller: uid,
+              autofocus: true,
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                labelText: strings.text('Search friends or enter UID'),
+                helperText: strings.text('Choose a friend or invite by UID'),
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => submit(),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: widget.friends.isEmpty
+                  ? _EmptyPanel(message: strings.text('No friends found.'))
+                  : friends.isEmpty
+                  ? _EmptyPanel(message: strings.text('No matching friends.'))
+                  : ListView.builder(
+                      itemCount: friends.length,
+                      itemBuilder: (context, index) {
+                        final friend = friends[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: _Avatar(
+                            url: friend.avatar,
+                            fallback: Icons.person_rounded,
+                            radius: 18,
+                          ),
+                          title: Text(
+                            friend.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text('UID ${friend.uid}'),
+                          onTap: () => Navigator.of(context).pop(friend.uid),
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
-        onSubmitted: (_) => submit(),
       ),
       actions: [
         TextButton(
@@ -1510,9 +1578,19 @@ class _GroupManagementScreenState extends State<GroupManagementScreen> {
   }
 
   Future<void> inviteMember() async {
+    var friends = const <Friend>[];
+    try {
+      friends = await widget.state.client.friends();
+    } catch (_) {}
+    if (!mounted) {
+      return;
+    }
     final targetUid = await showDialog<int>(
       context: context,
-      builder: (context) => const _InviteMemberDialog(),
+      builder: (context) => _InviteMemberDialog(
+        friends: friends,
+        excludedUids: members.map((member) => member.uid).toSet(),
+      ),
     );
     if (targetUid == null || !mounted) {
       return;

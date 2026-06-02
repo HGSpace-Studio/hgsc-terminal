@@ -890,18 +890,11 @@ class _UserProfileHeaderSpace extends StatelessWidget {
             ? collapse
             : _profileHeaderInterval(
                 collapse,
-                begin: 0.04,
-                end: 0.92,
-                curve: Curves.easeInOutCubic,
-              );
-        final avatarMove = reduceMotion
-            ? collapse
-            : _profileHeaderInterval(
-                collapse,
                 begin: 0.02,
-                end: 0.98,
-                curve: Curves.easeInOutCubic,
+                end: 0.88,
+                curve: Curves.easeOutCubic,
               );
+        final avatarMove = collapse;
         final textMove = reduceMotion
             ? collapse
             : _profileHeaderInterval(

@@ -796,9 +796,11 @@ class CsacApiClient {
           name: friend.name,
           avatar: friend.avatar,
           subtitle: friend.subtitle,
+          statusSubtitle: friend.statusSubtitle,
+          lastMessagePreview: friend.lastMessagePreview,
           unreadCount: friend.unreadCount,
           searchText: friend.searchText,
-          lastMessageAt: timestampForSort(friend.subtitle),
+          lastMessageAt: friend.lastMessageAt,
         ),
       for (final group in groupsList)
         Conversation(
@@ -807,9 +809,11 @@ class CsacApiClient {
           name: group.name,
           avatar: group.avatar,
           subtitle: group.subtitle,
+          statusSubtitle: group.statusSubtitle,
+          lastMessagePreview: group.lastMessagePreview,
           unreadCount: group.unreadCount,
           searchText: group.searchText,
-          lastMessageAt: timestampForSort(group.subtitle),
+          lastMessageAt: group.lastMessageAt,
         ),
     ];
   }
