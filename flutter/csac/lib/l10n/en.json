@@ -26,5 +26,11 @@
   "No friends found.": "No friends found.",
   "No matching friends.": "No matching friends.",
   "Select message text": "Select message text",
-  "Copy all": "Copy all"
+  "Copy all": "Copy all",
+  "Copy code": "Copy code",
+  "Code copied.": "Code copied.",
+  "HTTP protocol": "HTTP protocol",
+  "Last API request protocol": "Last API request protocol",
+  "Browser managed": "Browser managed",
+  "Unknown": "Unknown"
 }

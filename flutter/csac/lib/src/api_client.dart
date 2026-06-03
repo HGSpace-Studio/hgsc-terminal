@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:pointycastle/export.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'api_protocol.dart';
 import 'models.dart';
 import 'platform/api_http_client.dart';
 
@@ -28,6 +29,7 @@ class NetworkDiagnosticReport {
     required this.originUrl,
     required this.startedAt,
     required this.totalMs,
+    required this.httpProtocol,
     required this.checks,
   });
 
@@ -35,6 +37,7 @@ class NetworkDiagnosticReport {
   final String originUrl;
   final DateTime startedAt;
   final int totalMs;
+  final ApiHttpProtocol httpProtocol;
   final List<NetworkDiagnosticCheck> checks;
 
   bool get passed => checks.every((check) => check.ok);
@@ -82,9 +85,11 @@ class ApiDebugResponse {
 }
 
 class CsacApiClient {
-  CsacApiClient({http.Client? httpClient, String baseUrl = defaultBaseUrl})
-    : _http = httpClient ?? createApiHttpClient(),
-      _baseUrl = normalizeServerUrl(baseUrl) {
+  CsacApiClient({
+    ProtocolAwareHttpClient? httpClient,
+    String baseUrl = defaultBaseUrl,
+  }) : _http = httpClient ?? createApiHttpClient(),
+       _baseUrl = normalizeServerUrl(baseUrl) {
     configureApiAssetBaseUrl(_baseUrl);
   }
 
@@ -92,13 +97,19 @@ class CsacApiClient {
   static const _defaultApiPath = '/rpc/UniCsAC.php';
   static const _sessionKey = 'csac.cookies';
 
-  final http.Client _http;
+  final ProtocolAwareHttpClient _http;
   String _baseUrl;
   final Map<String, String> _cookies = <String, String>{};
 
   String get baseUrl => _baseUrl;
 
   String get originUrl => apiOriginFromBaseUrl(_baseUrl);
+
+  ApiHttpProtocol get lastHttpProtocol => _http.lastProtocol;
+
+  set onHttpProtocolChanged(ApiProtocolChanged? callback) {
+    _http.onProtocolChanged = callback;
+  }
 
   Map<String, String> get sessionSnapshot => Map<String, String>.from(_cookies);
 
@@ -308,6 +319,7 @@ class CsacApiClient {
       originUrl: originUrl,
       startedAt: startedAt,
       totalMs: total.elapsedMilliseconds,
+      httpProtocol: lastHttpProtocol,
       checks: checks,
     );
   }

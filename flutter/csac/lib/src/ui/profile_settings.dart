@@ -1657,6 +1657,9 @@ class _NetworkDiagnosticsScreenState extends State<NetworkDiagnosticsScreen> {
     final buffer = StringBuffer()
       ..writeln('Server: ${value.serverUrl}')
       ..writeln('Origin: ${value.originUrl}')
+      ..writeln(
+        'HTTP protocol: ${localizedApiHttpProtocolLabel(context, value.httpProtocol)}',
+      )
       ..writeln('Started: ${formatLocalDateTime(value.startedAt)}')
       ..writeln('Total: ${value.totalMs} ms')
       ..writeln();
@@ -1787,6 +1790,15 @@ class _NetworkDiagnosticsScreenState extends State<NetworkDiagnosticsScreen> {
                           label: strings.text('Image origin'),
                           value: value.originUrl,
                         ),
+                        const Divider(height: 1),
+                        _DiagnosticInfoTile(
+                          icon: Icons.http_outlined,
+                          label: strings.text('HTTP protocol'),
+                          value: localizedApiHttpProtocolLabel(
+                            context,
+                            value.httpProtocol,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1817,6 +1829,13 @@ class _NetworkDiagnosticsScreenState extends State<NetworkDiagnosticsScreen> {
       ),
     );
   }
+}
+
+String localizedApiHttpProtocolLabel(
+  BuildContext context,
+  ApiHttpProtocol protocol,
+) {
+  return context.strings.text(apiHttpProtocolLabel(protocol));
 }
 
 class _DiagnosticInfoTile extends StatelessWidget {
@@ -3514,6 +3533,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     settingsScroll = _desktopSmoothScrollController();
     serverUrl = TextEditingController(text: widget.state.preferences.serverUrl);
     settingsSearch = TextEditingController()..addListener(handleSearchChanged);
+    widget.state.addListener(handleStateChanged);
     developerOptionsExpanded = widget.initialDeveloperOptionsExpanded;
     unawaited(loadPerformanceStats());
     if (developerOptionsExpanded) {
@@ -3534,6 +3554,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    widget.state.removeListener(handleStateChanged);
     settingsSearch.removeListener(handleSearchChanged);
     settingsSearch.dispose();
     serverUrl.dispose();
@@ -3543,6 +3564,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void handleSearchChanged() {
     setState(() {});
+  }
+
+  void handleStateChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   bool settingMatches(String query, Iterable<String> keywords) {
@@ -4881,6 +4908,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Refresh app data',
       'Connection diagnostics',
       'Network diagnostics',
+      'HTTP protocol',
+      'HTTP/1.1',
+      'HTTP/2',
       'Server latency',
       'API availability',
       'Login status',
@@ -4903,6 +4933,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final showDeveloper = settingMatches(query, [
       'Developer options',
       'CsAC server address',
+      'HTTP protocol',
+      'HTTP/1.1',
+      'HTTP/2',
       'API explorer',
       'API documentation',
       'Run online',
@@ -5529,6 +5562,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           );
                         },
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.http_outlined),
+                        title: Text(strings.text('HTTP protocol')),
+                        subtitle: Text(
+                          strings.text('Last API request protocol'),
+                        ),
+                        trailing: Text(
+                          localizedApiHttpProtocolLabel(
+                            context,
+                            widget.state.activeHttpProtocol,
+                          ),
+                        ),
                       ),
                       const Divider(height: 1),
                       ListTile(

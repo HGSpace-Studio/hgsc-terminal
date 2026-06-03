@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'api_client.dart';
+import 'api_protocol.dart';
 import 'l10n.dart';
 import 'local_cache.dart';
 import 'models.dart';
@@ -50,7 +51,9 @@ class AppLogFile {
 class CsacAppState extends ChangeNotifier {
   CsacAppState({CsacApiClient? client, CsacLocalCache? cache})
     : client = client ?? CsacApiClient(),
-      cache = cache ?? CsacLocalCache();
+      cache = cache ?? CsacLocalCache() {
+    this.client.onHttpProtocolChanged = _handleHttpProtocolChanged;
+  }
 
   final CsacApiClient client;
   final CsacLocalCache cache;
@@ -72,6 +75,12 @@ class CsacAppState extends ChangeNotifier {
   String? error;
 
   String get currentUserAvatar => user?.avatar.trim() ?? '';
+
+  ApiHttpProtocol get activeHttpProtocol => client.lastHttpProtocol;
+
+  void _handleHttpProtocolChanged(ApiHttpProtocol protocol) {
+    notifyListeners();
+  }
 
   Future<void> initialize() async {
     bootstrapping = true;

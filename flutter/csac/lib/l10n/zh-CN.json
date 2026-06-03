@@ -26,5 +26,11 @@
   "No friends found.": "暂无好友。",
   "No matching friends.": "没有匹配的好友。",
   "Select message text": "选择消息文本",
-  "Copy all": "全部复制"
+  "Copy all": "全部复制",
+  "Copy code": "复制代码",
+  "Code copied.": "代码已复制。",
+  "HTTP protocol": "HTTP 协议",
+  "Last API request protocol": "最近一次 API 请求使用的协议",
+  "Browser managed": "浏览器托管",
+  "Unknown": "未知"
 }

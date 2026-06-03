@@ -1703,7 +1703,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               canRecall: message.canRecall || mine,
               canEssence: widget.conversation.type == ConversationType.group,
               canSelectText:
-                  isMobilePlatform &&
                   message.messageType == 1 &&
                   chatMessagePlainText(
                     message,
@@ -3614,8 +3613,290 @@ String _escapeMarkdownHtml(String value) {
       .replaceAll('>', '&gt;');
 }
 
+final highlight_core.Highlight _chatCodeHighlighter = highlight_core.Highlight()
+  ..registerLanguage('bash', highlight_bash.bash)
+  ..registerLanguage('cpp', highlight_cpp.cpp)
+  ..registerLanguage('cs', highlight_cs.cs)
+  ..registerLanguage('css', highlight_css.css)
+  ..registerLanguage('dart', highlight_dart.dart)
+  ..registerLanguage('go', highlight_go.go)
+  ..registerLanguage('java', highlight_java.java)
+  ..registerLanguage('javascript', highlight_javascript.javascript)
+  ..registerLanguage('json', highlight_json.json)
+  ..registerLanguage('kotlin', highlight_kotlin.kotlin)
+  ..registerLanguage('lua', highlight_lua.lua)
+  ..registerLanguage('markdown', highlight_markdown.markdown)
+  ..registerLanguage('php', highlight_php.php)
+  ..registerLanguage('plaintext', highlight_plaintext.plaintext)
+  ..registerLanguage('powershell', highlight_powershell.powershell)
+  ..registerLanguage('python', highlight_python.python)
+  ..registerLanguage('ruby', highlight_ruby.ruby)
+  ..registerLanguage('rust', highlight_rust.rust)
+  ..registerLanguage('shell', highlight_shell.shell)
+  ..registerLanguage('sql', highlight_sql.sql)
+  ..registerLanguage('swift', highlight_swift.swift)
+  ..registerLanguage('typescript', highlight_typescript.typescript)
+  ..registerLanguage('xml', highlight_xml.xml)
+  ..registerLanguage('yaml', highlight_yaml.yaml);
+
+const _chatCodeLanguageAliases = <String, String>{
+  '': 'plaintext',
+  'text': 'plaintext',
+  'plain': 'plaintext',
+  'txt': 'plaintext',
+  'sh': 'shell',
+  'zsh': 'shell',
+  'fish': 'shell',
+  'shellsession': 'shell',
+  'console': 'shell',
+  'terminal': 'shell',
+  'ps': 'powershell',
+  'ps1': 'powershell',
+  'pwsh': 'powershell',
+  'js': 'javascript',
+  'jsx': 'javascript',
+  'mjs': 'javascript',
+  'cjs': 'javascript',
+  'ts': 'typescript',
+  'tsx': 'typescript',
+  'py': 'python',
+  'golang': 'go',
+  'c': 'cpp',
+  'c++': 'cpp',
+  'cc': 'cpp',
+  'cxx': 'cpp',
+  'h': 'cpp',
+  'hpp': 'cpp',
+  'c#': 'cs',
+  'csharp': 'cs',
+  'kt': 'kotlin',
+  'kts': 'kotlin',
+  'rs': 'rust',
+  'rb': 'ruby',
+  'md': 'markdown',
+  'mdown': 'markdown',
+  'html': 'xml',
+  'xhtml': 'xml',
+  'svg': 'xml',
+  'yml': 'yaml',
+};
+
+const _chatCodeSupportedLanguages = <String>{
+  'bash',
+  'cpp',
+  'cs',
+  'css',
+  'dart',
+  'go',
+  'java',
+  'javascript',
+  'json',
+  'kotlin',
+  'lua',
+  'markdown',
+  'php',
+  'plaintext',
+  'powershell',
+  'python',
+  'ruby',
+  'rust',
+  'shell',
+  'sql',
+  'swift',
+  'typescript',
+  'xml',
+  'yaml',
+};
+
+String _normalizeChatCodeLanguage(String raw) {
+  final tokens = raw.trim().toLowerCase().split(RegExp(r'\s+'));
+  final candidate = tokens.firstWhere(
+    (token) => token.startsWith('language-') || token.startsWith('lang-'),
+    orElse: () => tokens.isEmpty ? '' : tokens.first,
+  );
+  final cleaned = candidate
+      .replaceFirst(RegExp(r'^(language|lang)-'), '')
+      .replaceAll(RegExp(r'[^a-z0-9_+#.-]'), '');
+  final normalized = _chatCodeLanguageAliases[cleaned] ?? cleaned;
+  return _chatCodeSupportedLanguages.contains(normalized)
+      ? normalized
+      : 'plaintext';
+}
+
+String _chatCodeDisplayLanguage(String language) {
+  return language == 'plaintext' ? 'CODE' : language.toUpperCase();
+}
+
+TextSpan _highlightChatCode(
+  String code,
+  String language,
+  TextStyle baseStyle,
+  Map<String, TextStyle> tokenStyles,
+) {
+  late final List<highlight_core.Node> nodes;
+  try {
+    nodes =
+        _chatCodeHighlighter
+            .parse(code, language: _normalizeChatCodeLanguage(language))
+            .nodes ??
+        <highlight_core.Node>[highlight_core.Node(value: code)];
+  } catch (_) {
+    nodes = <highlight_core.Node>[highlight_core.Node(value: code)];
+  }
+  return TextSpan(
+    style: baseStyle,
+    children: _chatCodeNodeSpans(nodes, baseStyle, tokenStyles),
+  );
+}
+
+List<InlineSpan> _chatCodeNodeSpans(
+  List<highlight_core.Node> nodes,
+  TextStyle baseStyle,
+  Map<String, TextStyle> tokenStyles,
+) {
+  final spans = <InlineSpan>[];
+  for (final node in nodes) {
+    final style = tokenStyles[node.className] ?? baseStyle;
+    if (node.value != null) {
+      spans.add(TextSpan(text: node.value, style: style));
+    }
+    final children = node.children;
+    if (children != null && children.isNotEmpty) {
+      spans.addAll(_chatCodeNodeSpans(children, style, tokenStyles));
+    }
+  }
+  return spans;
+}
+
 class _ChatMarkdownText extends StatelessWidget {
   const _ChatMarkdownText({
+    required this.text,
+    required this.textColor,
+    required this.secondaryTextColor,
+  });
+
+  final String text;
+  final Color textColor;
+  final Color secondaryTextColor;
+
+  List<_ChatMarkdownSegment> segments() {
+    final result = <_ChatMarkdownSegment>[];
+    final lines = text.split('\n');
+    final markdownBuffer = StringBuffer();
+    var inFence = false;
+    var fenceMarker = '';
+    var fenceLanguage = '';
+    var fenceLength = 0;
+    var codeBuffer = StringBuffer();
+
+    void flushMarkdown() {
+      if (markdownBuffer.isEmpty) {
+        return;
+      }
+      result.add(_ChatMarkdownSegment.markdown(markdownBuffer.toString()));
+      markdownBuffer.clear();
+    }
+
+    void flushCode() {
+      result.add(
+        _ChatMarkdownSegment.code(
+          codeBuffer.toString().replaceFirst(RegExp(r'\n$'), ''),
+          _normalizeChatCodeLanguage(fenceLanguage),
+        ),
+      );
+      codeBuffer = StringBuffer();
+    }
+
+    for (final line in lines) {
+      final fence = RegExp(r'^([ \t]*)(`{3,}|~{3,})(.*)$').firstMatch(line);
+      if (!inFence && fence != null) {
+        flushMarkdown();
+        fenceMarker = fence.group(2)![0];
+        fenceLength = fence.group(2)!.length;
+        fenceLanguage = fence.group(3)!.trim().split(RegExp(r'\s+')).first;
+        inFence = true;
+        continue;
+      }
+      if (inFence) {
+        final closing = RegExp(
+          '^([ \\t]*)${RegExp.escape(fenceMarker)}{$fenceLength,}[ \\t]*\$',
+        ).firstMatch(line);
+        if (closing != null) {
+          flushCode();
+          inFence = false;
+          fenceMarker = '';
+          fenceLanguage = '';
+          fenceLength = 0;
+          continue;
+        }
+        codeBuffer.writeln(line);
+        continue;
+      }
+      markdownBuffer.writeln(line);
+    }
+    if (inFence) {
+      flushCode();
+    } else {
+      flushMarkdown();
+    }
+    return result;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = segments();
+    if (parts.any((part) => part.isCode)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final part in parts)
+            if (part.isCode)
+              _ChatCodeBlock(
+                code: part.text,
+                language: part.language,
+                textColor: textColor,
+                secondaryTextColor: secondaryTextColor,
+              )
+            else if (part.text.trim().isNotEmpty)
+              _ChatMarkdownBody(
+                text: part.text,
+                textColor: textColor,
+                secondaryTextColor: secondaryTextColor,
+              ),
+        ],
+      );
+    }
+    return _ChatMarkdownBody(
+      text: text,
+      textColor: textColor,
+      secondaryTextColor: secondaryTextColor,
+    );
+  }
+}
+
+class _ChatMarkdownSegment {
+  const _ChatMarkdownSegment._({
+    required this.text,
+    required this.language,
+    required this.isCode,
+  });
+
+  factory _ChatMarkdownSegment.markdown(String text) {
+    return _ChatMarkdownSegment._(text: text, language: '', isCode: false);
+  }
+
+  factory _ChatMarkdownSegment.code(String text, String language) {
+    return _ChatMarkdownSegment._(text: text, language: language, isCode: true);
+  }
+
+  final String text;
+  final String language;
+  final bool isCode;
+}
+
+class _ChatMarkdownBody extends StatelessWidget {
+  const _ChatMarkdownBody({
     required this.text,
     required this.textColor,
     required this.secondaryTextColor,
@@ -3692,6 +3973,209 @@ class _ChatMarkdownText extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ChatCodeBlock extends StatefulWidget {
+  const _ChatCodeBlock({
+    required this.code,
+    required this.language,
+    required this.textColor,
+    required this.secondaryTextColor,
+  });
+
+  final String code;
+  final String language;
+  final Color textColor;
+  final Color secondaryTextColor;
+
+  @override
+  State<_ChatCodeBlock> createState() => _ChatCodeBlockState();
+}
+
+class _ChatCodeBlockState extends State<_ChatCodeBlock> {
+  late final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final code = widget.code;
+    final language = widget.language;
+    final textColor = widget.textColor;
+    final secondaryTextColor = widget.secondaryTextColor;
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final colors = theme.colorScheme;
+    final containerColor = dark
+        ? Color.alphaBlend(
+            colors.primary.withValues(alpha: 0.08),
+            colors.surfaceContainerHighest,
+          )
+        : Color.alphaBlend(
+            colors.primary.withValues(alpha: 0.05),
+            colors.surfaceContainerHighest,
+          );
+    final headerColor = Color.alphaBlend(
+      colors.primary.withValues(alpha: dark ? 0.08 : 0.06),
+      containerColor,
+    );
+    final baseCodeStyle =
+        theme.textTheme.bodySmall?.copyWith(
+          color: dark ? const Color(0xffd6deeb) : const Color(0xff1f2937),
+          fontFamily: 'monospace',
+          height: 1.42,
+        ) ??
+        TextStyle(
+          color: textColor,
+          fontFamily: 'monospace',
+          fontSize: 13,
+          height: 1.42,
+        );
+    final tokenStyles = _chatCodeTokenStyles(dark);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: containerColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: textColor.withValues(alpha: 0.10)),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: headerColor,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: textColor.withValues(alpha: 0.08),
+                    ),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 5, 6, 5),
+                  child: Row(
+                    children: [
+                      Icon(Icons.code, size: 15, color: secondaryTextColor),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _chatCodeDisplayLanguage(language),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: secondaryTextColor,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: context.strings.text('Copy code'),
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        padding: EdgeInsets.zero,
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: code));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                context.strings.text('Code copied.'),
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.copy),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Scrollbar(
+                controller: _scrollController,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 11),
+                  child: SelectableText.rich(
+                    _highlightChatCode(
+                      code,
+                      language,
+                      baseCodeStyle,
+                      tokenStyles,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Map<String, TextStyle> _chatCodeTokenStyles(bool dark) {
+  Color c(int light, int darkValue) => Color(dark ? darkValue : light);
+  return <String, TextStyle>{
+    'keyword': TextStyle(
+      color: c(0xff7c3aed, 0xffc792ea),
+      fontWeight: FontWeight.w700,
+    ),
+    'built_in': TextStyle(color: c(0xff0369a1, 0xff82aaff)),
+    'type': TextStyle(color: c(0xff0f766e, 0xff89ddff)),
+    'literal': TextStyle(color: c(0xffb45309, 0xffffcb6b)),
+    'number': TextStyle(color: c(0xffb45309, 0xffffcb6b)),
+    'string': TextStyle(color: c(0xff15803d, 0xffc3e88d)),
+    'subst': TextStyle(color: c(0xff1f2937, 0xffd6deeb)),
+    'symbol': TextStyle(color: c(0xff0f766e, 0xff89ddff)),
+    'class': TextStyle(color: c(0xff0f766e, 0xffffcb6b)),
+    'function': TextStyle(color: c(0xff2563eb, 0xff82aaff)),
+    'title': TextStyle(color: c(0xff2563eb, 0xff82aaff)),
+    'params': TextStyle(color: c(0xff475569, 0xffd6deeb)),
+    'attr': TextStyle(color: c(0xffb45309, 0xffffcb6b)),
+    'attribute': TextStyle(color: c(0xffb45309, 0xffffcb6b)),
+    'variable': TextStyle(color: c(0xffbe123c, 0xffff5370)),
+    'comment': TextStyle(
+      color: c(0xff64748b, 0xff7f8c98),
+      fontStyle: FontStyle.italic,
+    ),
+    'quote': TextStyle(
+      color: c(0xff64748b, 0xff7f8c98),
+      fontStyle: FontStyle.italic,
+    ),
+    'meta': TextStyle(color: c(0xff475569, 0xff89ddff)),
+    'tag': TextStyle(color: c(0xff7c3aed, 0xffc792ea)),
+    'name': TextStyle(color: c(0xff2563eb, 0xff82aaff)),
+    'selector-tag': TextStyle(color: c(0xff7c3aed, 0xffc792ea)),
+    'selector-class': TextStyle(color: c(0xff2563eb, 0xff82aaff)),
+    'selector-id': TextStyle(color: c(0xffbe123c, 0xffff5370)),
+    'regexp': TextStyle(color: c(0xff15803d, 0xffc3e88d)),
+    'link': TextStyle(color: c(0xff2563eb, 0xff82aaff)),
+    'doctag': TextStyle(
+      color: c(0xff7c3aed, 0xffc792ea),
+      fontWeight: FontWeight.w700,
+    ),
+    'section': TextStyle(
+      color: c(0xff2563eb, 0xff82aaff),
+      fontWeight: FontWeight.w700,
+    ),
+    'bullet': TextStyle(color: c(0xffb45309, 0xffffcb6b)),
+    'addition': TextStyle(color: c(0xff15803d, 0xffc3e88d)),
+    'deletion': TextStyle(color: c(0xffbe123c, 0xffff5370)),
+    'emphasis': const TextStyle(fontStyle: FontStyle.italic),
+    'strong': const TextStyle(fontWeight: FontWeight.w800),
+  };
 }
 
 class _SystemMessagePill extends StatefulWidget {
