@@ -33,6 +33,17 @@ void main() {
     expect(friend.unreadCount, 3);
   });
 
+  test('friend uid accepts friend id aliases', () {
+    final byFriendUid = Friend.fromJson({
+      'friend_uid': 42,
+      'nickname': 'Alice',
+    });
+    final byFriendId = Friend.fromJson({'friend_id': 43, 'nickname': 'Bob'});
+
+    expect(byFriendUid.uid, 42);
+    expect(byFriendId.uid, 43);
+  });
+
   test('message accepts read status aliases', () {
     final readByStatus = ChatMessage.fromJson({
       'id': 15,

@@ -3622,6 +3622,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  String get mobileEnterKeyBehaviorLabel {
+    final strings = context.strings;
+    switch (widget.state.preferences.mobileEnterKeyBehavior) {
+      case MobileEnterKeyBehavior.send:
+        return strings.text('Send');
+      case MobileEnterKeyBehavior.newline:
+        return strings.text('New line');
+    }
+  }
+
   String get messageTimeFormatLabel {
     return messageTimeFormatLabelFor(
       context,
@@ -4534,6 +4544,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> chooseMobileEnterKeyBehavior() async {
+    final selected = await showModalBottomSheet<MobileEnterKeyBehavior>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: _RoundedInkClip(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final behavior in MobileEnterKeyBehavior.values)
+                ListTile(
+                  leading:
+                      widget.state.preferences.mobileEnterKeyBehavior ==
+                          behavior
+                      ? const Icon(Icons.check)
+                      : const SizedBox(width: 24),
+                  title: Text(
+                    context.strings.text(
+                      behavior == MobileEnterKeyBehavior.send
+                          ? 'Send'
+                          : 'New line',
+                    ),
+                  ),
+                  subtitle: Text(
+                    context.strings.text(
+                      behavior == MobileEnterKeyBehavior.send
+                          ? 'The keyboard confirmation key sends the message'
+                          : 'The keyboard confirmation key inserts a new line',
+                    ),
+                  ),
+                  onTap: () => Navigator.of(context).pop(behavior),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      await widget.state.updateMobileEnterKeyBehavior(selected);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
   Future<void> chooseMessageTimeFormat() async {
     final selected = await showModalBottomSheet<MessageTimeFormat>(
       context: context,
@@ -4806,7 +4861,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Avatar',
       'Double tap avatar pat',
       'Pat',
-      'Group member level',
+      'Quick input triggers',
+      'Quick activation',
+      '@',
+      '#',
+      'Keyboard confirmation key',
+      'Send',
+      'New line',
       'Group badge content',
       'Member title',
       'Member role',
@@ -5222,25 +5283,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const Divider(height: 1),
                       SwitchListTile(
-                        secondary: const Icon(Icons.military_tech_outlined),
-                        title: Text(strings.text('Show group member level')),
+                        secondary: const Icon(Icons.bolt_outlined),
+                        title: Text(strings.text('Quick input triggers')),
                         subtitle: Text(
                           strings.text(
-                            'Display member level beside names in group chats',
+                            'Automatically open pickers after typing @ or #',
                           ),
                         ),
-                        value: widget.state.preferences.showGroupMemberLevel,
-                        onChanged: widget.state.updateShowGroupMemberLevel,
+                        value:
+                            widget.state.preferences.enableQuickInputTriggers,
+                        onChanged: widget.state.updateEnableQuickInputTriggers,
                       ),
+                      if (isMobilePlatform) ...[
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.keyboard_return_outlined),
+                          title: Text(
+                            strings.text('Keyboard confirmation key'),
+                          ),
+                          subtitle: Text(mobileEnterKeyBehaviorLabel),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: chooseMobileEnterKeyBehavior,
+                        ),
+                      ],
                       const Divider(height: 1),
                       ListTile(
                         leading: const Icon(Icons.badge_outlined),
                         title: Text(strings.text('Group badge content')),
                         subtitle: Text(groupMemberBadgeModeLabel),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: widget.state.preferences.showGroupMemberLevel
-                            ? chooseGroupMemberBadgeMode
-                            : null,
+                        onTap: chooseGroupMemberBadgeMode,
                       ),
                       const Divider(height: 1),
                       SwitchListTile(

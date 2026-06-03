@@ -297,6 +297,20 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateEnableQuickInputTriggers(bool enabled) async {
+    preferences = preferences.copyWith(enableQuickInputTriggers: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateMobileEnterKeyBehavior(
+    MobileEnterKeyBehavior behavior,
+  ) async {
+    preferences = preferences.copyWith(mobileEnterKeyBehavior: behavior);
+    await preferences.save();
+    notifyListeners();
+  }
+
   Future<void> updateShowGroupMemberLevel(bool enabled) async {
     preferences = preferences.copyWith(showGroupMemberLevel: enabled);
     await preferences.save();

@@ -571,6 +571,7 @@ class ConversationScreen extends StatefulWidget {
 enum _ConversationGroupFilter { all, important, friends, groups, archived }
 
 class _ConversationScreenState extends State<ConversationScreen> {
+  final scaffoldKey = GlobalKey<ScaffoldState>();
   final search = TextEditingController();
   late final ScrollController conversationsScroll;
   Map<String, ConversationDraft> drafts = const <String, ConversationDraft>{};
@@ -866,6 +867,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
     final strings = context.strings;
     final query = search.text.trim().toLowerCase();
     final conversations = visibleConversations(query);
+    final drawerEnabled = isMobilePlatform;
     final groupFilters = <_ConversationGroupFilter>[
       _ConversationGroupFilter.all,
       _ConversationGroupFilter.important,
@@ -910,6 +912,12 @@ class _ConversationScreenState extends State<ConversationScreen> {
                   Chip(
                     avatar: const Icon(Icons.cloud_off_outlined, size: 18),
                     label: Text(strings.text('Offline')),
+                  ),
+                if (drawerEnabled)
+                  IconButton(
+                    tooltip: strings.text('Commands'),
+                    onPressed: () => scaffoldKey.currentState?.openDrawer(),
+                    icon: const Icon(Icons.terminal_rounded),
                   ),
                 PopupMenuButton<String>(
                   tooltip: strings.text('More'),
@@ -1038,6 +1046,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
       ),
     );
     return Scaffold(
+      key: scaffoldKey,
+      drawer: drawerEnabled
+          ? _MobileCommandSidebar(state: widget.state, onRefresh: refresh)
+          : null,
+      drawerEnableOpenDragGesture: drawerEnabled,
       appBar: widget.embedded
           ? null
           : AppBar(
@@ -1141,6 +1154,631 @@ class _HorizontalDragScrollBehavior extends MaterialScrollBehavior {
   };
 }
 
+class _MobileCommandSidebar extends StatefulWidget {
+  const _MobileCommandSidebar({required this.state, required this.onRefresh});
+
+  final CsacAppState state;
+  final Future<void> Function() onRefresh;
+
+  @override
+  State<_MobileCommandSidebar> createState() => _MobileCommandSidebarState();
+}
+
+class _MobileCommandSidebarState extends State<_MobileCommandSidebar> {
+  late final TextEditingController search;
+  late final ScrollController actionsScroll;
+  Map<String, CommandPaletteUsage> usage =
+      const <String, CommandPaletteUsage>{};
+  bool running = false;
+  String query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    search = TextEditingController();
+    actionsScroll = _desktopSmoothScrollController();
+    unawaited(loadUsage());
+  }
+
+  @override
+  void dispose() {
+    search.dispose();
+    actionsScroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> loadUsage() async {
+    final loaded = await CommandPaletteUsageStore.loadAll();
+    if (mounted) {
+      setState(() => usage = loaded);
+    }
+  }
+
+  List<_CommandPaletteAction> actions(BuildContext context) {
+    final strings = context.strings;
+    return [
+      _CommandPaletteAction(
+        id: 'settings',
+        icon: Icons.settings_outlined,
+        title: strings.text('Settings'),
+        subtitle: strings.text('Open app settings'),
+        keywords: const ['settings', 'setting', 'preferences', '设置'],
+        run: (context) =>
+            openRoute(SettingsScreen(state: widget.state), context),
+      ),
+      _CommandPaletteAction(
+        id: 'search_messages',
+        icon: Icons.manage_search,
+        title: strings.text('Search messages'),
+        subtitle: strings.text('Search cached messages'),
+        keywords: const ['search', 'messages', 'history', '搜索', '消息'],
+        run: (context) =>
+            openRoute(MessageSearchScreen(state: widget.state), context),
+      ),
+      _CommandPaletteAction(
+        id: 'refresh_conversations',
+        icon: Icons.sync,
+        title: strings.text('Refresh conversations'),
+        subtitle: strings.text('Chats'),
+        keywords: const ['refresh', 'reload', 'sync', '刷新', '同步'],
+        run: refreshConversations,
+      ),
+      _CommandPaletteAction(
+        id: 'add_friend',
+        icon: Icons.person_add_alt,
+        title: strings.text('Add friend'),
+        subtitle: strings.text('User UID'),
+        keywords: const ['friend', 'add', 'uid', '好友', '添加'],
+        run: (context) async {
+          await openRoute(AddFriendScreen(state: widget.state), context);
+          await widget.onRefresh();
+        },
+      ),
+      _CommandPaletteAction(
+        id: 'join_group',
+        icon: Icons.group_add_outlined,
+        title: strings.text('Join group'),
+        subtitle: strings.text('Room ID'),
+        keywords: const ['group', 'join', 'room', '群', '加入'],
+        run: (context) async {
+          await openRoute(JoinGroupScreen(state: widget.state), context);
+          await widget.onRefresh();
+        },
+      ),
+      _CommandPaletteAction(
+        id: 'create_group',
+        icon: Icons.add_home_work_outlined,
+        title: strings.text('Create group'),
+        subtitle: strings.text('Group chat'),
+        keywords: const ['group', 'create', 'room', '群', '创建'],
+        run: (context) async {
+          await openRoute(CreateGroupScreen(state: widget.state), context);
+          await widget.onRefresh();
+        },
+      ),
+      _CommandPaletteAction(
+        id: 'clear_local_cache',
+        icon: Icons.cleaning_services_outlined,
+        title: strings.text('Clear local cache'),
+        subtitle: strings.text(
+          'Remove cached conversations and message history',
+        ),
+        keywords: const ['clear', 'cache', 'clean', '缓存', '清理'],
+        run: clearLocalCache,
+      ),
+      _CommandPaletteAction(
+        id: 'theme_light',
+        icon: Icons.light_mode_outlined,
+        title: strings.text('Switch to light theme'),
+        subtitle: strings.text('Theme'),
+        keywords: const ['theme', 'light', '浅色', '主题'],
+        run: (context) => switchTheme(ThemeMode.light, context),
+      ),
+      _CommandPaletteAction(
+        id: 'theme_dark',
+        icon: Icons.dark_mode_outlined,
+        title: strings.text('Switch to dark theme'),
+        subtitle: strings.text('Theme'),
+        keywords: const ['theme', 'dark', '深色', '主题'],
+        run: (context) => switchTheme(ThemeMode.dark, context),
+      ),
+      _CommandPaletteAction(
+        id: 'theme_system',
+        icon: Icons.brightness_auto_outlined,
+        title: strings.text('Follow system theme'),
+        subtitle: strings.text('Theme'),
+        keywords: const ['theme', 'system', 'auto', '系统', '主题'],
+        run: (context) => switchTheme(ThemeMode.system, context),
+      ),
+      _CommandPaletteAction(
+        id: 'api_explorer',
+        icon: Icons.api_outlined,
+        title: strings.text('API explorer'),
+        subtitle: '/api',
+        keywords: const ['api', '/api', '接口', '文档'],
+        run: (context) =>
+            openRoute(ApiExplorerScreen(state: widget.state), context),
+      ),
+      _CommandPaletteAction(
+        id: 'app_logs',
+        icon: Icons.article_outlined,
+        title: strings.text('App logs'),
+        subtitle: '/log',
+        keywords: const ['log', '/log', 'logs', '日志'],
+        run: (context) =>
+            openRoute(AppLogsScreen(state: widget.state), context),
+      ),
+      _CommandPaletteAction(
+        id: 'network_diagnostics',
+        icon: Icons.network_check_outlined,
+        title: strings.text('Connection diagnostics'),
+        subtitle: '/diag',
+        keywords: const ['diag', '/diag', 'network', 'diagnostics', '诊断', '网络'],
+        run: (context) =>
+            openRoute(NetworkDiagnosticsScreen(state: widget.state), context),
+      ),
+    ];
+  }
+
+  List<_CommandPaletteAction> filteredActions(
+    BuildContext context,
+    String value,
+  ) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.startsWith('@')) {
+      return contactActions(context, normalized.substring(1));
+    }
+    if (normalized.startsWith('#')) {
+      return groupActions(context, normalized.substring(1));
+    }
+    if (normalized.startsWith('/')) {
+      return prefixActions(context, normalized);
+    }
+    final all = actions(context);
+    if (normalized.isEmpty) {
+      return sortedActions(all);
+    }
+    return sortedActions(
+      all.where((action) => action.matches(normalized)).toList(),
+    );
+  }
+
+  List<_CommandPaletteAction> prefixActions(
+    BuildContext context,
+    String value,
+  ) {
+    final slashCommands = actions(context)
+        .where(
+          (action) => action.keywords.any((keyword) => keyword.startsWith('/')),
+        )
+        .toList();
+    return sortedActions(
+      slashCommands.where((action) => action.matches(value)).toList(),
+    );
+  }
+
+  List<_CommandPaletteAction> contactActions(
+    BuildContext context,
+    String value,
+  ) {
+    final strings = context.strings;
+    final query = value.trim().toLowerCase();
+    final conversations = widget.state.conversations.where(
+      (conversation) => conversation.type == ConversationType.private,
+    );
+    final byName = conversations
+        .where((conversation) {
+          if (query.isEmpty) {
+            return true;
+          }
+          return [
+            conversation.name,
+            conversation.subtitle,
+            conversation.searchText,
+            '${conversation.id}',
+          ].join(' ').toLowerCase().contains(query);
+        })
+        .map((conversation) {
+          return _CommandPaletteAction(
+            id: 'open_user:${conversation.id}',
+            icon: Icons.person_outline,
+            title: '@${conversation.name}',
+            subtitle: strings.format('Open {name} profile', {
+              'name': conversation.name,
+            }),
+            keywords: [
+              '@${conversation.name}',
+              conversation.name,
+              conversation.subtitle,
+              conversation.searchText,
+              '${conversation.id}',
+            ],
+            run: (context) => openConversationDetails(conversation, context),
+          );
+        })
+        .toList();
+    final uid = int.tryParse(query);
+    if (uid != null &&
+        uid > 0 &&
+        !byName.any((action) => action.id == 'open_user:$uid')) {
+      byName.insert(
+        0,
+        _CommandPaletteAction(
+          id: 'open_user:$uid',
+          icon: Icons.tag,
+          title: '@UID $uid',
+          subtitle: strings.text('Open user profile by UID'),
+          keywords: ['@$uid', '$uid', 'uid'],
+          run: (context) => openUserProfileByUid(uid, context),
+        ),
+      );
+    }
+    return sortedActions(byName);
+  }
+
+  List<_CommandPaletteAction> groupActions(BuildContext context, String value) {
+    final strings = context.strings;
+    final query = value.trim().toLowerCase();
+    final actions = widget.state.conversations
+        .where((conversation) => conversation.type == ConversationType.group)
+        .where((conversation) {
+          if (query.isEmpty) {
+            return true;
+          }
+          return [
+            conversation.name,
+            conversation.subtitle,
+            conversation.searchText,
+            '${conversation.id}',
+          ].join(' ').toLowerCase().contains(query);
+        })
+        .map(
+          (conversation) => _CommandPaletteAction(
+            id: 'open_group:${conversation.id}',
+            icon: Icons.groups_outlined,
+            title: '#${conversation.name}',
+            subtitle: strings.format('Open {name} chat', {
+              'name': conversation.name,
+            }),
+            keywords: [
+              '#${conversation.name}',
+              conversation.name,
+              conversation.subtitle,
+              conversation.searchText,
+              '${conversation.id}',
+            ],
+            run: (context) => openChat(conversation, context),
+          ),
+        )
+        .toList();
+    return sortedActions(actions);
+  }
+
+  List<_CommandPaletteAction> sortedActions(List<_CommandPaletteAction> input) {
+    final result = input.toList();
+    result.sort((a, b) {
+      final aUsage = usage[a.id];
+      final bUsage = usage[b.id];
+      final aUsed = aUsage != null;
+      final bUsed = bUsage != null;
+      if (aUsed != bUsed) {
+        return aUsed ? -1 : 1;
+      }
+      if (aUsage != null && bUsage != null) {
+        final count = bUsage.count.compareTo(aUsage.count);
+        if (count != 0) {
+          return count;
+        }
+        return bUsage.lastUsedAt.compareTo(aUsage.lastUsedAt);
+      }
+      return 0;
+    });
+    return result;
+  }
+
+  Future<void> runAction(_CommandPaletteAction action) async {
+    if (running) {
+      return;
+    }
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final strings = context.strings;
+    setState(() => running = true);
+    navigator.pop();
+    try {
+      await CommandPaletteUsageStore.record(action.id);
+      await action.run(
+        _CommandPaletteActionContext(
+          navigator: navigator,
+          messenger: messenger,
+          strings: strings,
+        ),
+      );
+    } catch (err) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            strings.format('Command failed: {error}', {'error': err}),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => running = false);
+      }
+    }
+  }
+
+  Future<void> openRoute(
+    Widget screen,
+    _CommandPaletteActionContext context,
+  ) async {
+    if (context.navigator == null) {
+      return;
+    }
+    await context.navigator!.push(
+      MaterialPageRoute<void>(builder: (_) => screen),
+    );
+  }
+
+  Future<void> refreshConversations(
+    _CommandPaletteActionContext context,
+  ) async {
+    await widget.onRefresh();
+    context.messenger?.showSnackBar(
+      SnackBar(content: Text(context.strings.text('Refreshed.'))),
+    );
+  }
+
+  Future<void> clearLocalCache(_CommandPaletteActionContext context) async {
+    final navigator = context.navigator;
+    if (navigator == null) {
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: navigator.context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(context.strings.text('Clear local cache?')),
+        content: Text(
+          context.strings.text(
+            'Cached conversations and message history on this device will be removed. Your login session will be kept.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(context.strings.text('Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(context.strings.text('Clear')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    await widget.state.clearLocalCache();
+    await widget.onRefresh();
+    context.messenger?.showSnackBar(
+      SnackBar(content: Text(context.strings.text('Local cache cleared.'))),
+    );
+  }
+
+  Future<void> switchTheme(
+    ThemeMode mode,
+    _CommandPaletteActionContext context,
+  ) async {
+    await widget.state.updateThemeMode(mode);
+    context.messenger?.showSnackBar(
+      SnackBar(content: Text(context.strings.text('Theme updated.'))),
+    );
+  }
+
+  Future<void> openConversationDetails(
+    Conversation conversation,
+    _CommandPaletteActionContext context,
+  ) async {
+    final navigator = context.navigator;
+    if (navigator == null) {
+      return;
+    }
+    if (conversation.type == ConversationType.private) {
+      await navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => UserProfileScreen(
+            state: widget.state,
+            uid: conversation.id,
+            avatarHeroTag: conversationAvatarHeroTag(conversation),
+          ),
+        ),
+      );
+      return;
+    }
+    await openRoute(
+      ConversationDetailScreen(state: widget.state, conversation: conversation),
+      context,
+    );
+  }
+
+  Future<void> openUserProfileByUid(
+    int uid,
+    _CommandPaletteActionContext context,
+  ) async {
+    final navigator = context.navigator;
+    if (navigator == null) {
+      return;
+    }
+    await navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserProfileScreen(state: widget.state, uid: uid),
+      ),
+    );
+  }
+
+  Future<void> openChat(
+    Conversation conversation,
+    _CommandPaletteActionContext context,
+  ) async {
+    final navigator = context.navigator;
+    if (navigator == null) {
+      return;
+    }
+    await widget.state.markConversationRead(conversation);
+    widget.state.setActiveConversation(conversation);
+    await navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ChatScreen(state: widget.state, conversation: conversation),
+      ),
+    );
+    await widget.onRefresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final matches = filteredActions(context, query);
+    return Drawer(
+      width: math.min(MediaQuery.sizeOf(context).width * 0.86, 360),
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 12, 10),
+              child: Row(
+                children: [
+                  Icon(Icons.terminal_rounded, color: colors.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      context.strings.text('Commands'),
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: context.strings.text('Close'),
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: TextField(
+                controller: search,
+                textInputAction: TextInputAction.search,
+                onChanged: (value) => setState(() => query = value),
+                onSubmitted: (_) {
+                  if (matches.isNotEmpty) {
+                    unawaited(runAction(matches.first));
+                  }
+                },
+                decoration: InputDecoration(
+                  hintText: context.strings.text('Type a command'),
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: context.strings.text('Clear'),
+                          onPressed: () {
+                            search.clear();
+                            setState(() => query = '');
+                          },
+                          icon: const Icon(Icons.close),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+            Divider(height: 1, color: colors.outlineVariant),
+            Expanded(
+              child: matches.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          context.strings.text('No matching commands.'),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      controller: actionsScroll,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: matches.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 2),
+                      itemBuilder: (context, index) {
+                        final action = matches[index];
+                        return _MobileCommandTile(
+                          action: action,
+                          usage: usage[action.id],
+                          onTap: () => unawaited(runAction(action)),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileCommandTile extends StatelessWidget {
+  const _MobileCommandTile({
+    required this.action,
+    required this.onTap,
+    this.usage,
+  });
+
+  final _CommandPaletteAction action;
+  final VoidCallback onTap;
+  final CommandPaletteUsage? usage;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final usage = this.usage;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: _RoundedInkClip(
+        child: ListTile(
+          minVerticalPadding: 12,
+          leading: Icon(action.icon, color: colors.primary),
+          title: Text(action.title),
+          subtitle: Text(
+            action.subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: usage == null
+              ? const Icon(Icons.chevron_right)
+              : Text(
+                  usage.count > 1
+                      ? context.strings.format('Used {count} times', {
+                          'count': usage.count,
+                        })
+                      : context.strings.text('Recent'),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+}
+
 class _ConversationTile extends StatelessWidget {
   const _ConversationTile({
     required this.conversation,
@@ -1166,9 +1804,12 @@ class _ConversationTile extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final draft = this.draft;
     final hasDraft = draft != null && draft.hasContent;
-    final fallbackSubtitle = conversation.subtitle.isEmpty
-        ? context.strings.text(isGroup ? 'Group chat' : 'Private chat')
-        : conversation.subtitle;
+    final fallbackSubtitle = context.strings.text(
+      isGroup ? 'Group chat' : 'Private chat',
+    );
+    final statusFallback = conversation.subtitle.trim().isNotEmpty
+        ? conversation.subtitle.trim()
+        : fallbackSubtitle;
     final preferredSubtitle = switch (subtitleMode) {
       ConversationSubtitleMode.recentMessage =>
         conversation.lastMessagePreview.trim().isNotEmpty
@@ -1177,7 +1818,7 @@ class _ConversationTile extends StatelessWidget {
       ConversationSubtitleMode.status =>
         conversation.statusSubtitle.trim().isNotEmpty
             ? conversation.statusSubtitle.trim()
-            : fallbackSubtitle,
+            : statusFallback,
     };
     final subtitleText = hasDraft
         ? context.strings.format('Draft: {text}', {

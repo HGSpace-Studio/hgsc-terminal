@@ -4,6 +4,13 @@
   "Members and online status": "群员数量/在线情况",
   "Show the latest message in each chat row": "在每个会话项中显示最近一条消息",
   "Show group member count and online status": "显示群成员数量和在线状态",
+  "Commands": "命令",
+  "Quick input triggers": "输入框快速激活",
+  "Automatically open pickers after typing @ or #": "输入 @ 或 # 后自动打开选择器",
+  "Keyboard confirmation key": "键盘确认键",
+  "New line": "换行",
+  "The keyboard confirmation key sends the message": "键盘确认键会发送消息",
+  "The keyboard confirmation key inserts a new line": "键盘确认键会插入换行",
   "Group badge content": "群消息徽标内容",
   "Member title": "成员头衔",
   "Member level": "成员等级",
@@ -17,5 +24,7 @@
   "Search friends or enter UID": "搜索好友或输入 UID",
   "Choose a friend or invite by UID": "选择好友或通过 UID 邀请",
   "No friends found.": "暂无好友。",
-  "No matching friends.": "没有匹配的好友。"
+  "No matching friends.": "没有匹配的好友。",
+  "Select message text": "选择消息文本",
+  "Copy all": "全部复制"
 }

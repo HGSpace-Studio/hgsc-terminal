@@ -105,7 +105,9 @@ class Friend {
     return Friend(
       id: id,
       uid: uid,
-      name: remark.isEmpty ? (nickname.isEmpty ? 'User $uid' : nickname) : remark,
+      name: remark.isEmpty
+          ? (nickname.isEmpty ? 'User $uid' : nickname)
+          : remark,
       avatar: normalizeApiUrl(asString(json['avatar'])),
       subtitle: statusSubtitle.isNotEmpty ? statusSubtitle : lastMessagePreview,
       statusSubtitle: statusSubtitle,

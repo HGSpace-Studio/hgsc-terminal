@@ -22,6 +22,8 @@ enum ChatBubbleCornerStyle { telegram, ios, qq }
 
 enum GroupMemberBadgeMode { title, role }
 
+enum MobileEnterKeyBehavior { send, newline }
+
 const defaultThemeColorValue = 0xff1f8a70;
 const defaultChatBubbleColorValue = 0;
 const defaultChatBubbleOpacity = 1.0;
@@ -44,6 +46,8 @@ class CsacPreferences {
     this.reduceMotion = false,
     this.showChatAvatars = true,
     this.enablePat = true,
+    this.enableQuickInputTriggers = true,
+    this.mobileEnterKeyBehavior = MobileEnterKeyBehavior.send,
     this.showGroupMemberLevel = true,
     this.groupMemberBadgeMode = GroupMemberBadgeMode.title,
     this.appLockEnabled = false,
@@ -70,6 +74,10 @@ class CsacPreferences {
   static const _reduceMotionKey = 'csac.reduce_motion';
   static const _showChatAvatarsKey = 'csac.chat.show_avatars';
   static const _enablePatKey = 'csac.chat.enable_pat';
+  static const _enableQuickInputTriggersKey =
+      'csac.chat.enable_quick_input_triggers';
+  static const _mobileEnterKeyBehaviorKey =
+      'csac.chat.mobile_enter_key_behavior';
   static const _showGroupMemberLevelKey = 'csac.chat.show_group_member_level';
   static const _groupMemberBadgeModeKey = 'csac.chat.group_member_badge_mode';
   static const _appLockEnabledKey = 'csac.app_lock.enabled';
@@ -95,6 +103,8 @@ class CsacPreferences {
   final bool reduceMotion;
   final bool showChatAvatars;
   final bool enablePat;
+  final bool enableQuickInputTriggers;
+  final MobileEnterKeyBehavior mobileEnterKeyBehavior;
   final bool showGroupMemberLevel;
   final GroupMemberBadgeMode groupMemberBadgeMode;
   final bool appLockEnabled;
@@ -133,6 +143,8 @@ class CsacPreferences {
     bool? reduceMotion,
     bool? showChatAvatars,
     bool? enablePat,
+    bool? enableQuickInputTriggers,
+    MobileEnterKeyBehavior? mobileEnterKeyBehavior,
     bool? showGroupMemberLevel,
     GroupMemberBadgeMode? groupMemberBadgeMode,
     bool? appLockEnabled,
@@ -163,6 +175,10 @@ class CsacPreferences {
       reduceMotion: reduceMotion ?? this.reduceMotion,
       showChatAvatars: showChatAvatars ?? this.showChatAvatars,
       enablePat: enablePat ?? this.enablePat,
+      enableQuickInputTriggers:
+          enableQuickInputTriggers ?? this.enableQuickInputTriggers,
+      mobileEnterKeyBehavior:
+          mobileEnterKeyBehavior ?? this.mobileEnterKeyBehavior,
       showGroupMemberLevel: showGroupMemberLevel ?? this.showGroupMemberLevel,
       groupMemberBadgeMode: groupMemberBadgeMode ?? this.groupMemberBadgeMode,
       appLockEnabled: appLockEnabled ?? this.appLockEnabled,
@@ -211,6 +227,11 @@ class CsacPreferences {
       reduceMotion: prefs.getBool(_reduceMotionKey) ?? false,
       showChatAvatars: prefs.getBool(_showChatAvatarsKey) ?? true,
       enablePat: prefs.getBool(_enablePatKey) ?? true,
+      enableQuickInputTriggers:
+          prefs.getBool(_enableQuickInputTriggersKey) ?? true,
+      mobileEnterKeyBehavior: _mobileEnterKeyBehaviorFromName(
+        prefs.getString(_mobileEnterKeyBehaviorKey),
+      ),
       showGroupMemberLevel: prefs.getBool(_showGroupMemberLevelKey) ?? true,
       groupMemberBadgeMode: _groupMemberBadgeModeFromName(
         prefs.getString(_groupMemberBadgeModeKey),
@@ -267,6 +288,11 @@ class CsacPreferences {
     await prefs.setBool(_reduceMotionKey, reduceMotion);
     await prefs.setBool(_showChatAvatarsKey, showChatAvatars);
     await prefs.setBool(_enablePatKey, enablePat);
+    await prefs.setBool(_enableQuickInputTriggersKey, enableQuickInputTriggers);
+    await prefs.setString(
+      _mobileEnterKeyBehaviorKey,
+      mobileEnterKeyBehavior.name,
+    );
     await prefs.setBool(_showGroupMemberLevelKey, showGroupMemberLevel);
     await prefs.setString(_groupMemberBadgeModeKey, groupMemberBadgeMode.name);
     await prefs.setBool(_appLockEnabledKey, appLockEnabled);
@@ -398,6 +424,15 @@ class CsacPreferences {
       }
     }
     return GroupMemberBadgeMode.title;
+  }
+
+  static MobileEnterKeyBehavior _mobileEnterKeyBehaviorFromName(String? value) {
+    for (final behavior in MobileEnterKeyBehavior.values) {
+      if (behavior.name == value) {
+        return behavior;
+      }
+    }
+    return MobileEnterKeyBehavior.send;
   }
 }
 

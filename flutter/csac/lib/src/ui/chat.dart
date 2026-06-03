@@ -463,6 +463,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   void handleMentionTrigger() {
+    if (!widget.state.preferences.enableQuickInputTriggers) {
+      return;
+    }
     if (widget.conversation.type != ConversationType.group ||
         mentionPickerOpening ||
         applyingDraft) {
@@ -492,6 +495,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   void handleEmojiTrigger() {
+    if (!widget.state.preferences.enableQuickInputTriggers) {
+      return;
+    }
     if (emojiPickerOpening || applyingDraft) {
       return;
     }
@@ -1004,6 +1010,39 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     await clearDraft();
     scrollToEnd();
     unawaited(performPendingSend(pending.localId));
+  }
+
+  bool get mobileEnterSends {
+    return !isMobilePlatform ||
+        widget.state.preferences.mobileEnterKeyBehavior ==
+            MobileEnterKeyBehavior.send;
+  }
+
+  void insertInputText(String value) {
+    final selection = input.selection;
+    final text = input.text;
+    final start = selection.isValid
+        ? selection.start.clamp(0, text.length)
+        : text.length;
+    final end = selection.isValid ? selection.end.clamp(0, text.length) : start;
+    final nextText = text.replaceRange(start, end, value);
+    final nextOffset = start + value.length;
+    input.value = input.value.copyWith(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextOffset),
+      composing: TextRange.empty,
+    );
+  }
+
+  KeyEventResult handleComposeKeyEvent(FocusNode node, KeyEvent event) {
+    if (!isDesktopPlatform ||
+        event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.enter ||
+        !HardwareKeyboard.instance.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    insertInputText('\n');
+    return KeyEventResult.handled;
   }
 
   Future<void> pickAndSendImage({
@@ -1663,6 +1702,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               message: message,
               canRecall: message.canRecall || mine,
               canEssence: widget.conversation.type == ConversationType.group,
+              canSelectText:
+                  isMobilePlatform &&
+                  message.messageType == 1 &&
+                  chatMessagePlainText(
+                    message,
+                    context.strings,
+                  ).trim().isNotEmpty,
             ),
           ),
         ).whenComplete(() {
@@ -1689,6 +1735,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           SnackBar(content: Text(context.strings.text('Message copied'))),
         );
         break;
+      case _MessageAction.selectText:
+        await showSelectableMessageText(message);
+        break;
       case _MessageAction.copyImage:
         Clipboard.setData(ClipboardData(text: message.imageUrl));
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1711,6 +1760,62 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         await toggleEssence(message);
         break;
     }
+  }
+
+  Future<void> showSelectableMessageText(ChatMessage message) async {
+    final text = chatMessagePlainText(message, context.strings).trim();
+    if (text.isEmpty) {
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                context.strings.text('Select message text'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.42,
+                ),
+                child: SingleChildScrollView(child: SelectableText(text)),
+              ),
+              const SizedBox(height: 16),
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: text));
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(context.strings.text('Message copied')),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.copy),
+                    label: Text(context.strings.text('Copy all')),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void openConversationDetails() {
@@ -2572,11 +2677,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         mine,
                                     showMemberLevel:
                                         widget.conversation.type ==
-                                            ConversationType.group &&
-                                        widget
-                                            .state
-                                            .preferences
-                                            .showGroupMemberLevel,
+                                        ConversationType.group,
                                     focused:
                                         widget.focusMessageId == message.id,
                                     selected: selected,
@@ -2840,16 +2941,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
-                                  child: TextField(
-                                    controller: input,
-                                    focusNode: inputFocus,
-                                    minLines: 1,
-                                    maxLines: 4,
-                                    textInputAction: TextInputAction.send,
-                                    onSubmitted: (_) => send(),
-                                    decoration: InputDecoration(
-                                      hintText: strings.text('Message'),
-                                      border: const OutlineInputBorder(),
+                                  child: Focus(
+                                    onKeyEvent: handleComposeKeyEvent,
+                                    child: TextField(
+                                      controller: input,
+                                      focusNode: inputFocus,
+                                      minLines: 1,
+                                      maxLines: 4,
+                                      textInputAction: mobileEnterSends
+                                          ? TextInputAction.send
+                                          : TextInputAction.newline,
+                                      onSubmitted: (_) {
+                                        if (mobileEnterSends) {
+                                          send();
+                                        } else {
+                                          insertInputText('\n');
+                                        }
+                                      },
+                                      decoration: InputDecoration(
+                                        hintText: strings.text('Message'),
+                                        border: const OutlineInputBorder(),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -3478,18 +3590,20 @@ String _groupMemberBadgeText(
   ].firstWhere((value) => value.isNotEmpty, orElse: () => '');
   switch (preferences.groupMemberBadgeMode) {
     case GroupMemberBadgeMode.title:
-      return [levelText, title]
-          .where((value) => value.trim().isNotEmpty)
-          .join(' ');
+      return [
+        levelText,
+        title,
+      ].where((value) => value.trim().isNotEmpty).join(' ');
     case GroupMemberBadgeMode.role:
       final role = (member?.hasOwnerRole ?? false)
           ? strings.text('Owner')
           : (member?.hasAdminRole ?? false)
           ? strings.text('Admin')
           : strings.text('Member');
-      return [levelText, role]
-          .where((value) => value.trim().isNotEmpty)
-          .join(' ');
+      return [
+        levelText,
+        role,
+      ].where((value) => value.trim().isNotEmpty).join(' ');
   }
 }
 
@@ -5636,6 +5750,7 @@ class _GroupAnnouncementBar extends StatelessWidget {
 enum _MessageAction {
   select,
   copyText,
+  selectText,
   copyImage,
   openImage,
   downloadImage,
@@ -5677,11 +5792,13 @@ class _MessageActionSheet extends StatelessWidget {
     required this.message,
     required this.canRecall,
     required this.canEssence,
+    required this.canSelectText,
   });
 
   final ChatMessage message;
   final bool canRecall;
   final bool canEssence;
+  final bool canSelectText;
 
   @override
   Widget build(BuildContext context) {
@@ -5707,6 +5824,12 @@ class _MessageActionSheet extends StatelessWidget {
             title: Text(strings.text('Copy text')),
             onTap: () => Navigator.of(context).pop(_MessageAction.copyText),
           ),
+          if (canSelectText)
+            ListTile(
+              leading: const Icon(Icons.text_fields),
+              title: Text(strings.text('Select message text')),
+              onTap: () => Navigator.of(context).pop(_MessageAction.selectText),
+            ),
           if (message.imageUrl.isNotEmpty)
             ListTile(
               leading: const Icon(Icons.link),

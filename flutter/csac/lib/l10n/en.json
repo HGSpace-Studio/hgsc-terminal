@@ -4,6 +4,13 @@
   "Members and online status": "Members and online status",
   "Show the latest message in each chat row": "Show the latest message in each chat row",
   "Show group member count and online status": "Show group member count and online status",
+  "Commands": "Commands",
+  "Quick input triggers": "Quick input triggers",
+  "Automatically open pickers after typing @ or #": "Automatically open pickers after typing @ or #",
+  "Keyboard confirmation key": "Keyboard confirmation key",
+  "New line": "New line",
+  "The keyboard confirmation key sends the message": "The keyboard confirmation key sends the message",
+  "The keyboard confirmation key inserts a new line": "The keyboard confirmation key inserts a new line",
   "Group badge content": "Group badge content",
   "Member title": "Member title",
   "Member level": "Member level",
@@ -17,5 +24,7 @@
   "Search friends or enter UID": "Search friends or enter UID",
   "Choose a friend or invite by UID": "Choose a friend or invite by UID",
   "No friends found.": "No friends found.",
-  "No matching friends.": "No matching friends."
+  "No matching friends.": "No matching friends.",
+  "Select message text": "Select message text",
+  "Copy all": "Copy all"
 }
