@@ -272,6 +272,8 @@
   "Sand": "沙黄",
   "Custom": "自定义",
   "Language": "语言",
+  "Translation progress": "翻译进度",
+  "Translated {translated}/{total} strings": "已翻译 {translated}/{total} 条",
   "App information": "应用信息",
   "Report a problem": "反馈问题",
   "Send app feedback to administrators": "向管理员发送应用反馈",

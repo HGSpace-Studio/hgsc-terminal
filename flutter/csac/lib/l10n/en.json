@@ -272,6 +272,8 @@
   "Sand": "Sand",
   "Custom": "Custom",
   "Language": "Language",
+  "Translation progress": "Translation progress",
+  "Translated {translated}/{total} strings": "Translated {translated}/{total} strings",
   "App information": "App information",
   "Report a problem": "Report a problem",
   "Send app feedback to administrators": "Send app feedback to administrators",

@@ -1,0 +1,3 @@
+files:
+  - source: /flutter/csac/lib/l10n/en.json
+    translation: /flutter/csac/lib/l10n/%locale%.json

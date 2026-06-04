@@ -1,3 +1,0 @@
-files:
-  - source: /lib/l10n/en.json
-    translation: /lib/l10n/%locale%.json

@@ -42,6 +42,34 @@ class CsacStrings {
   }
 }
 
+class TranslationProgress {
+  const TranslationProgress({required this.translated, required this.total});
+
+  final int translated;
+  final int total;
+
+  int get missing {
+    final value = total - translated;
+    return value < 0 ? 0 : value;
+  }
+
+  int get percent {
+    if (total <= 0) {
+      return 0;
+    }
+    return ((translated * 100) / total).round().clamp(0, 100).toInt();
+  }
+
+  double get fraction {
+    if (total <= 0) {
+      return 0;
+    }
+    return (translated / total).clamp(0.0, 1.0);
+  }
+
+  String get percentLabel => '$percent%';
+}
+
 class CsacStringsDelegate extends LocalizationsDelegate<CsacStrings> {
   const CsacStringsDelegate();
 
@@ -60,23 +88,74 @@ class CsacStringsDelegate extends LocalizationsDelegate<CsacStrings> {
 }
 
 Future<Map<String, String>> _loadL10nOverrides(Locale locale) async {
+  return _loadL10nJsonForLocale(locale);
+}
+
+Future<TranslationProgress> translationProgressForLanguage(
+  CsacLanguage language,
+) {
+  final locale = localeForLanguage(language);
+  return _translationProgressCache.putIfAbsent(
+    _localeCacheKey(locale),
+    () => _loadTranslationProgress(locale),
+  );
+}
+
+Future<TranslationProgress> _loadTranslationProgress(Locale locale) async {
+  final source = await _loadL10nJsonAsset('en');
+  if (source.isEmpty) {
+    return const TranslationProgress(translated: 0, total: 0);
+  }
+  final target = await _loadL10nJsonForLocale(locale);
+  var translated = 0;
+  for (final key in source.keys) {
+    if ((target[key] ?? '').trim().isNotEmpty) {
+      translated++;
+    }
+  }
+  return TranslationProgress(translated: translated, total: source.length);
+}
+
+Future<Map<String, String>> _loadL10nJsonForLocale(Locale locale) async {
   final candidates = <String>[
     if (locale.countryCode?.trim().isNotEmpty == true)
       '${locale.languageCode}-${locale.countryCode}',
     locale.languageCode,
   ];
   for (final name in candidates) {
+    final loaded = await _loadL10nJsonAsset(name);
+    if (loaded.isNotEmpty) {
+      return loaded;
+    }
+  }
+  return const <String, String>{};
+}
+
+Future<Map<String, String>> _loadL10nJsonAsset(String name) {
+  return _l10nJsonCache.putIfAbsent(name, () async {
     try {
       final raw = await rootBundle.loadString('lib/l10n/$name.json');
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
-        continue;
+        return const <String, String>{};
       }
       return decoded.map((key, value) => MapEntry(key, '$value'));
-    } catch (_) {}
-  }
-  return const <String, String>{};
+    } catch (_) {
+      return const <String, String>{};
+    }
+  });
 }
+
+String _localeCacheKey(Locale locale) {
+  final country = locale.countryCode?.trim();
+  if (country == null || country.isEmpty) {
+    return locale.languageCode;
+  }
+  return '${locale.languageCode}-$country';
+}
+
+final _l10nJsonCache = <String, Future<Map<String, String>>>{};
+final _translationProgressCache = <String, Future<TranslationProgress>>{};
 
 extension CsacStringsContext on BuildContext {
   CsacStrings get strings => CsacStrings.of(this);

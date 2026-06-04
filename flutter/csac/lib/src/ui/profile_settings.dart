@@ -779,6 +779,60 @@ class _ThemeColorOption {
   final Color color;
 }
 
+class _LanguageOptionTile extends StatelessWidget {
+  const _LanguageOptionTile({
+    required this.label,
+    required this.selected,
+    required this.progress,
+    required this.summaryBuilder,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final Future<TranslationProgress> progress;
+  final String Function(TranslationProgress progress) summaryBuilder;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: selected ? const Icon(Icons.check) : const SizedBox(width: 24),
+      title: Text(label),
+      subtitle: FutureBuilder<TranslationProgress>(
+        future: progress,
+        builder: (context, snapshot) {
+          final value = snapshot.data;
+          if (value == null) {
+            return const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: LinearProgressIndicator(minHeight: 4),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${value.percentLabel} · ${summaryBuilder(value)}'),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: value.fraction,
+                    minHeight: 5,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
 class _CacheMetric {
   const _CacheMetric({
     required this.icon,
@@ -3598,12 +3652,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String get languageLabel {
-    switch (widget.state.preferences.language) {
+    return languageLabelFor(widget.state.preferences.language);
+  }
+
+  String languageLabelFor(CsacLanguage language) {
+    switch (language) {
       case CsacLanguage.en:
         return 'English';
       case CsacLanguage.zh:
         return '中文';
     }
+  }
+
+  String translationProgressSummary(TranslationProgress progress) {
+    return context.strings.format('Translated {translated}/{total} strings', {
+      'translated': progress.translated,
+      'total': progress.total,
+    });
+  }
+
+  Widget languageSubtitle() {
+    final language = widget.state.preferences.language;
+    return FutureBuilder<TranslationProgress>(
+      future: translationProgressForLanguage(language),
+      builder: (context, snapshot) {
+        final progress = snapshot.data;
+        if (progress == null) {
+          return Text(languageLabel);
+        }
+        return Text(
+          '$languageLabel · ${progress.percentLabel} · '
+          '${translationProgressSummary(progress)}',
+        );
+      },
+    );
   }
 
   String get fontStyleLabel {
@@ -4344,6 +4426,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> chooseLanguage() async {
+    final strings = context.strings;
     final selected = await showModalBottomSheet<CsacLanguage>(
       context: context,
       showDragHandle: true,
@@ -4352,20 +4435,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: widget.state.preferences.language == CsacLanguage.en
-                    ? const Icon(Icons.check)
-                    : const SizedBox(width: 24),
-                title: const Text('English'),
-                onTap: () => Navigator.of(context).pop(CsacLanguage.en),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    strings.text('Translation progress'),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
               ),
-              ListTile(
-                leading: widget.state.preferences.language == CsacLanguage.zh
-                    ? const Icon(Icons.check)
-                    : const SizedBox(width: 24),
-                title: const Text('中文'),
-                onTap: () => Navigator.of(context).pop(CsacLanguage.zh),
-              ),
+              for (final language in CsacLanguage.values)
+                _LanguageOptionTile(
+                  label: languageLabelFor(language),
+                  selected: widget.state.preferences.language == language,
+                  progress: translationProgressForLanguage(language),
+                  summaryBuilder: translationProgressSummary,
+                  onTap: () => Navigator.of(context).pop(language),
+                ),
             ],
           ),
         ),
@@ -5155,7 +5244,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ListTile(
                         leading: const Icon(Icons.translate),
                         title: Text(strings.text('Language')),
-                        subtitle: Text(languageLabel),
+                        subtitle: languageSubtitle(),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: chooseLanguage,
                       ),
