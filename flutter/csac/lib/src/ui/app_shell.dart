@@ -458,7 +458,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
           navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
           locale: localeForLanguage(state.preferences.language),
-          supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
+          supportedLocales: supportedCsacLocales,
           localizationsDelegates: const [
             CsacStringsDelegate(),
             GlobalMaterialLocalizations.delegate,

@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 
-enum CsacLanguage { en, zh }
+enum CsacLanguage { en, zh, zhTw, ja, ko, es, fr, de, ru, ptBr, vi, id }
 
 enum ConversationSortMode { latest, type }
 

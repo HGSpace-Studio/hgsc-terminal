@@ -11,8 +11,43 @@ Locale localeForLanguage(CsacLanguage language) {
       return const Locale('en');
     case CsacLanguage.zh:
       return const Locale('zh', 'CN');
+    case CsacLanguage.zhTw:
+      return const Locale('zh', 'TW');
+    case CsacLanguage.ja:
+      return const Locale('ja');
+    case CsacLanguage.ko:
+      return const Locale('ko');
+    case CsacLanguage.es:
+      return const Locale('es');
+    case CsacLanguage.fr:
+      return const Locale('fr');
+    case CsacLanguage.de:
+      return const Locale('de');
+    case CsacLanguage.ru:
+      return const Locale('ru');
+    case CsacLanguage.ptBr:
+      return const Locale('pt', 'BR');
+    case CsacLanguage.vi:
+      return const Locale('vi');
+    case CsacLanguage.id:
+      return const Locale('id');
   }
 }
+
+const supportedCsacLocales = <Locale>[
+  Locale('en'),
+  Locale('zh', 'CN'),
+  Locale('zh', 'TW'),
+  Locale('ja'),
+  Locale('ko'),
+  Locale('es'),
+  Locale('fr'),
+  Locale('de'),
+  Locale('ru'),
+  Locale('pt', 'BR'),
+  Locale('vi'),
+  Locale('id'),
+];
 
 class CsacStrings {
   const CsacStrings(this.locale, [this.overrides = const <String, String>{}]);
@@ -75,7 +110,15 @@ class CsacStringsDelegate extends LocalizationsDelegate<CsacStrings> {
 
   @override
   bool isSupported(Locale locale) {
-    return locale.languageCode == 'en' || locale.languageCode == 'zh';
+    return supportedCsacLocales.any((supported) {
+      if (supported.languageCode != locale.languageCode) {
+        return false;
+      }
+      final country = supported.countryCode;
+      return country == null ||
+          country.isEmpty ||
+          country == locale.countryCode;
+    });
   }
 
   @override
