@@ -3661,6 +3661,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return 'English';
       case CsacLanguage.zh:
         return '中文';
+      case CsacLanguage.zhTw:
+        return '繁體中文';
+      case CsacLanguage.ja:
+        return '日本語';
+      case CsacLanguage.ko:
+        return '한국어';
+      case CsacLanguage.es:
+        return 'Español';
+      case CsacLanguage.fr:
+        return 'Français';
+      case CsacLanguage.de:
+        return 'Deutsch';
+      case CsacLanguage.ru:
+        return 'Русский';
+      case CsacLanguage.ptBr:
+        return 'Português (Brasil)';
+      case CsacLanguage.vi:
+        return 'Tiếng Việt';
+      case CsacLanguage.id:
+        return 'Bahasa Indonesia';
     }
   }
 

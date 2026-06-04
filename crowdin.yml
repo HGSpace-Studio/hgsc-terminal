@@ -1,3 +1,8 @@
 files:
   - source: /flutter/csac/lib/l10n/en.json
-    translation: /flutter/csac/lib/l10n/%locale%.json
+    translation: /flutter/csac/lib/l10n/%two_letters_code%.json
+    languages_mapping:
+      two_letters_code:
+        zh-CN: zh-CN
+        zh-TW: zh-TW
+        pt-BR: pt-BR
