@@ -4450,35 +4450,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final selected = await showModalBottomSheet<CsacLanguage>(
       context: context,
       showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: _RoundedInkClip(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
-                child: Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Text(
-                    strings.text('Translation progress'),
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+      isScrollControlled: true,
+      builder: (context) {
+        final maxHeight = MediaQuery.sizeOf(context).height * 0.82;
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: _RoundedInkClip(
+              child: ListView(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        strings.text('Translation progress'),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ),
-                ),
+                  for (final language in CsacLanguage.values)
+                    _LanguageOptionTile(
+                      label: languageLabelFor(language),
+                      selected: widget.state.preferences.language == language,
+                      progress: translationProgressForLanguage(language),
+                      summaryBuilder: translationProgressSummary,
+                      onTap: () => Navigator.of(context).pop(language),
+                    ),
+                ],
               ),
-              for (final language in CsacLanguage.values)
-                _LanguageOptionTile(
-                  label: languageLabelFor(language),
-                  selected: widget.state.preferences.language == language,
-                  progress: translationProgressForLanguage(language),
-                  summaryBuilder: translationProgressSummary,
-                  onTap: () => Navigator.of(context).pop(language),
-                ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
     if (selected != null) {
       await widget.state.updateLanguage(selected);
