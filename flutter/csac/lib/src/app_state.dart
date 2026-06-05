@@ -459,6 +459,12 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> acceptLegalAgreements(String version) async {
+    preferences = preferences.copyWith(acceptedLegalVersion: version);
+    await preferences.save();
+    notifyListeners();
+  }
+
   bool verifyAppLockPin(String pin) {
     return preferences.verifyAppLockPin(pin);
   }

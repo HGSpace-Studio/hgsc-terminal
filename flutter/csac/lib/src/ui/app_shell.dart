@@ -1012,6 +1012,14 @@ class SplashScreen extends StatelessWidget {
   }
 }
 
+const _legalAgreementVersion = 'v1.0';
+const _privacyPolicyAsset = 'assets/legal/privacy_policy_zh.md';
+const _userAgreementAsset = 'assets/legal/user_agreement_zh.md';
+
+bool _hasAcceptedCurrentLegal(CsacPreferences preferences) {
+  return preferences.acceptedLegalVersion == _legalAgreementVersion;
+}
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.state});
 
@@ -1029,11 +1037,15 @@ class _LoginScreenState extends State<LoginScreen> {
   final developerOptionsKey = GlobalKey();
   List<LoginAccountRecord> accounts = const <LoginAccountRecord>[];
   bool loadingAccounts = true;
+  bool acceptedLegalAgreements = false;
   String? error;
 
   @override
   void initState() {
     super.initState();
+    acceptedLegalAgreements = _hasAcceptedCurrentLegal(
+      widget.state.preferences,
+    );
     loadAccounts();
   }
 
@@ -1044,6 +1056,34 @@ class _LoginScreenState extends State<LoginScreen> {
     passwordFocus.dispose();
     scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> setLegalAccepted(bool accepted) async {
+    setState(() {
+      acceptedLegalAgreements = accepted;
+      if (accepted &&
+          error ==
+              context.strings.text(
+                'Please agree to the Privacy Policy and User Agreement first.',
+              )) {
+        error = null;
+      }
+    });
+    await widget.state.acceptLegalAgreements(
+      accepted ? _legalAgreementVersion : '',
+    );
+  }
+
+  bool ensureLegalAccepted() {
+    if (acceptedLegalAgreements) {
+      return true;
+    }
+    setState(
+      () => error = context.strings.text(
+        'Please agree to the Privacy Policy and User Agreement first.',
+      ),
+    );
+    return false;
   }
 
   Future<void> loadAccounts() async {
@@ -1058,6 +1098,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> selectAccount(LoginAccountRecord account) async {
+    if (!ensureLegalAccepted()) {
+      return;
+    }
     if (account.hasSession) {
       setState(() => error = null);
       try {
@@ -1095,6 +1138,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> submit() async {
     final name = username.text.trim();
+    if (!ensureLegalAccepted()) {
+      return;
+    }
     if (name.isEmpty || password.text.isEmpty) {
       setState(
         () =>
@@ -1216,6 +1262,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ],
+                  const SizedBox(height: 14),
+                  LegalAgreementConsent(
+                    accepted: acceptedLegalAgreements,
+                    onChanged: widget.state.loading
+                        ? null
+                        : (value) => unawaited(setLegalAccepted(value)),
+                  ),
                   const SizedBox(height: 20),
                   FilledButton.icon(
                     onPressed: widget.state.loading ? null : submit,
@@ -1602,10 +1655,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
   XFile? avatar;
   bool submitting = false;
   bool sendingCode = false;
+  bool acceptedLegalAgreements = false;
   int resendRemaining = 0;
   int expiresIn = 600;
   String? error;
   String? message;
+
+  @override
+  void initState() {
+    super.initState();
+    acceptedLegalAgreements = _hasAcceptedCurrentLegal(
+      widget.state.preferences,
+    );
+  }
 
   @override
   void dispose() {
@@ -1635,6 +1697,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool get canSendCode => !sendingCode && resendRemaining <= 0;
 
+  Future<void> setLegalAccepted(bool accepted) async {
+    setState(() {
+      acceptedLegalAgreements = accepted;
+      if (accepted &&
+          error ==
+              context.strings.text(
+                'Please agree to the Privacy Policy and User Agreement first.',
+              )) {
+        error = null;
+      }
+    });
+    await widget.state.acceptLegalAgreements(
+      accepted ? _legalAgreementVersion : '',
+    );
+  }
+
   void startResendCountdown(int seconds) {
     resendTimer?.cancel();
     setState(() => resendRemaining = seconds <= 0 ? 60 : seconds);
@@ -1654,6 +1732,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> sendCode() async {
     final strings = context.strings;
+    if (!acceptedLegalAgreements) {
+      setState(
+        () => error = strings.text(
+          'Please agree to the Privacy Policy and User Agreement first.',
+        ),
+      );
+      return;
+    }
     final targetEmail = email.text.trim();
     if (!_looksLikeEmail(targetEmail)) {
       setState(() => error = strings.text('Please enter a valid email.'));
@@ -1690,6 +1776,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> submit() async {
     final strings = context.strings;
+    if (!acceptedLegalAgreements) {
+      setState(
+        () => error = strings.text(
+          'Please agree to the Privacy Policy and User Agreement first.',
+        ),
+      );
+      return;
+    }
     if (username.text.trim().isEmpty ||
         nickname.text.trim().isEmpty ||
         email.text.trim().isEmpty ||
@@ -1884,6 +1978,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
+            const SizedBox(height: 12),
+            LegalAgreementConsent(
+              accepted: acceptedLegalAgreements,
+              onChanged: submitting || sendingCode
+                  ? null
+                  : (value) => unawaited(setLegalAccepted(value)),
+            ),
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: submitting ? null : submit,
@@ -1897,6 +1998,162 @@ class _RegisterScreenState extends State<RegisterScreen> {
               label: Text(strings.text('Register')),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class LegalAgreementConsent extends StatelessWidget {
+  const LegalAgreementConsent({
+    super.key,
+    required this.accepted,
+    required this.onChanged,
+  });
+
+  final bool accepted;
+  final ValueChanged<bool>? onChanged;
+
+  Future<void> openDocument(
+    BuildContext context, {
+    required String title,
+    required String assetPath,
+  }) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LegalDocumentScreen(title: title, assetPath: assetPath),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final colorScheme = Theme.of(context).colorScheme;
+    return Semantics(
+      container: true,
+      label: strings.text(
+        'Agree to the Privacy Policy and User Agreement',
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: colorScheme.outlineVariant),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 10, 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Checkbox(
+                value: accepted,
+                onChanged: onChanged == null
+                    ? null
+                    : (value) => onChanged!(value ?? false),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 9),
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(strings.text('I have read and agree to the ')),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () => openDocument(
+                          context,
+                          title: strings.text('Privacy Policy'),
+                          assetPath: _privacyPolicyAsset,
+                        ),
+                        child: Text(strings.text('Privacy Policy')),
+                      ),
+                      Text(strings.text(' and ')),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () => openDocument(
+                          context,
+                          title: strings.text('User Agreement'),
+                          assetPath: _userAgreementAsset,
+                        ),
+                        child: Text(strings.text('User Agreement')),
+                      ),
+                      Text(
+                        strings.format(' ({version})', {
+                          'version': _legalAgreementVersion,
+                        }),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class LegalDocumentScreen extends StatelessWidget {
+  const LegalDocumentScreen({
+    super.key,
+    required this.title,
+    required this.assetPath,
+  });
+
+  final String title;
+  final String assetPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: SafeArea(
+        child: FutureBuilder<String>(
+          future: rootBundle.loadString(assetPath),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    strings.text('Unable to load legal document.'),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+            return Markdown(
+              data: snapshot.data ?? '',
+              selectable: true,
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              styleSheet: MarkdownStyleSheet.fromTheme(
+                Theme.of(context),
+              ).copyWith(
+                h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+                h2: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+                p: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  height: 1.55,
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

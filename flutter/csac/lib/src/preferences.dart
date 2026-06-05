@@ -56,6 +56,7 @@ class CsacPreferences {
     this.appLockBiometricEnabled = false,
     this.autoCheckVersionUpdates = true,
     this.localSystemNotificationsEnabled = true,
+    this.acceptedLegalVersion = '',
   });
 
   static const _themeKey = 'csac.theme_mode';
@@ -86,6 +87,7 @@ class CsacPreferences {
   static const _appLockBiometricEnabledKey = 'csac.app_lock.biometric_enabled';
   static const _autoCheckVersionUpdatesKey = 'csac.updates.auto_check_version';
   static const _localSystemNotificationsKey = 'csac.notifications.local_system';
+  static const _acceptedLegalVersionKey = 'csac.legal.accepted_version';
 
   final ThemeMode themeMode;
   final int themeColorValue;
@@ -113,6 +115,7 @@ class CsacPreferences {
   final bool appLockBiometricEnabled;
   final bool autoCheckVersionUpdates;
   final bool localSystemNotificationsEnabled;
+  final String acceptedLegalVersion;
 
   bool get hasAppLockPin =>
       appLockPinSalt.trim().isNotEmpty && appLockPinHash.trim().isNotEmpty;
@@ -153,6 +156,7 @@ class CsacPreferences {
     bool? appLockBiometricEnabled,
     bool? autoCheckVersionUpdates,
     bool? localSystemNotificationsEnabled,
+    String? acceptedLegalVersion,
   }) {
     return CsacPreferences(
       themeMode: themeMode ?? this.themeMode,
@@ -191,6 +195,7 @@ class CsacPreferences {
       localSystemNotificationsEnabled:
           localSystemNotificationsEnabled ??
           this.localSystemNotificationsEnabled,
+      acceptedLegalVersion: acceptedLegalVersion ?? this.acceptedLegalVersion,
     );
   }
 
@@ -245,6 +250,7 @@ class CsacPreferences {
           prefs.getBool(_autoCheckVersionUpdatesKey) ?? true,
       localSystemNotificationsEnabled:
           prefs.getBool(_localSystemNotificationsKey) ?? true,
+      acceptedLegalVersion: prefs.getString(_acceptedLegalVersionKey) ?? '',
     );
   }
 
@@ -309,6 +315,11 @@ class CsacPreferences {
       _localSystemNotificationsKey,
       localSystemNotificationsEnabled,
     );
+    if (acceptedLegalVersion.trim().isEmpty) {
+      await prefs.remove(_acceptedLegalVersionKey);
+    } else {
+      await prefs.setString(_acceptedLegalVersionKey, acceptedLegalVersion);
+    }
   }
 
   static ThemeMode _themeModeFromName(String? value) {
