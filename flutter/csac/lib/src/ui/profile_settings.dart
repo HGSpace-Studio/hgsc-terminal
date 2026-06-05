@@ -1131,6 +1131,8 @@ const _csacAppBranch = csacClientBranch;
 const _csacSourceUrl =
     'https://github.com/Leonmmcoset/csac-terminal/tree/main/flutter/csac';
 const _csacAuthorUrl = 'https://github.com/Leonmmcoset';
+const _csacCommunityTranslationUrl =
+    'https://zh.crowdin.com/project/csac-flutter';
 
 class AppInfoScreen extends StatefulWidget {
   const AppInfoScreen({super.key});
@@ -1167,6 +1169,19 @@ class _AppInfoScreenState extends State<AppInfoScreen> {
     final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
     if (!opened && context.mounted) {
       await Clipboard.setData(const ClipboardData(text: _csacAuthorUrl));
+      messenger.showSnackBar(SnackBar(content: Text(copiedText)));
+    }
+  }
+
+  Future<void> openCommunityTranslationUrl(BuildContext context) async {
+    final url = Uri.parse(_csacCommunityTranslationUrl);
+    final messenger = ScaffoldMessenger.of(context);
+    final copiedText = context.strings.text('Link copied.');
+    final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      await Clipboard.setData(
+        const ClipboardData(text: _csacCommunityTranslationUrl),
+      );
       messenger.showSnackBar(SnackBar(content: Text(copiedText)));
     }
   }
@@ -1316,6 +1331,15 @@ class _AppInfoScreenState extends State<AppInfoScreen> {
                           value: _csacSourceUrl,
                           trailing: const Icon(Icons.open_in_new),
                           onTap: () => openSourceUrl(context),
+                        ),
+                        const Divider(height: 1),
+                        infoTile(
+                          context,
+                          icon: Icons.translate_outlined,
+                          title: strings.text('Community translations'),
+                          value: _csacCommunityTranslationUrl,
+                          trailing: const Icon(Icons.open_in_new),
+                          onTap: () => openCommunityTranslationUrl(context),
                         ),
                         const Divider(height: 1),
                         ListTile(
