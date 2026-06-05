@@ -49,10 +49,18 @@ class AppLogFile {
 }
 
 class CsacAppState extends ChangeNotifier {
-  CsacAppState({CsacApiClient? client, CsacLocalCache? cache})
-    : client = client ?? CsacApiClient(),
-      cache = cache ?? CsacLocalCache() {
+  CsacAppState({
+    CsacApiClient? client,
+    CsacLocalCache? cache,
+    CsacPreferences initialPreferences = const CsacPreferences(),
+  }) : client = client ?? CsacApiClient(),
+       cache = cache ?? CsacLocalCache() {
+    preferences = initialPreferences;
+    restoreStatus = CsacStrings(
+      localeForLanguage(preferences.language),
+    ).text('Restoring session...');
     this.client.onHttpProtocolChanged = _handleHttpProtocolChanged;
+    this.client.onEmailVerificationRequired = _handleEmailVerificationRequired;
   }
 
   final CsacApiClient client;
@@ -68,6 +76,9 @@ class CsacAppState extends ChangeNotifier {
   bool loading = false;
   bool offlineMode = false;
   bool sessionExpired = false;
+  bool needsEmailVerification = false;
+  int emailVerificationResendAfter = 60;
+  int emailVerificationExpiresIn = 600;
   bool appInForeground = true;
   String restoreStatus = const CsacStrings(
     Locale('zh', 'CN'),
@@ -82,8 +93,30 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _handleEmailVerificationRequired(
+    CsacEmailVerificationRequiredException exception,
+  ) {
+    needsEmailVerification = true;
+    emailVerificationResendAfter = exception.resendAfter <= 0
+        ? 60
+        : exception.resendAfter;
+    emailVerificationExpiresIn = exception.expiresIn <= 0
+        ? 600
+        : exception.expiresIn;
+    user = null;
+    conversations = const <Conversation>[];
+    notificationCounts = const NotificationCounts();
+    activeConversation = null;
+    emojiStickers = const <EmojiSticker>[];
+    offlineMode = false;
+    sessionExpired = false;
+    error = null;
+    notifyListeners();
+  }
+
   Future<void> initialize() async {
     bootstrapping = true;
+    needsEmailVerification = false;
     restoreStatus = CsacStrings(
       localeForLanguage(preferences.language),
     ).text('Restoring session...');
@@ -92,6 +125,7 @@ class CsacAppState extends ChangeNotifier {
     try {
       await cache.open();
       preferences = await CsacPreferences.load();
+      await preloadCsacStrings(preferences.language);
       _applyPreferredServer();
       await client.loadSession();
       restoreStatus = CsacStrings(
@@ -106,10 +140,13 @@ class CsacAppState extends ChangeNotifier {
       await syncConversations();
       await refreshNotificationCounts();
       unawaited(loadEmojiStickers(forceRefresh: true));
+    } on CsacEmailVerificationRequiredException catch (err) {
+      _handleEmailVerificationRequired(err);
     } on CsacAuthException catch (err) {
       await client.clearSession();
       user = await cache.loadUser();
       conversations = _sortConversations(await cache.loadConversations());
+      needsEmailVerification = false;
       sessionExpired = true;
       offlineMode = user != null;
       error = user == null
@@ -120,6 +157,7 @@ class CsacAppState extends ChangeNotifier {
     } catch (_) {
       user = await cache.loadUser();
       conversations = _sortConversations(await cache.loadConversations());
+      needsEmailVerification = false;
       offlineMode = user != null;
       sessionExpired = false;
       error = user == null
@@ -136,26 +174,17 @@ class CsacAppState extends ChangeNotifier {
   Future<void> login(String username, String password) async {
     loading = true;
     error = null;
+    needsEmailVerification = false;
     notifyListeners();
     try {
-      user = await client.login(
+      final loggedIn = await client.login(
         username,
         password,
         platform: await currentClientPlatform(),
       );
-      await cache.saveUser(user!);
-      await LoginAccountStore.upsert(
-        user: user!,
-        username: username,
-        serverUrl: client.baseUrl,
-        sessionCookies: client.sessionSnapshot,
-      );
-      offlineMode = false;
-      sessionExpired = false;
-      error = null;
-      await syncConversations();
-      await refreshNotificationCounts();
-      unawaited(loadEmojiStickers(forceRefresh: true));
+      await _finishAuthenticatedSession(loggedIn, username: username);
+    } on CsacEmailVerificationRequiredException catch (err) {
+      _handleEmailVerificationRequired(err);
     } catch (err) {
       error = err.toString();
       rethrow;
@@ -168,6 +197,8 @@ class CsacAppState extends ChangeNotifier {
   Future<void> register({
     required String username,
     required String nickname,
+    required String email,
+    required String emailCode,
     required String password,
     required String confirmPassword,
     Uint8List? avatarBytes,
@@ -175,29 +206,20 @@ class CsacAppState extends ChangeNotifier {
   }) async {
     loading = true;
     error = null;
+    needsEmailVerification = false;
     notifyListeners();
     try {
-      user = await client.register(
+      final registered = await client.register(
         username: username,
         nickname: nickname,
+        email: email,
+        emailCode: emailCode,
         password: password,
         confirmPassword: confirmPassword,
         avatarBytes: avatarBytes,
         avatarFileName: avatarFileName,
       );
-      await cache.saveUser(user!);
-      await LoginAccountStore.upsert(
-        user: user!,
-        username: username,
-        serverUrl: client.baseUrl,
-        sessionCookies: client.sessionSnapshot,
-      );
-      offlineMode = false;
-      sessionExpired = false;
-      error = null;
-      await syncConversations();
-      await refreshNotificationCounts();
-      unawaited(loadEmojiStickers(forceRefresh: true));
+      await _finishAuthenticatedSession(registered, username: username);
     } catch (err) {
       error = err.toString();
       rethrow;
@@ -205,6 +227,55 @@ class CsacAppState extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+  }
+
+  Future<EmailCodeResponse> sendRegisterCode(String email) {
+    return client.sendRegisterCode(email);
+  }
+
+  Future<EmailCodeResponse> sendEmailBindCode(String email) {
+    return client.sendEmailBindCode(email);
+  }
+
+  Future<void> verifyEmailBindCode(String email, String emailCode) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      await client.verifyEmailBindCode(email, emailCode);
+      final loaded = await client.currentUser();
+      await _finishAuthenticatedSession(loaded, username: loaded.username);
+    } on CsacEmailVerificationRequiredException catch (err) {
+      _handleEmailVerificationRequired(err);
+      rethrow;
+    } catch (err) {
+      error = err.toString();
+      rethrow;
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _finishAuthenticatedSession(
+    CsacUser authenticated, {
+    required String username,
+  }) async {
+    user = _mergeCurrentUser(user, authenticated);
+    await cache.saveUser(user!);
+    await LoginAccountStore.upsert(
+      user: user!,
+      username: username,
+      serverUrl: client.baseUrl,
+      sessionCookies: client.sessionSnapshot,
+    );
+    needsEmailVerification = false;
+    offlineMode = false;
+    sessionExpired = false;
+    error = null;
+    await syncConversations();
+    await refreshNotificationCounts();
+    unawaited(loadEmojiStickers(forceRefresh: true));
   }
 
   Future<void> updateThemeMode(ThemeMode mode) async {
@@ -222,6 +293,7 @@ class CsacAppState extends ChangeNotifier {
   Future<void> updateLanguage(CsacLanguage language) async {
     preferences = preferences.copyWith(language: language);
     await preferences.save();
+    await preloadCsacStrings(language);
     notifyListeners();
   }
 
@@ -417,6 +489,7 @@ class CsacAppState extends ChangeNotifier {
     emojiStickers = const <EmojiSticker>[];
     offlineMode = false;
     sessionExpired = false;
+    needsEmailVerification = false;
     error = null;
     notifyListeners();
     return true;
@@ -447,6 +520,7 @@ class CsacAppState extends ChangeNotifier {
     emojiStickers = const <EmojiSticker>[];
     offlineMode = false;
     sessionExpired = false;
+    needsEmailVerification = false;
     error = null;
     notifyListeners();
   }
@@ -547,6 +621,9 @@ class CsacAppState extends ChangeNotifier {
       await syncConversations();
       await refreshNotificationCounts();
       unawaited(loadEmojiStickers(forceRefresh: true));
+    } on CsacEmailVerificationRequiredException catch (err) {
+      _handleEmailVerificationRequired(err);
+      rethrow;
     } on CsacAuthException {
       await client.clearSession();
       await LoginAccountStore.clearSession(record);

@@ -57,13 +57,19 @@ class CsacStrings {
 
   static CsacStrings of(BuildContext context) {
     return Localizations.of<CsacStrings>(context, CsacStrings) ??
-        const CsacStrings(Locale('zh', 'CN'));
+        CsacStrings(_fallbackLocale, _fallbackOverrides);
   }
 
   String text(String key) {
     final override = overrides[key];
     if (override != null && override.trim().isNotEmpty) {
       return override;
+    }
+    if (_localeCacheKey(locale) == _localeCacheKey(_fallbackLocale)) {
+      final fallback = _fallbackOverrides[key];
+      if (fallback != null && fallback.trim().isNotEmpty) {
+        return fallback;
+      }
     }
     return key;
   }
@@ -130,6 +136,14 @@ class CsacStringsDelegate extends LocalizationsDelegate<CsacStrings> {
   bool shouldReload(CsacStringsDelegate old) => false;
 }
 
+Future<CsacStrings> preloadCsacStrings(CsacLanguage language) async {
+  final locale = localeForLanguage(language);
+  final overrides = await _loadL10nOverrides(locale);
+  _fallbackLocale = locale;
+  _fallbackOverrides = overrides;
+  return CsacStrings(locale, overrides);
+}
+
 Future<Map<String, String>> _loadL10nOverrides(Locale locale) async {
   return _loadL10nJsonForLocale(locale);
 }
@@ -149,10 +163,14 @@ Future<TranslationProgress> _loadTranslationProgress(Locale locale) async {
   if (source.isEmpty) {
     return const TranslationProgress(translated: 0, total: 0);
   }
+  if (_localeCacheKey(locale) == 'en') {
+    return TranslationProgress(translated: source.length, total: source.length);
+  }
   final target = await _loadL10nJsonForLocale(locale);
   var translated = 0;
   for (final key in source.keys) {
-    if ((target[key] ?? '').trim().isNotEmpty) {
+    final targetValue = (target[key] ?? '').trim();
+    if (targetValue.isNotEmpty && targetValue != source[key]?.trim()) {
       translated++;
     }
   }
@@ -199,6 +217,8 @@ String _localeCacheKey(Locale locale) {
 
 final _l10nJsonCache = <String, Future<Map<String, String>>>{};
 final _translationProgressCache = <String, Future<TranslationProgress>>{};
+Locale _fallbackLocale = localeForLanguage(const CsacPreferences().language);
+Map<String, String> _fallbackOverrides = const <String, String>{};
 
 extension CsacStringsContext on BuildContext {
   CsacStrings get strings => CsacStrings.of(this);

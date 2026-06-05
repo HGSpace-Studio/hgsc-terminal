@@ -23,6 +23,39 @@ class CsacAuthException extends CsacApiException {
   const CsacAuthException(super.message);
 }
 
+class CsacEmailVerificationRequiredException extends CsacAuthException {
+  const CsacEmailVerificationRequiredException(
+    super.message, {
+    this.resendAfter = 60,
+    this.expiresIn = 600,
+  });
+
+  final int resendAfter;
+  final int expiresIn;
+}
+
+class EmailCodeResponse {
+  const EmailCodeResponse({this.resendAfter = 60, this.expiresIn = 600});
+
+  final int resendAfter;
+  final int expiresIn;
+
+  factory EmailCodeResponse.fromJson(Map<String, dynamic> json) {
+    final nested = json['data'];
+    final nestedMap = nested is Map
+        ? Map<String, dynamic>.from(nested)
+        : const <String, dynamic>{};
+    return EmailCodeResponse(
+      resendAfter: firstInt(json, const ['resend_after', 'resendAfter'])
+          .ifZero(firstInt(nestedMap, const ['resend_after', 'resendAfter']))
+          .ifZero(60),
+      expiresIn: firstInt(json, const ['expires_in', 'expiresIn'])
+          .ifZero(firstInt(nestedMap, const ['expires_in', 'expiresIn']))
+          .ifZero(600),
+    );
+  }
+}
+
 class NetworkDiagnosticReport {
   const NetworkDiagnosticReport({
     required this.serverUrl,
@@ -106,6 +139,9 @@ class CsacApiClient {
   String get originUrl => apiOriginFromBaseUrl(_baseUrl);
 
   ApiHttpProtocol get lastHttpProtocol => _http.lastProtocol;
+
+  void Function(CsacEmailVerificationRequiredException exception)?
+  onEmailVerificationRequired;
 
   set onHttpProtocolChanged(ApiProtocolChanged? callback) {
     _http.onProtocolChanged = callback;
@@ -194,6 +230,22 @@ class CsacApiClient {
       'pwd': password,
       'platform': platform,
     });
+    if (_needsEmailVerification(data)) {
+      await saveSession();
+      final exception = CsacEmailVerificationRequiredException(
+        _message(data, 'Email verification is required.'),
+        resendAfter: _firstResponseInt(data, const [
+          'resend_after',
+          'resendAfter',
+        ]).ifZero(60),
+        expiresIn: _firstResponseInt(data, const [
+          'expires_in',
+          'expiresIn',
+        ]).ifZero(600),
+      );
+      onEmailVerificationRequired?.call(exception);
+      throw exception;
+    }
     final user = data['user'];
     if (user is! Map<String, dynamic>) {
       throw const CsacApiException('Login succeeded but no user was returned.');
@@ -205,6 +257,8 @@ class CsacApiClient {
   Future<CsacUser> register({
     required String username,
     required String nickname,
+    required String email,
+    required String emailCode,
     required String password,
     required String confirmPassword,
     Uint8List? avatarBytes,
@@ -213,6 +267,8 @@ class CsacApiClient {
     final fields = <String, String>{
       'username': username.trim(),
       'nickname': nickname.trim(),
+      'email': email.trim(),
+      'email_code': emailCode.trim(),
       'pwd': password,
       'confirm_pwd': confirmPassword,
     };
@@ -233,6 +289,28 @@ class CsacApiClient {
     }
     await saveSession();
     return CsacUser.fromJson(user);
+  }
+
+  Future<EmailCodeResponse> sendEmailBindCode(String email) async {
+    final data = await postForm('auth/send_email_bind_code', <String, String>{
+      'email': email.trim(),
+    });
+    return EmailCodeResponse.fromJson(data);
+  }
+
+  Future<void> verifyEmailBindCode(String email, String emailCode) async {
+    await postForm('auth/verify_email_bind_code', <String, String>{
+      'email': email.trim(),
+      'email_code': emailCode.trim(),
+    });
+    await saveSession();
+  }
+
+  Future<EmailCodeResponse> sendRegisterCode(String email) async {
+    final data = await postForm('auth/send_register_code', <String, String>{
+      'email': email.trim(),
+    });
+    return EmailCodeResponse.fromJson(data);
   }
 
   Future<void> logout() async {
@@ -1225,6 +1303,22 @@ class CsacApiClient {
       throw CsacAuthException(_message(decoded, 'Not logged in.'));
     }
     if (response.statusCode == 403) {
+      if (_needsEmailVerification(decoded)) {
+        await saveSession();
+        final exception = CsacEmailVerificationRequiredException(
+          _message(decoded, 'Email verification is required.'),
+          resendAfter: _firstResponseInt(decoded, const [
+            'resend_after',
+            'resendAfter',
+          ]).ifZero(60),
+          expiresIn: _firstResponseInt(decoded, const [
+            'expires_in',
+            'expiresIn',
+          ]).ifZero(600),
+        );
+        onEmailVerificationRequired?.call(exception);
+        throw exception;
+      }
       throw CsacApiException(_message(decoded, 'Access forbidden.'));
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -1419,6 +1513,19 @@ class CsacApiClient {
       return message;
     }
     return fallback;
+  }
+
+  bool _needsEmailVerification(Map<String, dynamic> data) {
+    return asBool(data['needs_email_verification']) ||
+        asBool(data['needsEmailVerification']);
+  }
+
+  int _firstResponseInt(Map<String, dynamic> data, List<String> keys) {
+    final nested = data['data'];
+    final nestedMap = nested is Map
+        ? Map<String, dynamic>.from(nested)
+        : const <String, dynamic>{};
+    return firstInt(data, keys).ifZero(firstInt(nestedMap, keys));
   }
 
   List<Map<String, dynamic>> _list(Map<String, dynamic> data, String key) {

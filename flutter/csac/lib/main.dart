@@ -76,8 +76,10 @@ part 'src/ui/helpers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final initialPreferences = await CsacPreferences.load();
+  await preloadCsacStrings(initialPreferences.language);
   configureInsecureHttpsOverrides();
   await configureDesktopWindowChrome();
   await configureWindowsTray();
-  runApp(const CsacMobileApp());
+  runApp(CsacMobileApp(initialPreferences: initialPreferences));
 }
