@@ -92,7 +92,12 @@ Future<void> openVersionUpdateRelease(
 }
 
 class CsacMobileApp extends StatefulWidget {
-  const CsacMobileApp({super.key});
+  const CsacMobileApp({
+    super.key,
+    this.initialPreferences = const CsacPreferences(),
+  });
+
+  final CsacPreferences initialPreferences;
 
   @override
   State<CsacMobileApp> createState() => _CsacMobileAppState();
@@ -133,7 +138,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    state = CsacAppState();
+    state = CsacAppState(initialPreferences: widget.initialPreferences);
     state.addListener(handleStateChanged);
     backgroundRefreshChannel.setMethodCallHandler(handleBackgroundRefreshCall);
     unawaited(state.initialize());
@@ -156,7 +161,10 @@ class _CsacMobileAppState extends State<CsacMobileApp>
 
   Future<void> openNotificationChat(Conversation tapped) async {
     final context = navigatorKey.currentContext;
-    if (context == null || !context.mounted || state.user == null) {
+    if (context == null ||
+        !context.mounted ||
+        state.user == null ||
+        state.needsEmailVerification) {
       return;
     }
     final conversation = state.conversations
@@ -182,7 +190,9 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     if (call.method != 'performBackgroundFetch') {
       throw MissingPluginException('Unknown method ${call.method}');
     }
-    if (state.user == null || state.bootstrapping) {
+    if (state.user == null ||
+        state.bootstrapping ||
+        state.needsEmailVerification) {
       return false;
     }
     final wasForeground = state.appInForeground;
@@ -228,7 +238,9 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   }
 
   Future<void> refreshAfterResume() async {
-    if (state.user == null || state.bootstrapping) {
+    if (state.user == null ||
+        state.bootstrapping ||
+        state.needsEmailVerification) {
       state.setAppInForeground(true);
       return;
     }
@@ -425,6 +437,7 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   bool canUseAppLock() {
     return !state.bootstrapping &&
         state.user != null &&
+        !state.needsEmailVerification &&
         state.preferences.effectiveAppLockEnabled;
   }
 
@@ -504,6 +517,11 @@ class _CsacMobileAppState extends State<CsacMobileApp>
                       ? SplashScreen(
                           key: const ValueKey<String>('bootstrap'),
                           status: state.restoreStatus,
+                        )
+                      : state.needsEmailVerification
+                      ? EmailVerificationScreen(
+                          key: const ValueKey<String>('email-verification'),
+                          state: state,
                         )
                       : state.user == null
                       ? LoginScreen(
@@ -1050,6 +1068,9 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       } catch (_) {
         if (mounted) {
+          if (widget.state.needsEmailVerification) {
+            return;
+          }
           await loadAccounts();
           setState(
             () => error = context.strings.text(
@@ -1087,7 +1108,9 @@ class _LoginScreenState extends State<LoginScreen> {
         await loadAccounts();
       }
     } catch (err) {
-      setState(() => error = err.toString());
+      if (!widget.state.needsEmailVerification) {
+        setState(() => error = err.toString());
+      }
     }
   }
 
@@ -1295,6 +1318,270 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
+class EmailVerificationScreen extends StatefulWidget {
+  const EmailVerificationScreen({super.key, required this.state});
+
+  final CsacAppState state;
+
+  @override
+  State<EmailVerificationScreen> createState() =>
+      _EmailVerificationScreenState();
+}
+
+class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
+  final email = TextEditingController();
+  final emailCode = TextEditingController();
+  Timer? resendTimer;
+  bool sendingCode = false;
+  bool verifying = false;
+  int resendRemaining = 0;
+  int expiresIn = 600;
+  String? error;
+  String? message;
+
+  @override
+  void initState() {
+    super.initState();
+    expiresIn = widget.state.emailVerificationExpiresIn;
+  }
+
+  @override
+  void dispose() {
+    resendTimer?.cancel();
+    email.dispose();
+    emailCode.dispose();
+    super.dispose();
+  }
+
+  bool get canSendCode => !sendingCode && resendRemaining <= 0;
+
+  void startResendCountdown(int seconds) {
+    resendTimer?.cancel();
+    setState(() => resendRemaining = seconds <= 0 ? 60 : seconds);
+    resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (resendRemaining <= 1) {
+        timer.cancel();
+        setState(() => resendRemaining = 0);
+        return;
+      }
+      setState(() => resendRemaining--);
+    });
+  }
+
+  Future<void> sendCode() async {
+    final strings = context.strings;
+    final targetEmail = email.text.trim();
+    if (!_looksLikeEmail(targetEmail)) {
+      setState(() => error = strings.text('Please enter a valid email.'));
+      return;
+    }
+    setState(() {
+      sendingCode = true;
+      error = null;
+      message = null;
+    });
+    try {
+      final response = await widget.state.sendEmailBindCode(targetEmail);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        expiresIn = response.expiresIn <= 0 ? 600 : response.expiresIn;
+        message = strings.format(
+          'Code sent. It expires in {minutes} minutes.',
+          {'minutes': _durationMinutesLabel(expiresIn)},
+        );
+      });
+      startResendCountdown(response.resendAfter);
+    } catch (err) {
+      if (mounted) {
+        setState(() => error = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => sendingCode = false);
+      }
+    }
+  }
+
+  Future<void> verify() async {
+    final strings = context.strings;
+    final targetEmail = email.text.trim();
+    final code = emailCode.text.trim();
+    if (!_looksLikeEmail(targetEmail)) {
+      setState(() => error = strings.text('Please enter a valid email.'));
+      return;
+    }
+    if (code.length != 6) {
+      setState(() => error = strings.text('Please enter the 6-digit code.'));
+      return;
+    }
+    setState(() {
+      verifying = true;
+      error = null;
+      message = null;
+    });
+    try {
+      await widget.state.verifyEmailBindCode(targetEmail, code);
+      if (mounted) {
+        setState(() => message = strings.text('Email verified.'));
+      }
+    } catch (err) {
+      if (mounted) {
+        setState(() => error = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => verifying = false);
+      }
+    }
+  }
+
+  Future<void> backToLogin() async {
+    await widget.state.logout();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = context.strings;
+    final busy = sendingCode || verifying || widget.state.loading;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(strings.text('Email verification')),
+        actions: [
+          TextButton(
+            onPressed: busy ? null : backToLogin,
+            child: Text(strings.text('Back to login')),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Icon(
+                    Icons.mark_email_read_outlined,
+                    size: 56,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    strings.text('Bind email before continuing'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    strings.text(
+                      'Your login session is kept for email binding.',
+                    ),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: email,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: strings.text('Email'),
+                      prefixIcon: const Icon(Icons.alternate_email),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _EmailCodeTextField(
+                          controller: emailCode,
+                          label: strings.text('Email code'),
+                          onSubmitted: (_) => verify(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        height: _emailCodeControlHeight,
+                        child: OutlinedButton(
+                          style: _emailCodeButtonStyle(),
+                          onPressed: canSendCode && !busy ? sendCode : null,
+                          child: Text(
+                            resendRemaining > 0
+                                ? strings.format('Resend in {seconds}s', {
+                                    'seconds': resendRemaining,
+                                  })
+                                : strings.text('Send code'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    strings.format('Code expires in {minutes} minutes.', {
+                      'minutes': _durationMinutesLabel(expiresIn),
+                    }),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    strings.text(
+                      'If the code expires or fails too many times, request a new code.',
+                    ),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  if (message != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      message!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: busy ? null : verify,
+                    icon: verifying
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.verified_outlined),
+                    label: Text(strings.text('Verify email')),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key, required this.state});
 
@@ -1307,16 +1594,26 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final username = TextEditingController();
   final nickname = TextEditingController();
+  final email = TextEditingController();
+  final emailCode = TextEditingController();
   final password = TextEditingController();
   final confirmPassword = TextEditingController();
+  Timer? resendTimer;
   XFile? avatar;
   bool submitting = false;
+  bool sendingCode = false;
+  int resendRemaining = 0;
+  int expiresIn = 600;
   String? error;
+  String? message;
 
   @override
   void dispose() {
+    resendTimer?.cancel();
     username.dispose();
     nickname.dispose();
+    email.dispose();
+    emailCode.dispose();
     password.dispose();
     confirmPassword.dispose();
     super.dispose();
@@ -1336,13 +1633,78 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  bool get canSendCode => !sendingCode && resendRemaining <= 0;
+
+  void startResendCountdown(int seconds) {
+    resendTimer?.cancel();
+    setState(() => resendRemaining = seconds <= 0 ? 60 : seconds);
+    resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (resendRemaining <= 1) {
+        timer.cancel();
+        setState(() => resendRemaining = 0);
+        return;
+      }
+      setState(() => resendRemaining--);
+    });
+  }
+
+  Future<void> sendCode() async {
+    final strings = context.strings;
+    final targetEmail = email.text.trim();
+    if (!_looksLikeEmail(targetEmail)) {
+      setState(() => error = strings.text('Please enter a valid email.'));
+      return;
+    }
+    setState(() {
+      sendingCode = true;
+      error = null;
+      message = null;
+    });
+    try {
+      final response = await widget.state.sendRegisterCode(targetEmail);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        expiresIn = response.expiresIn <= 0 ? 600 : response.expiresIn;
+        message = strings.format(
+          'Code sent. It expires in {minutes} minutes.',
+          {'minutes': _durationMinutesLabel(expiresIn)},
+        );
+      });
+      startResendCountdown(response.resendAfter);
+    } catch (err) {
+      if (mounted) {
+        setState(() => error = err.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => sendingCode = false);
+      }
+    }
+  }
+
   Future<void> submit() async {
     final strings = context.strings;
     if (username.text.trim().isEmpty ||
         nickname.text.trim().isEmpty ||
+        email.text.trim().isEmpty ||
+        emailCode.text.trim().isEmpty ||
         password.text.isEmpty ||
         confirmPassword.text.isEmpty) {
       setState(() => error = strings.text('Please fill all fields.'));
+      return;
+    }
+    if (!_looksLikeEmail(email.text.trim())) {
+      setState(() => error = strings.text('Please enter a valid email.'));
+      return;
+    }
+    if (emailCode.text.trim().length != 6) {
+      setState(() => error = strings.text('Please enter the 6-digit code.'));
       return;
     }
     if (password.text.length < 6) {
@@ -1368,6 +1730,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       await widget.state.register(
         username: username.text,
         nickname: nickname.text,
+        email: email.text,
+        emailCode: emailCode.text,
         password: password.text,
         confirmPassword: confirmPassword.text,
         avatarBytes: avatarBytes,
@@ -1419,6 +1783,61 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             const SizedBox(height: 12),
             TextField(
+              controller: email,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: strings.text('Email'),
+                prefixIcon: const Icon(Icons.alternate_email),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _EmailCodeTextField(
+                    controller: emailCode,
+                    label: strings.text('Email code'),
+                    textInputAction: TextInputAction.next,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  height: _emailCodeControlHeight,
+                  child: OutlinedButton(
+                    style: _emailCodeButtonStyle(),
+                    onPressed: canSendCode && !submitting && !sendingCode
+                        ? sendCode
+                        : null,
+                    child: Text(
+                      resendRemaining > 0
+                          ? strings.format('Resend in {seconds}s', {
+                              'seconds': resendRemaining,
+                            })
+                          : strings.text('Send code'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              strings.format('Code expires in {minutes} minutes.', {
+                'minutes': _durationMinutesLabel(expiresIn),
+              }),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              strings.text(
+                'If the code expires or fails too many times, request a new code.',
+              ),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
               controller: password,
               obscureText: true,
               textInputAction: TextInputAction.next,
@@ -1451,6 +1870,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       }),
               ),
             ),
+            if (message != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                message!,
+                style: TextStyle(color: Theme.of(context).colorScheme.primary),
+              ),
+            ],
             if (error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -1475,4 +1901,80 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
     );
   }
+}
+
+const _emailCodeControlHeight = 56.0;
+
+class _EmailCodeTextField extends StatelessWidget {
+  const _EmailCodeTextField({
+    required this.controller,
+    required this.label,
+    this.onSubmitted,
+    this.textInputAction,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final ValueChanged<String>? onSubmitted;
+  final TextInputAction? textInputAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _emailCodeControlHeight,
+      child: TextField(
+        controller: controller,
+        keyboardType: TextInputType.number,
+        maxLength: 6,
+        maxLines: 1,
+        textAlignVertical: TextAlignVertical.center,
+        textInputAction: textInputAction,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        onSubmitted: onSubmitted,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: const Icon(Icons.pin_outlined),
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 0,
+          ),
+          constraints: const BoxConstraints.tightFor(
+            height: _emailCodeControlHeight,
+          ),
+          counter: const SizedBox.shrink(),
+          counterText: '',
+          counterStyle: const TextStyle(fontSize: 0, height: 0),
+        ),
+      ),
+    );
+  }
+}
+
+ButtonStyle _emailCodeButtonStyle() {
+  return OutlinedButton.styleFrom(
+    fixedSize: const Size.fromHeight(_emailCodeControlHeight),
+    minimumSize: const Size(0, _emailCodeControlHeight),
+    padding: const EdgeInsets.symmetric(horizontal: 14),
+  );
+}
+
+bool _looksLikeEmail(String value) {
+  final text = value.trim();
+  if (text.length < 5 || text.length > 254) {
+    return false;
+  }
+  final at = text.indexOf('@');
+  return at > 0 &&
+      at == text.lastIndexOf('@') &&
+      text.indexOf('.', at) > at + 1;
+}
+
+String _durationMinutesLabel(int seconds) {
+  final value = seconds <= 0 ? 600 : seconds;
+  final minutes = value / 60;
+  if (minutes == minutes.roundToDouble()) {
+    return '${minutes.round()}';
+  }
+  return minutes.toStringAsFixed(1);
 }
