@@ -1,0 +1,12 @@
+name = "web_panel"
+version = "0.2.0"
+author = "CsAC Team"
+description = "通过浏览器查看 bot 状态、任务、插件和事件线。"
+entry = "main.py"
+permissions = ["manage_plugins", "manage_tasks", "read_events", "read_storage", "edit_plugin_source"]
+
+[[config]]
+key = "title"
+type = "string"
+default = "CsAC Bot Panel"
+description = "Web 面板标题"
