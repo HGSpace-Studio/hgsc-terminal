@@ -27,6 +27,9 @@ enum MobileEnterKeyBehavior { send, newline }
 const defaultThemeColorValue = 0xff1f8a70;
 const defaultChatBubbleColorValue = 0;
 const defaultChatBubbleOpacity = 1.0;
+const defaultInterfaceFontScale = 1.0;
+const minInterfaceFontScale = 0.85;
+const maxInterfaceFontScale = 1.30;
 
 class CsacPreferences {
   const CsacPreferences({
@@ -34,6 +37,9 @@ class CsacPreferences {
     this.themeColorValue = defaultThemeColorValue,
     this.language = CsacLanguage.zh,
     this.fontStyle = CsacFontStyle.system,
+    this.interfaceFontScale = defaultInterfaceFontScale,
+    this.compactMode = false,
+    this.highContrastMode = false,
     this.conversationSortMode = ConversationSortMode.latest,
     this.conversationSubtitleMode = ConversationSubtitleMode.recentMessage,
     this.messageTimeFormat = MessageTimeFormat.slash,
@@ -63,6 +69,9 @@ class CsacPreferences {
   static const _themeColorKey = 'csac.theme_color';
   static const _languageKey = 'csac.language';
   static const _fontStyleKey = 'csac.font_style';
+  static const _interfaceFontScaleKey = 'csac.interface_font_scale';
+  static const _compactModeKey = 'csac.compact_mode';
+  static const _highContrastModeKey = 'csac.high_contrast_mode';
   static const _conversationSortModeKey = 'csac.conversation_sort_mode';
   static const _conversationSubtitleModeKey = 'csac.conversation_subtitle_mode';
   static const _messageTimeFormatKey = 'csac.message_time_format';
@@ -93,6 +102,9 @@ class CsacPreferences {
   final int themeColorValue;
   final CsacLanguage language;
   final CsacFontStyle fontStyle;
+  final double interfaceFontScale;
+  final bool compactMode;
+  final bool highContrastMode;
   final ConversationSortMode conversationSortMode;
   final ConversationSubtitleMode conversationSubtitleMode;
   final MessageTimeFormat messageTimeFormat;
@@ -134,6 +146,9 @@ class CsacPreferences {
     int? themeColorValue,
     CsacLanguage? language,
     CsacFontStyle? fontStyle,
+    double? interfaceFontScale,
+    bool? compactMode,
+    bool? highContrastMode,
     ConversationSortMode? conversationSortMode,
     ConversationSubtitleMode? conversationSubtitleMode,
     MessageTimeFormat? messageTimeFormat,
@@ -163,6 +178,9 @@ class CsacPreferences {
       themeColorValue: themeColorValue ?? this.themeColorValue,
       language: language ?? this.language,
       fontStyle: fontStyle ?? this.fontStyle,
+      interfaceFontScale: interfaceFontScale ?? this.interfaceFontScale,
+      compactMode: compactMode ?? this.compactMode,
+      highContrastMode: highContrastMode ?? this.highContrastMode,
       conversationSortMode: conversationSortMode ?? this.conversationSortMode,
       conversationSubtitleMode:
           conversationSubtitleMode ?? this.conversationSubtitleMode,
@@ -206,6 +224,9 @@ class CsacPreferences {
       themeColorValue: _themeColorFromPrefs(prefs),
       language: _languageFromName(prefs.getString(_languageKey)),
       fontStyle: _fontStyleFromName(prefs.getString(_fontStyleKey)),
+      interfaceFontScale: _interfaceFontScaleFromPrefs(prefs),
+      compactMode: prefs.getBool(_compactModeKey) ?? false,
+      highContrastMode: prefs.getBool(_highContrastModeKey) ?? false,
       conversationSortMode: _conversationSortModeFromName(
         prefs.getString(_conversationSortModeKey),
       ),
@@ -260,6 +281,14 @@ class CsacPreferences {
     await prefs.setInt(_themeColorKey, themeColorValue);
     await prefs.setString(_languageKey, language.name);
     await prefs.setString(_fontStyleKey, fontStyle.name);
+    await prefs.setDouble(
+      _interfaceFontScaleKey,
+      interfaceFontScale
+          .clamp(minInterfaceFontScale, maxInterfaceFontScale)
+          .toDouble(),
+    );
+    await prefs.setBool(_compactModeKey, compactMode);
+    await prefs.setBool(_highContrastModeKey, highContrastMode);
     await prefs.setString(_conversationSortModeKey, conversationSortMode.name);
     await prefs.setString(
       _conversationSubtitleModeKey,
@@ -353,6 +382,14 @@ class CsacPreferences {
       return defaultChatBubbleOpacity;
     }
     return value.clamp(0.45, 1.0).toDouble();
+  }
+
+  static double _interfaceFontScaleFromPrefs(SharedPreferences prefs) {
+    final value = prefs.getDouble(_interfaceFontScaleKey);
+    if (value == null) {
+      return defaultInterfaceFontScale;
+    }
+    return value.clamp(minInterfaceFontScale, maxInterfaceFontScale).toDouble();
   }
 
   static String _serverUrlFromPrefs(String? raw) {

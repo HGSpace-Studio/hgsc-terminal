@@ -482,16 +482,20 @@ class _CsacMobileAppState extends State<CsacMobileApp>
             Brightness.light,
             Color(state.preferences.themeColorValue),
             state.preferences.fontStyle,
+            compactMode: state.preferences.compactMode,
+            highContrastMode: state.preferences.highContrastMode,
           ),
           darkTheme: buildCsacTheme(
             Brightness.dark,
             Color(state.preferences.themeColorValue),
             state.preferences.fontStyle,
+            compactMode: state.preferences.compactMode,
+            highContrastMode: state.preferences.highContrastMode,
           ),
           themeMode: state.preferences.themeMode,
           color: Colors.transparent,
           builder: (context, child) {
-            return _MaterialYouDesktopWindowFrame(
+            final framed = _MaterialYouDesktopWindowFrame(
               title: CsacStrings(
                 localeForLanguage(state.preferences.language),
               ).text('CsAC'),
@@ -506,6 +510,10 @@ class _CsacMobileAppState extends State<CsacMobileApp>
                     state.user != null,
                 child: child ?? const SizedBox.shrink(),
               ),
+            );
+            return _InterfaceFontScale(
+              scale: state.preferences.interfaceFontScale,
+              child: framed,
             );
           },
           home: _MotionPreference(
@@ -595,6 +603,34 @@ class _StartupTransition extends StatelessWidget {
           ),
         );
       },
+      child: child,
+    );
+  }
+}
+
+class _InterfaceFontScale extends StatelessWidget {
+  const _InterfaceFontScale({required this.scale, required this.child});
+
+  final double scale;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final boundedScale = scale
+        .clamp(minInterfaceFontScale, maxInterfaceFontScale)
+        .toDouble();
+    if ((boundedScale - defaultInterfaceFontScale).abs() < 0.001) {
+      return child;
+    }
+    final media = MediaQuery.maybeOf(context);
+    if (media == null) {
+      return child;
+    }
+    final platformScale = media.textScaler.scale(1);
+    return MediaQuery(
+      data: media.copyWith(
+        textScaler: TextScaler.linear(platformScale * boundedScale),
+      ),
       child: child,
     );
   }
@@ -858,19 +894,30 @@ class _MaterialYouWindowControlButtonState
 ThemeData buildCsacTheme(
   Brightness brightness,
   Color seedColor,
-  CsacFontStyle fontStyle,
-) {
+  CsacFontStyle fontStyle, {
+  bool compactMode = false,
+  bool highContrastMode = false,
+}) {
   final scheme = ColorScheme.fromSeed(
     seedColor: seedColor,
     brightness: brightness,
+    contrastLevel: highContrastMode ? 1.0 : 0.0,
   );
   final fontFamily = fontFamilyForStyle(fontStyle);
   final fontFamilyFallback = fontFamilyFallbackForStyle(fontStyle);
+  final visualDensity = compactMode
+      ? VisualDensity.compact
+      : VisualDensity.standard;
+  final inputBorderRadius = BorderRadius.circular(compactMode ? 10 : 12);
   final base = ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
     fontFamily: fontFamily,
     fontFamilyFallback: fontFamilyFallback,
+    visualDensity: visualDensity,
+    materialTapTargetSize: compactMode
+        ? MaterialTapTargetSize.shrinkWrap
+        : MaterialTapTargetSize.padded,
   );
   return base.copyWith(
     scaffoldBackgroundColor: scheme.surface,
@@ -907,14 +954,23 @@ ThemeData buildCsacTheme(
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: false,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      contentPadding: compactMode
+          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
+          : null,
+      border: OutlineInputBorder(borderRadius: inputBorderRadius),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: scheme.outline),
+        borderRadius: inputBorderRadius,
+        borderSide: BorderSide(
+          color: scheme.outline,
+          width: highContrastMode ? 1.3 : 1,
+        ),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: scheme.primary, width: 1.6),
+        borderRadius: inputBorderRadius,
+        borderSide: BorderSide(
+          color: scheme.primary,
+          width: highContrastMode ? 2 : 1.6,
+        ),
       ),
     ),
     chipTheme: base.chipTheme.copyWith(
@@ -923,7 +979,12 @@ ThemeData buildCsacTheme(
       labelStyle: TextStyle(color: scheme.onSurface),
       secondaryLabelStyle: TextStyle(color: scheme.onSecondaryContainer),
       iconTheme: IconThemeData(color: scheme.onSurfaceVariant),
-      side: BorderSide(color: scheme.outlineVariant),
+      side: BorderSide(
+        color: highContrastMode ? scheme.outline : scheme.outlineVariant,
+      ),
+      padding: compactMode
+          ? const EdgeInsets.symmetric(horizontal: 6, vertical: 2)
+          : null,
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: scheme.inverseSurface,
@@ -931,10 +992,18 @@ ThemeData buildCsacTheme(
       actionTextColor: scheme.inversePrimary,
       behavior: SnackBarBehavior.floating,
     ),
-    dividerTheme: DividerThemeData(color: scheme.outlineVariant),
+    dividerTheme: DividerThemeData(
+      color: highContrastMode ? scheme.outline : scheme.outlineVariant,
+      thickness: highContrastMode ? 1.1 : null,
+    ),
     listTileTheme: ListTileThemeData(
       iconColor: scheme.onSurfaceVariant,
       textColor: scheme.onSurface,
+      dense: compactMode,
+      minVerticalPadding: compactMode ? 4 : null,
+      contentPadding: compactMode
+          ? const EdgeInsets.symmetric(horizontal: 12)
+          : null,
       subtitleTextStyle: base.textTheme.bodyMedium?.copyWith(
         color: scheme.onSurfaceVariant,
       ),

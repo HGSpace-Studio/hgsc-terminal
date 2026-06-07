@@ -3736,6 +3736,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return fontStyleLabelFor(context, widget.state.preferences.fontStyle);
   }
 
+  String get interfaceFontSizeLabel {
+    final percent = (widget.state.preferences.interfaceFontScale * 100).round();
+    return '$percent%';
+  }
+
   String get themeColorLabel {
     final selected = themeColorOptions.firstWhere(
       (option) =>
@@ -4889,6 +4894,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> updateInterfaceFontScale(double value) async {
+    await widget.state.updateInterfaceFontScale(value);
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> chooseChatBackground() async {
     if (isWebPlatform) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -5010,8 +5022,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Theme color',
       'Language',
       'Font style',
+      'Font size',
+      'Text size',
       'Font',
       'Typography',
+      'Compact mode',
+      'Display density',
+      'Spacing',
+      'High contrast mode',
+      'High contrast',
+      'Contrast',
       'Conversation sorting',
       'Conversation subtitle',
       'Recent message',
@@ -5306,6 +5326,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         subtitle: Text(fontStyleLabel),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: chooseFontStyle,
+                      ),
+                      const Divider(height: 1),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.format_size),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(strings.text('Font size')),
+                                  Text(
+                                    interfaceFontSizeLabel,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                  Slider(
+                                    value: widget
+                                        .state
+                                        .preferences
+                                        .interfaceFontScale,
+                                    min: minInterfaceFontScale,
+                                    max: maxInterfaceFontScale,
+                                    divisions: 9,
+                                    label: interfaceFontSizeLabel,
+                                    onChanged: updateInterfaceFontScale,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.format_line_spacing),
+                        title: Text(strings.text('Compact mode')),
+                        subtitle: Text(
+                          strings.text('Reduce spacing in lists and controls'),
+                        ),
+                        value: widget.state.preferences.compactMode,
+                        onChanged: widget.state.updateCompactMode,
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.contrast),
+                        title: Text(strings.text('High contrast mode')),
+                        subtitle: Text(
+                          strings.text(
+                            'Use stronger contrast colors and outlines',
+                          ),
+                        ),
+                        value: widget.state.preferences.highContrastMode,
+                        onChanged: widget.state.updateHighContrastMode,
                       ),
                       const Divider(height: 1),
                       ListTile(
