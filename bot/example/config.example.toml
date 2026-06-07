@@ -1,0 +1,42 @@
+base_url = "https://example.com/rpc/UniCsAC.php"
+username = "bot_username"
+password = "bot_password"
+room_ids = [123456]
+prefixes = ["/", "!", "！"]
+poll_interval = 2.0
+ignore_self = true
+replay_existing = false
+mark_read = false
+
+[plugins]
+enabled = ["ping", "echo", "heartbeat", "web_panel"]
+paths = ["plugins"]
+watch = true
+watch_interval = 2.0
+
+[plugin.ping]
+reply_text = "pong"
+
+[plugin.heartbeat]
+interval = 60
+text = "heartbeat"
+
+[session]
+save = true
+file = "session.json"
+
+[logging]
+level = "INFO"
+file = "logs/bot.log"
+console = true
+
+[tasks]
+heartbeat = true
+
+[storage]
+file = "data/plugins.json"
+
+[web_panel]
+enabled = true
+host = "127.0.0.1"
+port = 8765

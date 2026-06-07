@@ -303,6 +303,28 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateInterfaceFontScale(double scale) async {
+    preferences = preferences.copyWith(
+      interfaceFontScale: scale
+          .clamp(minInterfaceFontScale, maxInterfaceFontScale)
+          .toDouble(),
+    );
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateCompactMode(bool enabled) async {
+    preferences = preferences.copyWith(compactMode: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
+  Future<void> updateHighContrastMode(bool enabled) async {
+    preferences = preferences.copyWith(highContrastMode: enabled);
+    await preferences.save();
+    notifyListeners();
+  }
+
   Future<void> updateConversationSortMode(ConversationSortMode mode) async {
     preferences = preferences.copyWith(conversationSortMode: mode);
     if (mode == ConversationSortMode.latest) {

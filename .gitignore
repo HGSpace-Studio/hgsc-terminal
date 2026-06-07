@@ -21,6 +21,24 @@ coverage.html
 *.swp
 *.swo
 
+# Python local files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Bot example local config
+bot/example/*.toml
+!bot/example/config.example.toml
+bot/example/session.json
+bot/example/session.json.tmp
+bot/example/logs/
+bot/example/data/
+
 # Editor folders
 .vscode/
 

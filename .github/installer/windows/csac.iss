@@ -153,6 +153,8 @@ end;
 
 procedure StyleTitle(LabelControl: TLabel);
 begin
+  LabelControl.AutoSize := False;
+  LabelControl.WordWrap := True;
   LabelControl.Font.Size := 18;
   LabelControl.Font.Style := [fsBold];
   LabelControl.Font.Color := $6B3F00;
@@ -160,6 +162,8 @@ end;
 
 procedure StyleSubtitle(LabelControl: TLabel);
 begin
+  LabelControl.AutoSize := False;
+  LabelControl.WordWrap := True;
   LabelControl.Font.Size := 10;
   LabelControl.Font.Color := $555555;
 end;
@@ -171,9 +175,9 @@ begin
   Separator := TPanel.Create(Page);
   Separator.Parent := Page.Surface;
   Separator.Left := 0;
-  Separator.Top := Top;
+  Separator.Top := ScaleY(Top);
   Separator.Width := Page.SurfaceWidth;
-  Separator.Height := 1;
+  Separator.Height := ScaleY(1);
   Separator.BevelOuter := bvNone;
   Separator.Color := $DDDDDD;
 end;
@@ -191,7 +195,7 @@ begin
   IntroTitleLabel := TLabel.Create(IntroPage);
   IntroTitleLabel.Parent := IntroPage.Surface;
   IntroTitleLabel.Left := 0;
-  IntroTitleLabel.Top := 10;
+  IntroTitleLabel.Top := ScaleY(10);
   IntroTitleLabel.Width := IntroPage.SurfaceWidth;
   IntroTitleLabel.Height := ScaleY(28);
   IntroTitleLabel.Caption := ExpandConstant('{cm:CustomWelcomeTitle}');
@@ -200,10 +204,9 @@ begin
   IntroBodyLabel := TLabel.Create(IntroPage);
   IntroBodyLabel.Parent := IntroPage.Surface;
   IntroBodyLabel.Left := 0;
-  IntroBodyLabel.Top := 52;
+  IntroBodyLabel.Top := ScaleY(52);
   IntroBodyLabel.Width := IntroPage.SurfaceWidth;
   IntroBodyLabel.Height := ScaleY(66);
-  IntroBodyLabel.WordWrap := True;
   IntroBodyLabel.Caption := ExpandConstant('{cm:CustomWelcomeBody}');
   StyleSubtitle(IntroBodyLabel);
 
@@ -212,10 +215,9 @@ begin
   IntroMetaLabel := TLabel.Create(IntroPage);
   IntroMetaLabel.Parent := IntroPage.Surface;
   IntroMetaLabel.Left := 0;
-  IntroMetaLabel.Top := 154;
+  IntroMetaLabel.Top := ScaleY(154);
   IntroMetaLabel.Width := IntroPage.SurfaceWidth;
   IntroMetaLabel.Height := ScaleY(70);
-  IntroMetaLabel.WordWrap := True;
   IntroMetaLabel.Caption :=
     '{#MyAppName} ' + ExpandConstant('{#MyAppVersion}') + #13#10 +
     'Windows x64' + #13#10 +
@@ -231,7 +233,7 @@ begin
   OptionsTitleLabel := TLabel.Create(OptionsPage);
   OptionsTitleLabel.Parent := OptionsPage.Surface;
   OptionsTitleLabel.Left := 0;
-  OptionsTitleLabel.Top := 6;
+  OptionsTitleLabel.Top := ScaleY(6);
   OptionsTitleLabel.Width := OptionsPage.SurfaceWidth;
   OptionsTitleLabel.Height := ScaleY(28);
   OptionsTitleLabel.Caption := ExpandConstant('{cm:InstallOptionsTitle}');
@@ -240,10 +242,9 @@ begin
   OptionsSubtitleLabel := TLabel.Create(OptionsPage);
   OptionsSubtitleLabel.Parent := OptionsPage.Surface;
   OptionsSubtitleLabel.Left := 0;
-  OptionsSubtitleLabel.Top := 42;
+  OptionsSubtitleLabel.Top := ScaleY(42);
   OptionsSubtitleLabel.Width := OptionsPage.SurfaceWidth;
   OptionsSubtitleLabel.Height := ScaleY(34);
-  OptionsSubtitleLabel.WordWrap := True;
   OptionsSubtitleLabel.Caption := ExpandConstant('{cm:InstallOptionsSubtitle}');
   StyleSubtitle(OptionsSubtitleLabel);
 
@@ -252,7 +253,7 @@ begin
   DesktopShortcutCheck := TNewCheckBox.Create(OptionsPage);
   DesktopShortcutCheck.Parent := OptionsPage.Surface;
   DesktopShortcutCheck.Left := 0;
-  DesktopShortcutCheck.Top := 112;
+  DesktopShortcutCheck.Top := ScaleY(112);
   DesktopShortcutCheck.Width := OptionsPage.SurfaceWidth;
   DesktopShortcutCheck.Height := ScaleY(22);
   DesktopShortcutCheck.Caption := ExpandConstant('{cm:DesktopShortcutOption}');
@@ -261,7 +262,7 @@ begin
   StartMenuShortcutCheck := TNewCheckBox.Create(OptionsPage);
   StartMenuShortcutCheck.Parent := OptionsPage.Surface;
   StartMenuShortcutCheck.Left := 0;
-  StartMenuShortcutCheck.Top := 144;
+  StartMenuShortcutCheck.Top := ScaleY(144);
   StartMenuShortcutCheck.Width := OptionsPage.SurfaceWidth;
   StartMenuShortcutCheck.Height := ScaleY(22);
   StartMenuShortcutCheck.Caption := ExpandConstant('{cm:StartMenuShortcutOption}');
@@ -270,7 +271,7 @@ begin
   LaunchAfterInstallCheck := TNewCheckBox.Create(OptionsPage);
   LaunchAfterInstallCheck.Parent := OptionsPage.Surface;
   LaunchAfterInstallCheck.Left := 0;
-  LaunchAfterInstallCheck.Top := 176;
+  LaunchAfterInstallCheck.Top := ScaleY(176);
   LaunchAfterInstallCheck.Width := OptionsPage.SurfaceWidth;
   LaunchAfterInstallCheck.Height := ScaleY(22);
   LaunchAfterInstallCheck.Caption := ExpandConstant('{cm:LaunchAfterInstallOption}');
@@ -279,7 +280,7 @@ begin
   OpenReleasePageCheck := TNewCheckBox.Create(OptionsPage);
   OpenReleasePageCheck.Parent := OptionsPage.Surface;
   OpenReleasePageCheck.Left := 0;
-  OpenReleasePageCheck.Top := 208;
+  OpenReleasePageCheck.Top := ScaleY(208);
   OpenReleasePageCheck.Width := OptionsPage.SurfaceWidth;
   OpenReleasePageCheck.Height := ScaleY(22);
   OpenReleasePageCheck.Caption := ExpandConstant('{cm:OpenReleaseNotesOption}');
@@ -288,10 +289,9 @@ begin
   OptionsHintLabel := TLabel.Create(OptionsPage);
   OptionsHintLabel.Parent := OptionsPage.Surface;
   OptionsHintLabel.Left := 0;
-  OptionsHintLabel.Top := 254;
+  OptionsHintLabel.Top := ScaleY(254);
   OptionsHintLabel.Width := OptionsPage.SurfaceWidth;
   OptionsHintLabel.Height := ScaleY(52);
-  OptionsHintLabel.WordWrap := True;
   OptionsHintLabel.Caption := ExpandConstant('{cm:OptionsHint}');
   StyleSubtitle(OptionsHintLabel);
 
