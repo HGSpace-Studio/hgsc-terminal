@@ -1,6 +1,6 @@
 name = "heartbeat"
 version = "0.2.0"
-author = "CsAC Team"
+author = "HGSpace Studio"
 description = "按固定间隔向监听群发送心跳消息。"
 entry = "main.py"
 permissions = ["send_message", "storage"]

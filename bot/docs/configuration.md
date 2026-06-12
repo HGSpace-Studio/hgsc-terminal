@@ -16,7 +16,7 @@ replay_existing = false
 mark_read = false
 ```
 
-- `base_url`：CsAC API 入口地址。库不会写死 API 地址，必须由调用库的项目提供。
+- `base_url`：HGSC API 入口地址。库不会写死 API 地址，必须由调用库的项目提供。
 - `username`：bot 登录用户名。
 - `password`：bot 登录密码。
 - `room_ids`：监听的群号列表，至少需要一个群号。
@@ -82,7 +82,7 @@ file = "session.json"
 - `session.save`：是否保存登录 Cookie。
 - `session.file`：Cookie 会话文件。相对路径以配置文件所在目录为基准。
 
-CsAC 使用 PHP Session Cookie 认证。启用会话保存后，下次启动会先复用 Cookie；如果会话失效，runner 会用账号密码重新登录。
+HGSC 使用 PHP Session Cookie 认证。启用会话保存后，下次启动会先复用 Cookie；如果会话失效，runner 会用账号密码重新登录。
 
 ## 日志
 

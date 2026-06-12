@@ -799,7 +799,7 @@ class CsacLocalCache {
 
   Future<File> _databaseFile() async {
     final directory = await getApplicationSupportDirectory();
-    return File(p.join(directory.path, 'csac_cache.sqlite3'));
+    return File(p.join(directory.path, 'hgsc_cache.sqlite3'));
   }
 
   Future<int> _databaseStorageBytes() async {

@@ -663,7 +663,7 @@ Future<void> downloadImage(BuildContext context, String url) async {
     context,
     url,
     suggestedName:
-        'csac_${DateTime.now().millisecondsSinceEpoch}${normalizedImageExtension(Uri.parse(url).path)}',
+        'hgsc_${DateTime.now().millisecondsSinceEpoch}${normalizedImageExtension(Uri.parse(url).path)}',
     typeLabel: context.strings.text('Images'),
     extensions: imageExtensions,
   );
@@ -775,7 +775,7 @@ String defaultDownloadName(String url, {String fallbackExtension = ''}) {
     return fromUrl;
   }
   final extension = fallbackExtension.isEmpty ? '.bin' : fallbackExtension;
-  return 'csac_${DateTime.now().millisecondsSinceEpoch}$extension';
+  return 'hgsc_${DateTime.now().millisecondsSinceEpoch}$extension';
 }
 
 String mimeTypeForExtension(String extension) {

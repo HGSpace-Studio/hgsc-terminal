@@ -1,6 +1,6 @@
-; Simplified Chinese messages for the CsAC Windows installer.
+; Simplified Chinese messages for the HGSC Windows installer.
 ; Keep this file small: messages not listed here fall back to Inno Setup's
-; built-in English defaults, while app-specific copy lives in csac.iss.
+; built-in English defaults, while app-specific copy lives in hgsc installer script.
 
 [LangOptions]
 LanguageName=中文（简体）

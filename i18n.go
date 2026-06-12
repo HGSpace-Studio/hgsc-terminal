@@ -28,7 +28,7 @@ func normalizeLanguage(lang Language) Language {
 var translations = map[Language]map[string]string{
 	LanguageEnglish: {
 		"app.starting":                                      "Starting",
-		"auth.login_title":                                  "CsAC-Terminal Login",
+		"auth.login_title":                                  "HGSpace Chatting Login",
 		"auth.username":                                     "Username",
 		"auth.password":                                     "Password",
 		"auth.login":                                        "Login",
@@ -354,7 +354,7 @@ var translations = map[Language]map[string]string{
 	},
 	LanguageChinese: {
 		"app.starting":                                      "启动中",
-		"auth.login_title":                                  "CsAC-Terminal 登录",
+		"auth.login_title":                                  "哈小信 登录",
 		"auth.username":                                     "用户名",
 		"auth.password":                                     "密码",
 		"auth.login":                                        "登录",

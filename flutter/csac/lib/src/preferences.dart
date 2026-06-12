@@ -60,43 +60,41 @@ class CsacPreferences {
     this.appLockPinSalt = '',
     this.appLockPinHash = '',
     this.appLockBiometricEnabled = false,
-    this.autoCheckVersionUpdates = true,
     this.localSystemNotificationsEnabled = true,
     this.acceptedLegalVersion = '',
   });
 
-  static const _themeKey = 'csac.theme_mode';
-  static const _themeColorKey = 'csac.theme_color';
-  static const _languageKey = 'csac.language';
-  static const _fontStyleKey = 'csac.font_style';
-  static const _interfaceFontScaleKey = 'csac.interface_font_scale';
-  static const _compactModeKey = 'csac.compact_mode';
-  static const _highContrastModeKey = 'csac.high_contrast_mode';
-  static const _conversationSortModeKey = 'csac.conversation_sort_mode';
-  static const _conversationSubtitleModeKey = 'csac.conversation_subtitle_mode';
-  static const _messageTimeFormatKey = 'csac.message_time_format';
-  static const _chatBubbleCornerStyleKey = 'csac.chat.bubble_corner_style';
-  static const _ownChatBubbleColorKey = 'csac.chat.own_bubble_color';
-  static const _otherChatBubbleColorKey = 'csac.chat.other_bubble_color';
-  static const _chatBubbleOpacityKey = 'csac.chat.bubble_opacity';
-  static const _chatBackgroundPathKey = 'csac.chat_background_path';
-  static const _serverUrlKey = 'csac.server_url';
-  static const _reduceMotionKey = 'csac.reduce_motion';
-  static const _showChatAvatarsKey = 'csac.chat.show_avatars';
-  static const _enablePatKey = 'csac.chat.enable_pat';
+  static const _themeKey = 'hgsc.theme_mode';
+  static const _themeColorKey = 'hgsc.theme_color';
+  static const _languageKey = 'hgsc.language';
+  static const _fontStyleKey = 'hgsc.font_style';
+  static const _interfaceFontScaleKey = 'hgsc.interface_font_scale';
+  static const _compactModeKey = 'hgsc.compact_mode';
+  static const _highContrastModeKey = 'hgsc.high_contrast_mode';
+  static const _conversationSortModeKey = 'hgsc.conversation_sort_mode';
+  static const _conversationSubtitleModeKey = 'hgsc.conversation_subtitle_mode';
+  static const _messageTimeFormatKey = 'hgsc.message_time_format';
+  static const _chatBubbleCornerStyleKey = 'hgsc.chat.bubble_corner_style';
+  static const _ownChatBubbleColorKey = 'hgsc.chat.own_bubble_color';
+  static const _otherChatBubbleColorKey = 'hgsc.chat.other_bubble_color';
+  static const _chatBubbleOpacityKey = 'hgsc.chat.bubble_opacity';
+  static const _chatBackgroundPathKey = 'hgsc.chat_background_path';
+  static const _serverUrlKey = 'hgsc.server_url';
+  static const _reduceMotionKey = 'hgsc.reduce_motion';
+  static const _showChatAvatarsKey = 'hgsc.chat.show_avatars';
+  static const _enablePatKey = 'hgsc.chat.enable_pat';
   static const _enableQuickInputTriggersKey =
-      'csac.chat.enable_quick_input_triggers';
+      'hgsc.chat.enable_quick_input_triggers';
   static const _mobileEnterKeyBehaviorKey =
-      'csac.chat.mobile_enter_key_behavior';
-  static const _showGroupMemberLevelKey = 'csac.chat.show_group_member_level';
-  static const _groupMemberBadgeModeKey = 'csac.chat.group_member_badge_mode';
-  static const _appLockEnabledKey = 'csac.app_lock.enabled';
-  static const _appLockPinSaltKey = 'csac.app_lock.pin_salt';
-  static const _appLockPinHashKey = 'csac.app_lock.pin_hash';
-  static const _appLockBiometricEnabledKey = 'csac.app_lock.biometric_enabled';
-  static const _autoCheckVersionUpdatesKey = 'csac.updates.auto_check_version';
-  static const _localSystemNotificationsKey = 'csac.notifications.local_system';
-  static const _acceptedLegalVersionKey = 'csac.legal.accepted_version';
+      'hgsc.chat.mobile_enter_key_behavior';
+  static const _showGroupMemberLevelKey = 'hgsc.chat.show_group_member_level';
+  static const _groupMemberBadgeModeKey = 'hgsc.chat.group_member_badge_mode';
+  static const _appLockEnabledKey = 'hgsc.app_lock.enabled';
+  static const _appLockPinSaltKey = 'hgsc.app_lock.pin_salt';
+  static const _appLockPinHashKey = 'hgsc.app_lock.pin_hash';
+  static const _appLockBiometricEnabledKey = 'hgsc.app_lock.biometric_enabled';
+  static const _localSystemNotificationsKey = 'hgsc.notifications.local_system';
+  static const _acceptedLegalVersionKey = 'hgsc.legal.accepted_version';
 
   final ThemeMode themeMode;
   final int themeColorValue;
@@ -125,7 +123,6 @@ class CsacPreferences {
   final String appLockPinSalt;
   final String appLockPinHash;
   final bool appLockBiometricEnabled;
-  final bool autoCheckVersionUpdates;
   final bool localSystemNotificationsEnabled;
   final String acceptedLegalVersion;
 
@@ -169,7 +166,6 @@ class CsacPreferences {
     String? appLockPinSalt,
     String? appLockPinHash,
     bool? appLockBiometricEnabled,
-    bool? autoCheckVersionUpdates,
     bool? localSystemNotificationsEnabled,
     String? acceptedLegalVersion,
   }) {
@@ -208,8 +204,6 @@ class CsacPreferences {
       appLockPinHash: appLockPinHash ?? this.appLockPinHash,
       appLockBiometricEnabled:
           appLockBiometricEnabled ?? this.appLockBiometricEnabled,
-      autoCheckVersionUpdates:
-          autoCheckVersionUpdates ?? this.autoCheckVersionUpdates,
       localSystemNotificationsEnabled:
           localSystemNotificationsEnabled ??
           this.localSystemNotificationsEnabled,
@@ -267,8 +261,6 @@ class CsacPreferences {
       appLockPinHash: prefs.getString(_appLockPinHashKey) ?? '',
       appLockBiometricEnabled:
           prefs.getBool(_appLockBiometricEnabledKey) ?? false,
-      autoCheckVersionUpdates:
-          prefs.getBool(_autoCheckVersionUpdatesKey) ?? true,
       localSystemNotificationsEnabled:
           prefs.getBool(_localSystemNotificationsKey) ?? true,
       acceptedLegalVersion: prefs.getString(_acceptedLegalVersionKey) ?? '',
@@ -339,7 +331,6 @@ class CsacPreferences {
       await prefs.setString(_appLockPinHashKey, appLockPinHash.trim());
     }
     await prefs.setBool(_appLockBiometricEnabledKey, appLockBiometricEnabled);
-    await prefs.setBool(_autoCheckVersionUpdatesKey, autoCheckVersionUpdates);
     await prefs.setBool(
       _localSystemNotificationsKey,
       localSystemNotificationsEnabled,
@@ -397,13 +388,7 @@ class CsacPreferences {
     if (value.isEmpty) {
       return '';
     }
-    final normalized = value.toLowerCase().replaceAll(RegExp(r'/+$'), '');
-    const oldHosts = <String>{
-      'http://103.40.14.14:24582',
-      'http://103.40.14.14:24582/rpc',
-      'http://103.40.14.14:24582/rpc/unicsac.php',
-    };
-    return oldHosts.contains(normalized) ? '' : value;
+    return value;
   }
 
   static CsacLanguage _languageFromName(String? value) {
@@ -511,7 +496,7 @@ class AppLockPin {
 class ConversationDraftStore {
   const ConversationDraftStore._();
 
-  static const _draftPrefix = 'csac.draft.';
+  static const _draftPrefix = 'hgsc.draft.';
   static final changes = ValueNotifier<int>(0);
 
   static String _key(Conversation conversation) {
@@ -657,7 +642,7 @@ class ConversationLocalPreference {
 class ConversationPreferenceStore {
   const ConversationPreferenceStore._();
 
-  static const _prefix = 'csac.conversation_pref.';
+  static const _prefix = 'hgsc.conversation_pref.';
   static final changes = ValueNotifier<int>(0);
 
   static String keyFor(Conversation conversation) {
@@ -739,7 +724,7 @@ class ConversationPreferenceStore {
 class EmojiStickerStore {
   const EmojiStickerStore._();
 
-  static const _key = 'csac.emoji.stickers';
+  static const _key = 'hgsc.emoji.stickers';
 
   static Future<List<EmojiSticker>> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -783,7 +768,7 @@ class EmojiStickerStore {
 class EmojiRecentStore {
   const EmojiRecentStore._();
 
-  static const _key = 'csac.emoji.recent';
+  static const _key = 'hgsc.emoji.recent';
   static const _maxEntries = 24;
 
   static Future<List<EmojiSticker>> load() async {
@@ -833,7 +818,7 @@ class EmojiRecentStore {
 class EmojiPinnedStore {
   const EmojiPinnedStore._();
 
-  static const _key = 'csac.emoji.pinned';
+  static const _key = 'hgsc.emoji.pinned';
   static const _maxEntries = 48;
 
   static Future<List<EmojiSticker>> load() async {
@@ -922,7 +907,7 @@ class CommandPaletteUsage {
 class CommandPaletteUsageStore {
   const CommandPaletteUsageStore._();
 
-  static const _key = 'csac.command_palette.usage';
+  static const _key = 'hgsc.command_palette.usage';
   static const _maxEntries = 64;
 
   static Future<Map<String, CommandPaletteUsage>> loadAll() async {
@@ -1064,7 +1049,7 @@ String compactDraftText(String text, {int max = 96}) {
 class ChatHintStore {
   const ChatHintStore._();
 
-  static const _seenKey = 'csac.chat_hint.seen';
+  static const _seenKey = 'hgsc.chat_hint.seen';
 
   static Future<bool> isSeen() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1080,10 +1065,10 @@ class ChatHintStore {
 class MentionNoticeStore {
   const MentionNoticeStore._();
 
-  static const _readPrefix = 'csac.mention_notice.read.';
-  static const _clearedPrefix = 'csac.mention_notice.cleared.';
-  static const _summaryReadKey = 'csac.mention_notice.summary_read';
-  static const _summaryClearedKey = 'csac.mention_notice.summary_cleared';
+  static const _readPrefix = 'hgsc.mention_notice.read.';
+  static const _clearedPrefix = 'hgsc.mention_notice.cleared.';
+  static const _summaryReadKey = 'hgsc.mention_notice.summary_read';
+  static const _summaryClearedKey = 'hgsc.mention_notice.summary_cleared';
 
   static String _key(String prefix, MentionNotice notice) {
     return '$prefix${notice.conversation.type.name}:'
@@ -1216,7 +1201,7 @@ class LoginAccountRecord {
 class LoginAccountStore {
   const LoginAccountStore._();
 
-  static const _accountsKey = 'csac.login_accounts';
+  static const _accountsKey = 'hgsc.login_accounts';
   static const _maxAccounts = 12;
 
   static Future<List<LoginAccountRecord>> loadAll() async {

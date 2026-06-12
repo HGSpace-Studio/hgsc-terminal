@@ -31,7 +31,7 @@ Future<void> configureDesktopWindowChrome() async {
     const WindowOptions(
       minimumSize: Size(900, 620),
       backgroundColor: Colors.transparent,
-      title: 'CsAC',
+      title: '哈小信',
     ),
     () async {
       await windowManager.show();

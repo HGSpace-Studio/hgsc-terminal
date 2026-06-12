@@ -13,7 +13,7 @@ Future<int> logStorageBytes() async {
 }
 
 Future<int> voiceTemporaryStorageBytes() {
-  return _temporaryFilesBytes((name) => name.startsWith('csac_voice_'));
+  return _temporaryFilesBytes((name) => name.startsWith('hgsc_voice_'));
 }
 
 Future<List<StoredAppLogFile>> loadStoredAppLogFiles() async {
@@ -44,7 +44,7 @@ Future<String> readStoredTextFile(
 
 Future<void> clearStoredImageCaches() async {
   await _deleteDirectoryContents(await _backgroundDirectory());
-  await _deleteTemporaryFiles((name) => name.startsWith('csac_voice_'));
+  await _deleteTemporaryFiles((name) => name.startsWith('hgsc_voice_'));
 }
 
 Future<void> clearStoredLogCaches() async {
@@ -152,5 +152,5 @@ Future<void> _deleteTemporaryFiles(bool Function(String name) include) async {
 bool _looksLikeLogFile(String name) {
   return name.endsWith('.log') ||
       name.endsWith('.log.txt') ||
-      name.startsWith('csac_log_');
+      name.startsWith('hgsc_log_');
 }

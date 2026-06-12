@@ -1,11 +1,11 @@
-# CsAC Bot Python 库
+# HGSC Bot Python 库
 
-这是一个放在仓库内的 CsAC bot 框架。客户端标识为 `bot-leon-0.1.0`，登录时会通过 `platform` 参数发送给服务端。
+这是一个放在仓库内的 HGSC bot 框架。客户端标识为 `bot-leon-0.1.0`，登录时会通过 `platform` 参数发送给服务端。
 
 ## 安装
 
 ```powershell
-cd D:\Projects\Go\CsAC-Terminal\bot
+cd D:\Projects\Go\HGSC-Terminal\bot
 py -m pip install -e .
 ```
 
@@ -19,8 +19,8 @@ py -m pip install -e .
 先复制配置文件并填入自己的 API 地址、账号、密码和群号：
 
 ```powershell
-$src = "D:\Projects\Go\CsAC-Terminal\bot\example\config.example.toml"
-$dst = "D:\Projects\Go\CsAC-Terminal\bot\example\config.toml"
+$src = "D:\Projects\Go\HGSC-Terminal\bot\example\config.example.toml"
+$dst = "D:\Projects\Go\HGSC-Terminal\bot\example\config.toml"
 Copy-Item $src $dst
 notepad $dst
 ```
@@ -28,7 +28,7 @@ notepad $dst
 运行：
 
 ```powershell
-py D:\Projects\Go\CsAC-Terminal\bot\example\group_command_bot.py --config D:\Projects\Go\CsAC-Terminal\bot\example\config.toml
+py D:\Projects\Go\HGSC-Terminal\bot\example\group_command_bot.py --config D:\Projects\Go\HGSC-Terminal\bot\example\config.toml
 ```
 
 示例支持：
@@ -82,7 +82,7 @@ plugins/ping/
 ```toml
 name = "ping"
 version = "0.2.0"
-author = "CsAC Team"
+author = "HGSpace Studio"
 description = "基础在线测试命令。"
 entry = "main.py"
 permissions = ["send_message", "read_members", "storage"]
@@ -202,8 +202,8 @@ watch_interval = 2.0
 插件开发 CLI：
 
 ```powershell
-py -m csacbot plugin check D:\Projects\Go\CsAC-Terminal\bot\example\plugins\ping
-py -m csacbot plugin new hello --path D:\Projects\Go\CsAC-Terminal\bot\example\plugins
+py -m csacbot plugin check D:\Projects\Go\HGSC-Terminal\bot\example\plugins\ping
+py -m csacbot plugin new hello --path D:\Projects\Go\HGSC-Terminal\bot\example\plugins
 ```
 
 更完整的开发者文档在 `bot/docs`：

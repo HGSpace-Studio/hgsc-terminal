@@ -17,7 +17,7 @@ plugins/ping/
 ```toml
 name = "ping"
 version = "0.2.0"
-author = "CsAC Team"
+author = "HGSpace Studio"
 description = "基础在线测试命令。"
 entry = "main.py"
 permissions = ["send_message", "read_members", "storage"]
@@ -309,13 +309,13 @@ watch_interval = 2.0
 检查插件：
 
 ```powershell
-py -m csacbot plugin check D:\Projects\Go\CsAC-Terminal\bot\example\plugins\ping
+py -m csacbot plugin check D:\Projects\Go\HGSC-Terminal\bot\example\plugins\ping
 ```
 
 创建插件：
 
 ```powershell
-py -m csacbot plugin new hello --path D:\Projects\Go\CsAC-Terminal\bot\example\plugins
+py -m csacbot plugin new hello --path D:\Projects\Go\HGSC-Terminal\bot\example\plugins
 ```
 
 ## Bot 管理 API

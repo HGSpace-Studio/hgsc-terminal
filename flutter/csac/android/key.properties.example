@@ -1,4 +1,4 @@
 storeFile=app/signing/release.jks
 storePassword=change-me
-keyAlias=csac
+keyAlias=hgsc
 keyPassword=change-me

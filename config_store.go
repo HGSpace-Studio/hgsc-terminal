@@ -17,7 +17,7 @@ func NewConfigStore() (*ConfigStore, error) {
 		return nil, err
 	}
 	return &ConfigStore{
-		path: filepath.Join(dir, "CsAC-Terminal", "config.json"),
+		path: filepath.Join(dir, "HGSC", "config.json"),
 	}, nil
 }
 

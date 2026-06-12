@@ -3,7 +3,7 @@
 ## 安装库
 
 ```powershell
-cd D:\Projects\Go\CsAC-Terminal\bot
+cd D:\Projects\Go\HGSC-Terminal\bot
 py -m pip install -e .
 ```
 
@@ -12,8 +12,8 @@ py -m pip install -e .
 ## 准备配置
 
 ```powershell
-Copy-Item D:\Projects\Go\CsAC-Terminal\bot\example\config.example.toml D:\Projects\Go\CsAC-Terminal\bot\example\config.toml
-notepad D:\Projects\Go\CsAC-Terminal\bot\example\config.toml
+Copy-Item D:\Projects\Go\HGSC-Terminal\bot\example\config.example.toml D:\Projects\Go\HGSC-Terminal\bot\example\config.toml
+notepad D:\Projects\Go\HGSC-Terminal\bot\example\config.toml
 ```
 
 至少需要修改：
@@ -26,7 +26,7 @@ notepad D:\Projects\Go\CsAC-Terminal\bot\example\config.toml
 ## 启动
 
 ```powershell
-py D:\Projects\Go\CsAC-Terminal\bot\example\group_command_bot.py --config D:\Projects\Go\CsAC-Terminal\bot\example\config.toml
+py D:\Projects\Go\HGSC-Terminal\bot\example\group_command_bot.py --config D:\Projects\Go\HGSC-Terminal\bot\example\config.toml
 ```
 
 启动后可以在监听群里发送：
@@ -49,15 +49,15 @@ http://127.0.0.1:8765
 检查 example 插件：
 
 ```powershell
-$env:PYTHONPATH = "D:\Projects\Go\CsAC-Terminal\bot\src"
-py -m csacbot plugin check D:\Projects\Go\CsAC-Terminal\bot\example\plugins\ping
+$env:PYTHONPATH = "D:\Projects\Go\HGSC-Terminal\bot\src"
+py -m csacbot plugin check D:\Projects\Go\HGSC-Terminal\bot\example\plugins\ping
 ```
 
 创建新插件：
 
 ```powershell
-$env:PYTHONPATH = "D:\Projects\Go\CsAC-Terminal\bot\src"
-py -m csacbot plugin new hello --path D:\Projects\Go\CsAC-Terminal\bot\example\plugins
+$env:PYTHONPATH = "D:\Projects\Go\HGSC-Terminal\bot\src"
+py -m csacbot plugin new hello --path D:\Projects\Go\HGSC-Terminal\bot\example\plugins
 ```
 
 ## 本地运行数据

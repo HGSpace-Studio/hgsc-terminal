@@ -14,7 +14,6 @@ bool get isDesktopPlatform =>
 
 bool get isMobilePlatform => Platform.isIOS || Platform.isAndroid;
 
-bool get supportsVersionUpdateChecks => true;
 
 bool get supportsLocalFiles => true;
 
@@ -92,7 +91,7 @@ Future<String> cacheVoiceBytes({
       ? '.m4a'
       : p.extension(uri.path);
   final directory = await getTemporaryDirectory();
-  final path = p.join(directory.path, 'csac_voice_$messageId$extension');
+  final path = p.join(directory.path, 'hgsc_voice_$messageId$extension');
   final file = File(path);
   if (await file.exists() &&
       await file.length() > 0 &&
@@ -123,7 +122,7 @@ Future<String> createTemporaryVoicePath() async {
   final directory = await getTemporaryDirectory();
   return p.join(
     directory.path,
-    'csac_voice_${DateTime.now().millisecondsSinceEpoch}.m4a',
+    'hgsc_voice_${DateTime.now().millisecondsSinceEpoch}.m4a',
   );
 }
 

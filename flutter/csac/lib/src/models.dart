@@ -8,7 +8,7 @@ enum CsacTimestampPattern { slash, dash, compact, timeOnly }
 
 const defaultPatAction = '\u62cd\u4e86\u62cd';
 const csacClientName = 'flutter';
-const csacClientBranch = 'leon';
+const csacClientBranch = 'hgsc';
 
 class CsacUser {
   const CsacUser({
@@ -1961,7 +1961,7 @@ String formatLocalTime(DateTime value) {
   return '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
 }
 
-String _apiAssetBaseUrl = 'https://103.40.14.14:14660';
+String _apiAssetBaseUrl = 'http://hgsc.happygray.work';
 
 void configureApiAssetBaseUrl(String apiBaseUrl) {
   _apiAssetBaseUrl = apiOriginFromBaseUrl(apiBaseUrl);
@@ -1970,7 +1970,7 @@ void configureApiAssetBaseUrl(String apiBaseUrl) {
 String apiOriginFromBaseUrl(String apiBaseUrl) {
   final uri = Uri.tryParse(apiBaseUrl.trim());
   if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-    return 'https://103.40.14.14:14660';
+    return 'http://hgsc.happygray.work';
   }
   return Uri(
     scheme: uri.scheme,

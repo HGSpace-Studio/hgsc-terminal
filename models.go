@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const DefaultBaseURL = "https://103.40.14.14:14660/rpc/UniCsAC.php"
+const DefaultBaseURL = "http://hgsc.happygray.work/rpc/UniCsAC.php"
 
 const ClientPlatform = "go-leon-1.3.0"
 

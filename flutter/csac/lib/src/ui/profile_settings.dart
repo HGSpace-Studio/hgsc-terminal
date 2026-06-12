@@ -1126,13 +1126,11 @@ class _CacheMetricTile extends StatelessWidget {
   }
 }
 
-const _csacAppName = 'CsAC';
+const _csacAppName = '哈小信';
 const _csacAppBranch = csacClientBranch;
-const _csacSourceUrl =
-    'https://github.com/Leonmmcoset/csac-terminal/tree/main/flutter/csac';
-const _csacAuthorUrl = 'https://github.com/Leonmmcoset';
-const _csacCommunityTranslationUrl =
-    'https://zh.crowdin.com/project/csac-flutter';
+const _csacSourceUrl = 'https://github.com/HGSpace-Studio/hgsc-terminal';
+const _csacAuthorUrl = 'https://github.com/HGSpace-Studio';
+const _csacCommunityTranslationUrl = 'https://github.com/HGSpace-Studio/hgsc-terminal';
 
 class AppInfoScreen extends StatefulWidget {
   const AppInfoScreen({super.key});
@@ -1266,7 +1264,7 @@ class _AppInfoScreenState extends State<AppInfoScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                strings.text('Third-party CsAC client'),
+                                strings.text('HGSpace Chatting (HGSC) client'),
                                 style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(
                                       color: Theme.of(
@@ -1372,7 +1370,7 @@ class _AppInfoSubtitle extends StatelessWidget {
         final version = packageInfo == null
             ? '-'
             : '${packageInfo.version}+${packageInfo.buildNumber}';
-        return Text('CsAC $version | $_csacAppBranch');
+        return Text('HGSC $version | $_csacAppBranch');
       },
     );
   }
@@ -3575,7 +3573,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool clearingPerformanceCaches = false;
   bool enablingLowPerformanceMode = false;
   bool submittingBugReport = false;
-  bool checkingVersionUpdate = false;
   PerformanceCacheStats? performanceStats;
   late bool developerOptionsExpanded;
 
@@ -4118,57 +4115,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) {
         setState(() => submittingBugReport = false);
-      }
-    }
-  }
-
-  Future<void> checkVersionUpdateManually() async {
-    if (checkingVersionUpdate) {
-      return;
-    }
-    setState(() => checkingVersionUpdate = true);
-    try {
-      final packageInfo = await PackageInfo.fromPlatform();
-      final checker = VersionUpdateChecker();
-      VersionUpdateInfo result;
-      try {
-        result = await checker.check(
-          currentVersion: '${packageInfo.version}+${packageInfo.buildNumber}'
-              .trim(),
-          timeout: const Duration(seconds: 8),
-        );
-      } finally {
-        checker.close();
-      }
-      if (!mounted) {
-        return;
-      }
-      if (result.hasUpdate) {
-        await showVersionUpdateDialog(context, result);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.strings.text('Already up to date.'))),
-        );
-      }
-    } catch (err, stackTrace) {
-      if (kDebugMode) {
-        debugPrint('CsAC manual GitHub update check failed: $err');
-        debugPrintStack(stackTrace: stackTrace);
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              context.strings.format('Check update failed: {error}', {
-                'error': err,
-              }),
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => checkingVersionUpdate = false);
       }
     }
   }
@@ -5001,12 +4947,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'App information',
       'Open-source licenses',
       'Version',
-      if (supportsVersionUpdateChecks) ...[
-        'Version updates',
-        'Check for updates',
-        'Automatic update checks',
-        'Release notes',
-      ],
       'Source code',
       'License',
     ]);
@@ -5092,7 +5032,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ]);
     final showDeveloper = settingMatches(query, [
       'Developer options',
-      'CsAC server address',
+      'HGSC server address',
       'HTTP protocol',
       'HTTP/1.1',
       'HTTP/2',
@@ -5198,43 +5138,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
                       const Divider(height: 1),
-                      if (supportsVersionUpdateChecks) ...[
-                        SwitchListTile(
-                          secondary: const Icon(Icons.event_repeat_outlined),
-                          title: Text(strings.text('Automatic update checks')),
-                          subtitle: Text(
-                            strings.text(
-                              'Silently check GitHub Releases once on startup',
-                            ),
-                          ),
-                          value:
-                              widget.state.preferences.autoCheckVersionUpdates,
-                          onChanged: widget.state.updateAutoCheckVersionUpdates,
-                        ),
-                        const Divider(height: 1),
-                        ListTile(
-                          leading: const Icon(Icons.update),
-                          title: Text(strings.text('Check for updates')),
-                          subtitle: Text(
-                            strings.text(
-                              'Check the latest GitHub Release manually',
-                            ),
-                          ),
-                          trailing: checkingVersionUpdate
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.chevron_right),
-                          onTap: checkingVersionUpdate
-                              ? null
-                              : checkVersionUpdateManually,
-                        ),
-                        const Divider(height: 1),
-                      ],
                       ListTile(
                         leading: const Icon(Icons.article_outlined),
                         title: Text(strings.text('Open-source licenses')),
@@ -5594,7 +5497,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: Text(strings.text('App lock')),
                     subtitle: Text(
                       widget.state.preferences.effectiveAppLockEnabled
-                          ? strings.text('PIN required when returning to CsAC')
+                          ? strings.text('PIN required when returning to HGSC')
                           : strings.text('Off'),
                     ),
                     trailing: const Icon(Icons.chevron_right),
@@ -5871,7 +5774,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           }
                         },
                         decoration: InputDecoration(
-                          labelText: strings.text('CsAC server address'),
+                          labelText: strings.text('HGSC server address'),
                           hintText: '192.168.1.10:8080',
                           helperText: strings.text(
                             'Leave empty to use the default server.',

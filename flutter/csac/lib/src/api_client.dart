@@ -126,9 +126,9 @@ class CsacApiClient {
     configureApiAssetBaseUrl(_baseUrl);
   }
 
-  static const defaultBaseUrl = 'https://csac.chat/rpc/UniCsAC.php';
+  static const defaultBaseUrl = 'http://hgsc.happygray.work/rpc/UniCsAC.php';
   static const _defaultApiPath = '/rpc/UniCsAC.php';
-  static const _sessionKey = 'csac.cookies';
+  static const _sessionKey = 'hgsc.cookies';
 
   final ProtocolAwareHttpClient _http;
   String _baseUrl;
@@ -159,13 +159,13 @@ class CsacApiClient {
     if (value.isEmpty) {
       return defaultBaseUrl;
     }
-    final withScheme = value.contains('://') ? value : 'https://$value';
+    final withScheme = value.contains('://') ? value : 'http://$value';
     final uri = Uri.tryParse(withScheme);
     if (uri == null ||
         !uri.hasScheme ||
         uri.host.trim().isEmpty ||
         (uri.scheme != 'http' && uri.scheme != 'https')) {
-      throw const FormatException('Invalid CsAC server address.');
+      throw const FormatException('Invalid HGSC server address.');
     }
 
     var path = uri.path;

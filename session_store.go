@@ -37,7 +37,7 @@ func NewSessionStore() (*SessionStore, error) {
 		return nil, err
 	}
 	return &SessionStore{
-		path: filepath.Join(dir, "CsAC-Terminal", "session.json"),
+		path: filepath.Join(dir, "HGSC", "session.json"),
 	}, nil
 }
 

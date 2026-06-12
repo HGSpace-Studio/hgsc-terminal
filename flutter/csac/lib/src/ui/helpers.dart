@@ -50,13 +50,13 @@ String notificationTitleForConversation(
   ChatMessage? message,
 ) {
   if (conversation.type == ConversationType.group) {
-    return conversation.name.trim().isEmpty ? 'CsAC' : conversation.name;
+    return conversation.name.trim().isEmpty ? '哈小信' : conversation.name;
   }
   final sender = message?.sender.trim() ?? '';
   if (sender.isNotEmpty && !sender.startsWith('UID 0')) {
     return sender;
   }
-  return conversation.name.trim().isEmpty ? 'CsAC' : conversation.name;
+  return conversation.name.trim().isEmpty ? '哈小信' : conversation.name;
 }
 
 String notificationBodyForConversation(
@@ -217,7 +217,7 @@ String pickedImageFileName(XFile picked, ImageSource source) {
     return name;
   }
   final fallbackExtension = extension.isEmpty ? '.jpg' : extension;
-  final prefix = source == ImageSource.camera ? 'csac_photo' : 'csac_image';
+  final prefix = source == ImageSource.camera ? 'hgsc_photo' : 'hgsc_image';
   return '${prefix}_${DateTime.now().millisecondsSinceEpoch}$fallbackExtension';
 }
 

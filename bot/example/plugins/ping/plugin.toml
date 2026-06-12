@@ -1,6 +1,6 @@
 name = "ping"
 version = "0.2.0"
-author = "CsAC Team"
+author = "HGSpace Studio"
 description = "基础在线测试、发送者信息和群成员查询命令。"
 entry = "main.py"
 permissions = ["send_message", "read_members", "storage", "logging"]

@@ -900,7 +900,7 @@ func (c *UniCsACClient) prepareHeaders(req *http.Request) {
 func (c *UniCsACClient) originURL() string {
 	u, err := url.Parse(c.baseURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
-		return "https://103.40.14.14:14660"
+		return "http://hgsc.happygray.work"
 	}
 	return (&url.URL{Scheme: u.Scheme, Host: u.Host}).String()
 }

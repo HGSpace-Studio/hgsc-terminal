@@ -40,7 +40,7 @@ func NewCacheStore() (*CacheStore, error) {
 			return nil, err
 		}
 	}
-	return OpenCacheStore(filepath.Join(dir, "CsAC-Terminal", "cache.db"))
+	return OpenCacheStore(filepath.Join(dir, "HGSC", "cache.db"))
 }
 
 func OpenCacheStore(path string) (*CacheStore, error) {

@@ -467,12 +467,6 @@ class CsacAppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateAutoCheckVersionUpdates(bool enabled) async {
-    preferences = preferences.copyWith(autoCheckVersionUpdates: enabled);
-    await preferences.save();
-    notifyListeners();
-  }
-
   Future<void> updateLocalSystemNotifications(bool enabled) async {
     preferences = preferences.copyWith(
       localSystemNotificationsEnabled: enabled,

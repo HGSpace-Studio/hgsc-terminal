@@ -19,7 +19,7 @@ import flutter_local_notifications
     GeneratedPluginRegistrant.register(with: self)
     if let controller = window?.rootViewController as? FlutterViewController {
       backgroundRefreshChannel = FlutterMethodChannel(
-        name: "ink.jjmm.csacflutter/background_refresh",
+        name: "work.happygray.hgsc/background_refresh",
         binaryMessenger: controller.binaryMessenger
       )
     }

@@ -5,10 +5,10 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = csac
+PRODUCT_NAME = hgsc
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = ink.jjmm.csacflutter.csac
+PRODUCT_BUNDLE_IDENTIFIER = work.happygray.hgsc.app
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 ink.jjmm.csacflutter. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 HGSpace Studio. All rights reserved.

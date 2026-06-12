@@ -28,14 +28,14 @@ class WindowsTrayController with TrayListener, WindowListener {
     trayManager.addListener(this);
     await windowManager.setPreventClose(true);
     await trayManager.setIcon('windows/runner/resources/app_icon.ico');
-    await trayManager.setToolTip('CsAC');
+    await trayManager.setToolTip('哈小信');
     await trayManager.setContextMenu(
       Menu(
         items: [
           MenuItem(key: _trayShowWindow, label: '显示主窗口'),
           MenuItem(key: _trayHideWindow, label: '隐藏到托盘'),
           MenuItem.separator(),
-          MenuItem(key: _trayExitApp, label: '退出 CsAC'),
+          MenuItem(key: _trayExitApp, label: '退出 哈小信'),
         ],
       ),
     );

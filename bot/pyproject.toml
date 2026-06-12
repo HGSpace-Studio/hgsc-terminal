@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "csacbot"
 version = "0.1.0"
-description = "Python bot framework for CsAC"
+description = "Python bot framework for HGSpace Chatting (HGSC)"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
-authors = [{ name = "CsAC" }]
+license = { text = "AGPL-3.0-only" }
+authors = [{ name = "HGSpace Studio" }]
 dependencies = [
   "requests>=2.31.0",
   "pycryptodome>=3.20.0",

@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
-const repoUrl = 'https://github.com/Leonmmcoset/csac-terminal';
+const repoUrl = 'https://github.com/HGSpace-Studio/hgsc-terminal';
 const sourceUrl = `${repoUrl}/tree/main/flutter/csac`;
 const releasesUrl = `${repoUrl}/releases`;
 const latestReleaseUrl = `${releasesUrl}/latest`;
-const releasesApiUrl =
-  'https://api.github.com/repos/Leonmmcoset/csac-terminal/releases?per_page=5';
 const crowdinUrl = 'https://zh.crowdin.com/project/csac-flutter';
 const fallbackVersion = '1.3.9';
 
@@ -130,7 +128,7 @@ const platformCards = [
   {
     icon: 'android' as const,
     title: 'Android APK',
-    body: '移动端构建产物会随发布一起上传到 GitHub Releases。',
+    body: '移动端构建产物可从项目发布页面下载。',
     href: releasesUrl,
     action: '查看发布文件',
   },
@@ -146,19 +144,18 @@ const platformCards = [
 const fallbackRelease: GitHubRelease = {
   id: 0,
   tag_name: `v${fallbackVersion}`,
-  name: `CsAC ${fallbackVersion}`,
+  name: `HGSC ${fallbackVersion}`,
   html_url: latestReleaseUrl,
   published_at: null,
   assets: [],
   body: [
-    '当前页面会在浏览器中读取 GitHub Releases。',
-    '如果网络不可用，可以直接打开 Release 页面查看安装包与更新日志。',
+    '请打开项目 Release 页面查看安装包与更新日志。',
     '近期客户端已加入 Markdown 渲染、HTTP/2、Crowdin 多语言、邮箱验证和安装器 UI 改进。',
   ].join('\n'),
 };
 
 function formatDate(value: string | null) {
-  if (!value) return '等待 GitHub Release 数据';
+  if (!value) return '未发布';
   return new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric',
     month: '2-digit',
@@ -200,39 +197,16 @@ function releaseLines(release: GitHubRelease, maxLines = 5) {
 }
 
 function App() {
-  const [releases, setReleases] = useState<GitHubRelease[]>([fallbackRelease]);
-  const [loadState, setLoadState] = useState<LoadState>('loading');
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch(releasesApiUrl, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`GitHub API ${response.status}`);
-        }
-        return response.json() as Promise<GitHubRelease[]>;
-      })
-      .then((data) => {
-        const stableReleases = data.filter((release) => !release.tag_name.includes('nightly'));
-        setReleases(stableReleases.length > 0 ? stableReleases : [fallbackRelease]);
-        setLoadState('loaded');
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        setLoadState('error');
-      });
-    return () => controller.abort();
-  }, []);
-
+  const releases = [fallbackRelease];
   const latest = releases[0] ?? fallbackRelease;
   const releaseAssets = useMemo(() => latest.assets.slice(0, 6), [latest.assets]);
 
   return (
     <div className="app-shell">
       <header className="top-bar">
-        <a className="brand" href="#top" aria-label="CsAC home">
+        <a className="brand" href="#top" aria-label="HGSC home">
           <img src="/icons/Icon-192.png" alt="" />
-          <span>CsAC</span>
+          <span>HGSC</span>
         </a>
         <nav aria-label="Primary navigation">
           <a href="#download">下载</a>
@@ -245,10 +219,10 @@ function App() {
       <main id="top">
         <section className="hero">
           <div className="hero-copy">
-            <p className="eyebrow">Third-party CsAC client</p>
-            <h1>CsAC</h1>
+            <p className="eyebrow">HGSpace Chatting (HGSC) client</p>
+            <h1>HGSC</h1>
             <p className="lead">
-              面向桌面和移动端的现代 CsAC 客户端。保留熟悉的聊天流程，同时加入本地缓存、
+              面向桌面和移动端的现代 HGSC 客户端。保留熟悉的聊天流程，同时加入本地缓存、
               Markdown、多语言、通知中心和跨平台发布支持。
             </p>
             <div className="hero-actions" aria-label="Primary actions">
@@ -273,8 +247,7 @@ function App() {
             <p className="eyebrow">Download</p>
             <h2>下载与发布</h2>
             <p>
-              官网直接链接到 GitHub Releases。安装包、APK、压缩包和源码快照都以 Release
-              页面为准。
+              官网直接链接到项目发布页面。安装包、APK、压缩包和源码快照都以发布页面为准。
             </p>
           </div>
           <div className="download-grid">
@@ -302,11 +275,7 @@ function App() {
               <div className="release-head">
                 <div>
                   <p className="status-line">
-                    {loadState === 'loading'
-                      ? '正在加载 GitHub Releases'
-                      : loadState === 'loaded'
-                        ? '已同步 GitHub Releases'
-                        : 'GitHub Releases 加载失败'}
+                    项目发布页面
                   </p>
                   <h3>{releaseTitle(latest)}</h3>
                   <p>{formatDate(latest.published_at)}</p>
@@ -384,7 +353,7 @@ function App() {
       </main>
 
       <footer>
-        <span>CsAC official website prototype</span>
+        <span>HGSC official website prototype</span>
         <a href={repoUrl}>GitHub</a>
         <a href={latestReleaseUrl}>Latest Release</a>
       </footer>

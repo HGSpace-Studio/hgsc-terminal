@@ -36,7 +36,7 @@ permissions:
   contents: write
 
 env:
-  APP_NAME: csac
+  APP_NAME: hgsc
   FLUTTER_VERSION: "3.44.0"
   FLUTTER_LINUX_URL: https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.44.0-stable.tar.xz
   FLUTTER_WINDOWS_URL: https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.44.0-stable.zip

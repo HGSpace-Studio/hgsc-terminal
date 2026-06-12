@@ -1,6 +1,6 @@
-# CsAC Mobile
+# HGSpace Chatting (HGSC)
 
-Flutter mobile client for the UniCsAC HTTP API.
+Flutter client for the UniCsAC HTTP API.
 
 ## Features
 
@@ -33,7 +33,7 @@ Flutter mobile client for the UniCsAC HTTP API.
 - Open the group essence message list and jump back to the original chat message.
 - Show image messages with preview, copy-link, open, and user-selected download locations.
 - Send local images from the gallery with an optional caption.
-- Handles the server-side `__test` JavaScript challenge used by the CsAC API.
+- Handles the server-side `__test` JavaScript challenge used by the HGSC API.
 
 ## Build
 
@@ -57,7 +57,7 @@ keep it private, and reuse it locally and in GitHub Actions:
 
 ```bash
 mkdir -p android/app/signing
-keytool -genkeypair -v -keystore android/app/signing/release.jks -alias csac -keyalg RSA -keysize 2048 -validity 10000
+keytool -genkeypair -v -keystore android/app/signing/release.jks -alias hgsc -keyalg RSA -keysize 2048 -validity 10000
 cp android/key.properties.example android/key.properties
 ```
 

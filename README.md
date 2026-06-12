@@ -1,12 +1,12 @@
-# CsAC-Terminal
+# HGSpace Chatting (HGSC)
 
-CsAC-Terminal is a Go TUI client for the UniCsAC HTTP API. The UI is built with
+HGSpace Chatting (HGSC, 哈小信) is a Go TUI client for the UniCsAC HTTP API. The UI is built with
 `github.com/rivo/tview` and `github.com/gdamore/tcell/v2`.
 
 It uses the API entrypoint:
 
 ```text
-https://103.40.14.14:14660/rpc/UniCsAC.php
+http://hgsc.happygray.work/rpc/UniCsAC.php
 ```
 
 ## Features
@@ -35,7 +35,7 @@ https://103.40.14.14:14660/rpc/UniCsAC.php
 ## Build
 
 ```powershell
-go build -o bin\CsAC-Terminal.exe .
+go build -o bin\HGSC-Terminal.exe .
 ```
 
 Or use the included script, which keeps the Go build cache inside the project:
@@ -53,7 +53,7 @@ go telemetry off
 ## Run
 
 ```powershell
-.\bin\CsAC-Terminal.exe
+.\bin\HGSC-Terminal.exe
 ```
 
 ## Shortcuts
@@ -84,11 +84,11 @@ go telemetry off
 
 ## Session
 
-After login or register, CsAC-Terminal saves the API cookies to the user config
+After login or register, HGSC saves the API cookies to the user config
 directory, usually:
 
 ```text
-%APPDATA%\CsAC-Terminal\session.json
+%APPDATA%\HGSC\session.json
 ```
 
 On startup it loads that file and validates it with `user/get_info`. Logging out
@@ -100,7 +100,7 @@ Messages and conversation metadata are cached in SQLite under the user cache
 directory, usually:
 
 ```text
-%LOCALAPPDATA%\CsAC-Terminal\cache.db
+%LOCALAPPDATA%\HGSC\cache.db
 ```
 
 The cache is used to show offline history immediately while the app refreshes
@@ -113,16 +113,16 @@ or the `Language` item in the main menu to switch to Chinese. The choice is save
 to:
 
 ```text
-%APPDATA%\CsAC-Terminal\config.json
+%APPDATA%\HGSC\config.json
 ```
 
 ## Notes
 
 Image messages can be copied, opened in the system browser, downloaded to
-`Downloads\CsAC-Terminal`, or sent directly from a local path. Voice messages
+`Downloads\HGSC`, or sent directly from a local path. Voice messages
 are decoded and displayed when returned by the API, but recording/sending voice
 from the TUI is not implemented yet.
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+GNU Affero General Public License v3.0. See [LICENSE](LICENSE).

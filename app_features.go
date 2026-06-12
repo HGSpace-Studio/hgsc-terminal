@@ -1115,7 +1115,7 @@ func (a *App) downloadImageLink(link string) (string, error) {
 			return "", err
 		}
 	}
-	targetDir := filepath.Join(dir, "CsAC-Terminal")
+	targetDir := filepath.Join(dir, "HGSC")
 	if err := os.MkdirAll(targetDir, 0700); err != nil {
 		return "", err
 	}

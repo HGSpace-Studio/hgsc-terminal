@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "ink.jjmm.csacflutter" "\0"
-            VALUE "FileDescription", "csac" "\0"
+            VALUE "CompanyName", "HGSpace Studio" "\0"
+            VALUE "FileDescription", "hgsc" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "csac" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 ink.jjmm.csacflutter. All rights reserved." "\0"
-            VALUE "OriginalFilename", "csac.exe" "\0"
-            VALUE "ProductName", "csac" "\0"
+            VALUE "InternalName", "hgsc" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 HGSpace Studio. All rights reserved." "\0"
+            VALUE "OriginalFilename", "hgsc.exe" "\0"
+            VALUE "ProductName", "hgsc" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

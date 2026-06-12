@@ -43,8 +43,8 @@ class CsacLocalNotificationService {
       requestSoundPermission: false,
     );
     const windows = WindowsInitializationSettings(
-      appName: 'CsAC',
-      appUserModelId: 'ink.jjmm.csacflutter.csac',
+      appName: '哈小信',
+      appUserModelId: 'work.happygray.hgsc.app',
       guid: 'a6201f5f-6117-493c-b0a0-1cc73276e2a7',
     );
     const settings = InitializationSettings(
@@ -59,7 +59,7 @@ class CsacLocalNotificationService {
       );
       _initialized = true;
     } catch (err, stackTrace) {
-      debugPrint('CsAC local notification init failed: $err');
+      debugPrint('HGSC local notification init failed: $err');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
@@ -111,7 +111,7 @@ class CsacLocalNotificationService {
       }
       final countText = newCount > 99 ? '99+' : '$newCount';
       final notificationTitle = (title ?? '').trim().isEmpty
-          ? 'CsAC'
+          ? '哈小信'
           : (title ?? '').trim();
       final notificationBody = (body ?? '').trim().isEmpty
           ? '$countText new message${newCount == 1 ? '' : 's'}'
@@ -124,21 +124,21 @@ class CsacLocalNotificationService {
         payload: _payloadFor(conversation),
       );
     } catch (err, stackTrace) {
-      debugPrint('CsAC local notification show failed: $err');
+      debugPrint('HGSC local notification show failed: $err');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
 
   NotificationDetails _notificationDetails(Conversation conversation) {
     final android = AndroidNotificationDetails(
-      'csac_messages',
-      'CsAC messages',
-      channelDescription: 'Message notifications from CsAC',
+      'hgsc_messages',
+      'HGSC messages',
+      channelDescription: 'Message notifications from HGSC',
       importance: Importance.high,
       priority: Priority.high,
       category: AndroidNotificationCategory.message,
       channelShowBadge: true,
-      groupKey: 'csac_messages',
+      groupKey: 'hgsc_messages',
       ticker: conversation.name,
     );
     const ios = DarwinNotificationDetails(

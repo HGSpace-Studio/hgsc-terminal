@@ -1054,7 +1054,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
       appBar: widget.embedded
           ? null
           : AppBar(
-              title: const Text('CsAC'),
+              title: const Text('哈小信'),
               actions: [
                 PopupMenuButton<String>(
                   tooltip: strings.text('More'),

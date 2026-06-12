@@ -1,6 +1,6 @@
 name = "echo"
 version = "0.2.0"
-author = "CsAC Team"
+author = "HGSpace Studio"
 description = "复读文本和代发群消息命令。"
 entry = "main.py"
 permissions = ["send_message", "logging"]

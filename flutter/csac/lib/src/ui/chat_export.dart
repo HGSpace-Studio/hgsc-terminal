@@ -186,7 +186,7 @@ extension _ChatExport on _ChatScreenState {
       throw StateError(noMessagesText);
     }
     final baseName =
-        'csac_${widget.conversation.type.name}_${widget.conversation.id}_'
+        'hgsc_${widget.conversation.type.name}_${widget.conversation.id}_'
         '${_exportTimestamp()}';
     final extension = switch (options.format) {
       ChatExportFormat.txt => 'txt',
@@ -294,7 +294,7 @@ extension _ChatExport on _ChatScreenState {
     Map<int, List<_ChatExportMediaRef>> mediaRefs,
   ) {
     final buffer = StringBuffer()
-      ..writeln('CsAC chat export')
+      ..writeln('HGSC chat export')
       ..writeln('Conversation: ${widget.conversation.name}')
       ..writeln('Type: ${widget.conversation.type.name}')
       ..writeln('ID: ${widget.conversation.id}')
@@ -351,7 +351,7 @@ extension _ChatExport on _ChatScreenState {
       ..writeln(
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
       )
-      ..writeln('<title>$title - CsAC export</title>')
+      ..writeln('<title>$title - HGSC export</title>')
       ..writeln('<style>')
       ..writeln(
         'body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:24px;background:#f6f7f9;color:#1b1c1f;}',
@@ -369,7 +369,7 @@ extension _ChatExport on _ChatScreenState {
       ..writeln('</head><body><main>')
       ..writeln('<h1>$title</h1>')
       ..writeln(
-        '<p>CsAC chat export · ${htmlEscape.convert(formatLocalDateTime(DateTime.now()))}</p>',
+        '<p>HGSC chat export · ${htmlEscape.convert(formatLocalDateTime(DateTime.now()))}</p>',
       );
     for (final message in allMessages) {
       buffer
@@ -424,7 +424,7 @@ extension _ChatExport on _ChatScreenState {
     Map<int, List<_ChatExportMediaRef>> mediaRefs,
   ) {
     return const JsonEncoder.withIndent('  ').convert(<String, Object?>{
-      'app': 'CsAC',
+      'app': 'HGSC',
       'exported_at': formatLocalDateTime(DateTime.now()),
       'conversation': <String, Object?>{
         'type': widget.conversation.type.name,

@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>CsAC</string>
+	<string>哈小信</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>csac</string>
+	<string>hgsc</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -25,11 +25,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>CsAC needs microphone access to record and send voice messages.</string>
+	<string>哈小信 needs microphone access to record and send voice messages.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>CsAC needs camera access to take and send chat photos.</string>
+	<string>哈小信 needs camera access to take and send chat photos.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>CsAC uses Face ID to unlock local chat history.</string>
+	<string>哈小信 uses Face ID to unlock local chat history.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

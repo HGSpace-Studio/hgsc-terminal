@@ -1,4 +1,4 @@
-# CsAC Bot 开发者文档
+# HGSC Bot 开发者文档
 
 这里记录 Python bot 框架的架构、配置、插件写法和插件 API。示例项目在 `bot/example`，可以作为一个完整项目直接复制改造。
 

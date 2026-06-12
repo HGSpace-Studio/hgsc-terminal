@@ -62,7 +62,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     });
     try {
       final ok = await auth.authenticate(
-        localizedReason: context.strings.text('Unlock CsAC to view chats'),
+        localizedReason: context.strings.text('Unlock HGSC to view chats'),
         persistAcrossBackgrounding: true,
         sensitiveTransaction: false,
       );

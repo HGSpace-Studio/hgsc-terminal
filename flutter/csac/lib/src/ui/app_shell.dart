@@ -1,96 +1,5 @@
 part of '../../main.dart';
 
-Future<void> showVersionUpdateDialog(
-  BuildContext context,
-  VersionUpdateInfo result,
-) async {
-  final strings = context.strings;
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) {
-      return AlertDialog(
-        title: Text(strings.text('New version available')),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  strings.format('Current version: {version}', {
-                    'version': result.displayCurrentVersion,
-                  }),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  strings.format('Latest version: {version}', {
-                    'version': result.displayLatestVersion,
-                  }),
-                ),
-                if (result.publishedAt != null) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    strings.format('Published at: {time}', {
-                      'time': formatLocalDateTime(
-                        result.publishedAt!.toLocal(),
-                      ),
-                    }),
-                  ),
-                ],
-                if (result.releaseNotes.trim().isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    strings.text('Release notes'),
-                    style: Theme.of(dialogContext).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 6),
-                  SelectableText(result.releaseNotes.trim()),
-                ],
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(strings.text('Cancel')),
-          ),
-          FilledButton.icon(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              unawaited(openVersionUpdateRelease(context, result));
-            },
-            icon: const Icon(Icons.open_in_new),
-            label: Text(strings.text('Open release')),
-          ),
-        ],
-      );
-    },
-  );
-}
-
-Future<void> openVersionUpdateRelease(
-  BuildContext context,
-  VersionUpdateInfo result,
-) async {
-  final url = result.releaseUrl.trim().isEmpty
-      ? 'https://github.com/Leonmmcoset/csac-terminal/releases/latest'
-      : result.releaseUrl.trim();
-  final opened = await launchUrl(
-    Uri.parse(url),
-    mode: LaunchMode.externalApplication,
-  );
-  if (!opened && context.mounted) {
-    await Clipboard.setData(ClipboardData(text: url));
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.strings.text('Release link copied.'))),
-      );
-    }
-  }
-}
-
 class CsacMobileApp extends StatefulWidget {
   const CsacMobileApp({
     super.key,
@@ -106,10 +15,9 @@ class CsacMobileApp extends StatefulWidget {
 class _CsacMobileAppState extends State<CsacMobileApp>
     with WidgetsBindingObserver {
   late final CsacAppState state;
-  final updateChecker = VersionUpdateChecker();
   final localNotifications = CsacLocalNotificationService.instance;
   final backgroundRefreshChannel = const MethodChannel(
-    'ink.jjmm.csacflutter/background_refresh',
+    'work.happygray.hgsc/background_refresh',
   );
   final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   final navigatorKey = GlobalKey<NavigatorState>();
@@ -119,7 +27,6 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   bool appLockSessionUnlocked = false;
   bool appLockStateSeen = false;
   bool lastCanUseAppLock = false;
-  bool startupUpdateCheckStarted = false;
   bool localNotificationPermissionPrimed = false;
   int appLockUserId = 0;
 
@@ -144,9 +51,6 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     unawaited(state.initialize());
     unawaited(localNotifications.initialize());
     notificationTapSub = localNotifications.taps.listen(openNotificationChat);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      maybeCheckForUpdatesOnStartup();
-    });
   }
 
   @override
@@ -155,7 +59,6 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     WidgetsBinding.instance.removeObserver(this);
     backgroundRefreshChannel.setMethodCallHandler(null);
     notificationTapSub?.cancel();
-    updateChecker.close();
     super.dispose();
   }
 
@@ -329,7 +232,6 @@ class _CsacMobileAppState extends State<CsacMobileApp>
   }
 
   void handleStateChanged() {
-    maybeCheckForUpdatesOnStartup();
     maybePrimeLocalNotificationPermission();
     final userId = state.user?.uid ?? 0;
     if (userId != appLockUserId) {
@@ -367,71 +269,6 @@ class _CsacMobileAppState extends State<CsacMobileApp>
     }
     localNotificationPermissionPrimed = true;
     unawaited(localNotifications.ensurePermissions());
-  }
-
-  void maybeCheckForUpdatesOnStartup() {
-    if (startupUpdateCheckStarted ||
-        !supportsVersionUpdateChecks ||
-        state.bootstrapping ||
-        !state.preferences.autoCheckVersionUpdates) {
-      return;
-    }
-    startupUpdateCheckStarted = true;
-    unawaited(checkForUpdatesSilently());
-  }
-
-  Future<void> checkForUpdatesSilently() async {
-    try {
-      final packageInfo = await PackageInfo.fromPlatform();
-      final result = await updateChecker.check(
-        currentVersion: '${packageInfo.version}+${packageInfo.buildNumber}'
-            .trim(),
-      );
-      if (!mounted || !result.hasUpdate) {
-        return;
-      }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
-          return;
-        }
-        final strings = CsacStrings(
-          localeForLanguage(state.preferences.language),
-        );
-        final messenger = scaffoldMessengerKey.currentState;
-        messenger?.showSnackBar(
-          SnackBar(
-            content: Text(
-              strings.format('New version available: {version}', {
-                'version': result.displayLatestVersion,
-              }),
-            ),
-            action: SnackBarAction(
-              label: strings.text('View'),
-              onPressed: () => unawaited(showStartupUpdateDialog(result)),
-            ),
-          ),
-        );
-      });
-    } catch (err, stackTrace) {
-      logUpdateCheckFailure(err, stackTrace);
-      // Startup update checks are intentionally silent on network/API failure.
-    }
-  }
-
-  Future<void> showStartupUpdateDialog(VersionUpdateInfo result) async {
-    final context = navigatorKey.currentContext;
-    if (context == null || !context.mounted) {
-      return;
-    }
-    await showVersionUpdateDialog(context, result);
-  }
-
-  void logUpdateCheckFailure(Object error, StackTrace stackTrace) {
-    if (!kDebugMode) {
-      return;
-    }
-    debugPrint('CsAC GitHub update check failed: $error');
-    debugPrintStack(stackTrace: stackTrace);
   }
 
   bool canUseAppLock() {

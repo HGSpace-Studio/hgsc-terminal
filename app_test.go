@@ -20,7 +20,7 @@ func TestMergeMessagesDeduplicatesByID(t *testing.T) {
 }
 
 func TestNormalizeAPIURL(t *testing.T) {
-	if got := normalizeAPIURL("upload/a.png"); got != "https://103.40.14.14:14660/upload/a.png" {
+	if got := normalizeAPIURL("upload/a.png"); got != "http://hgsc.happygray.work/upload/a.png" {
 		t.Fatalf("normalize relative URL = %q", got)
 	}
 	if got := normalizeAPIURL("https://example.com/a.png"); got != "https://example.com/a.png" {

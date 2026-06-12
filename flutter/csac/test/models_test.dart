@@ -1,8 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:csac/src/api_client.dart';
-import 'package:csac/src/models.dart';
-import 'package:csac/src/update_checker.dart';
+import 'package:hgsc/src/api_client.dart';
+import 'package:hgsc/src/models.dart';
 
 void main() {
   test('message accepts numeric zero timestamps', () {
@@ -65,6 +64,7 @@ void main() {
   });
 
   test('server URL accepts bare host and host with port', () {
+    expect(CsacApiClient.defaultBaseUrl, 'http://hgsc.happygray.work/rpc/UniCsAC.php');
     expect(
       CsacApiClient.normalizeServerUrl('192.168.1.10'),
       'http://192.168.1.10/rpc/UniCsAC.php',
@@ -86,28 +86,4 @@ void main() {
     configureApiAssetBaseUrl(CsacApiClient.defaultBaseUrl);
   });
 
-  test('release version tags match app versions', () {
-    expect(
-      VersionUpdateChecker.versionMatches('1.2.5+46', 'v1.2.5-46'),
-      isTrue,
-    );
-    expect(
-      VersionUpdateChecker.versionMatches('1.2.5+46', 'refs/tags/v1.2.5-46'),
-      isTrue,
-    );
-    expect(VersionUpdateChecker.versionMatches('1.2.5', 'v1.2.5'), isTrue);
-    expect(
-      VersionUpdateChecker.versionMatches('1.2.5+46', 'v1.2.6-1'),
-      isFalse,
-    );
-  });
-
-  test('release version display normalizes action tags', () {
-    expect(VersionUpdateChecker.displayVersion('v1.2.5-46'), '1.2.5+46');
-    expect(
-      VersionUpdateChecker.displayVersion('refs/tags/v1.2.5-46'),
-      '1.2.5+46',
-    );
-    expect(VersionUpdateChecker.displayVersion('1.2.5+46'), '1.2.5+46');
-  });
 }

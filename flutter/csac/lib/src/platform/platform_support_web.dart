@@ -9,7 +9,6 @@ bool get isDesktopPlatform => false;
 
 bool get isMobilePlatform => false;
 
-bool get supportsVersionUpdateChecks => false;
 
 bool get supportsLocalFiles => false;
 

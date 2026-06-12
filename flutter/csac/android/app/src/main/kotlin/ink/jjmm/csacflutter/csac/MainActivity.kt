@@ -1,4 +1,4 @@
-package ink.jjmm.csacflutter.csac
+package work.happygray.hgsc.app
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

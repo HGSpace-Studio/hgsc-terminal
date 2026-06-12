@@ -56,7 +56,6 @@ import 'src/platform/chat_export_writer.dart';
 import 'src/platform/platform_support.dart';
 import 'src/platform/windows_tray.dart';
 import 'src/preferences.dart';
-import 'src/update_checker.dart';
 
 part 'src/ui/app_shell.dart';
 part 'src/ui/home.dart';

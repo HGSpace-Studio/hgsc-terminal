@@ -117,7 +117,7 @@ func (a *App) showSplash(message string) {
 	panel := tview.NewTextView()
 	panel.SetDynamicColors(true)
 	panel.SetTextAlign(tview.AlignCenter)
-	panel.SetText("\n[::b]CsAC-Terminal[::-]\n\n" + tview.Escape(message))
+	panel.SetText("\n[::b]哈小信[::-]\n\n" + tview.Escape(message))
 	panel.SetBorder(true).SetTitle(" " + translate(a.lang, "app.starting") + " ")
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
@@ -363,7 +363,7 @@ func (a *App) headerText(title string) string {
 	if a.user != nil {
 		user = fmt.Sprintf("%s / UID %d", tview.Escape(a.user.Nickname), a.user.UID)
 	}
-	return fmt.Sprintf("[::b]CsAC-Terminal[::-]  [gray]%s[-]  [teal]%s[-]", title, user)
+	return fmt.Sprintf("[::b]哈小信[::-]  [gray]%s[-]  [teal]%s[-]", title, user)
 }
 
 func (a *App) setLanguage(lang Language) {

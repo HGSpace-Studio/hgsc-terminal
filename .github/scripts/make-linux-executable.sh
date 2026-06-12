@@ -8,7 +8,7 @@ fi
 
 bundle_dir=$1
 output_file=$2
-app_name=${APP_NAME:-csac}
+app_name=${APP_NAME:-hgsc}
 
 if [[ ! -x "$bundle_dir/$app_name" ]]; then
   echo "Missing executable: $bundle_dir/$app_name" >&2
@@ -21,7 +21,7 @@ cat > "$output_file" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
 
-app_name="csac"
+app_name="hgsc"
 marker="__CSAC_SELF_EXTRACTING_PAYLOAD_BELOW__"
 self_path=$(readlink -f "$0")
 payload_line=$(awk -v marker="$marker" '$0 == marker {print NR + 1; exit 0;}' "$self_path")
@@ -31,7 +31,7 @@ if [[ -z "${payload_line:-}" ]]; then
   exit 1
 fi
 
-cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/csac"
+cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/hgsc"
 payload_hash=$(sha256sum "$self_path" | awk '{print $1}')
 run_dir="$cache_root/self-contained/$payload_hash"
 app_path="$run_dir/bundle/$app_name"
