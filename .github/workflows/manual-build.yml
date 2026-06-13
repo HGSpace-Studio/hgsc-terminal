@@ -14,6 +14,7 @@ on:
           - windows-installer
           - linux-executable
           - linux-appimage
+          - macos
           - android-apk
           - ios
           - ios-unsigned-ipa
@@ -207,6 +208,70 @@ jobs:
         with:
           name: ${{ env.APP_NAME }}-linux
           path: flutter/csac/build/linux/x64/release/bundle
+
+  macos:
+    name: macOS
+    if: ${{ github.event.inputs.artifact == 'all' || github.event.inputs.artifact == 'macos' }}
+    runs-on: macos-latest
+
+    defaults:
+      run:
+        working-directory: flutter/csac
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Check Flutter
+        run: flutter --version
+
+      - name: Enable macOS desktop
+        run: flutter config --enable-macos-desktop
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Read app version
+        run: |
+          version=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          echo "APP_BUILD_NAME=${version%%+*}" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=${version##*+}" >> "$GITHUB_ENV"
+
+      - name: Build macOS release
+        env:
+          FLUTTER_XCODE_ARCHS: arm64 x86_64
+          FLUTTER_XCODE_CODE_SIGNING_ALLOWED: NO
+          FLUTTER_XCODE_CODE_SIGNING_REQUIRED: NO
+          FLUTTER_XCODE_CODE_SIGN_IDENTITY: ""
+          FLUTTER_XCODE_ONLY_ACTIVE_ARCH: NO
+        run: flutter build macos --release --build-name "$APP_BUILD_NAME" --build-number "$APP_BUILD_NUMBER"
+
+      - name: Package macOS app
+        run: |
+          mkdir -p build/macos/package
+
+          app_path="build/macos/Build/Products/Release/${APP_NAME}.app"
+          if [[ ! -d "$app_path" ]]; then
+            echo "::error::macOS app bundle was not found at $app_path"
+            exit 1
+          fi
+
+          lipo -info "$app_path/Contents/MacOS/${APP_NAME}"
+
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$app_path" \
+            "build/macos/package/${APP_NAME}-macos.zip"
+
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-macos
+          path: flutter/csac/build/macos/package/${{ env.APP_NAME }}-macos.zip
 
   android:
     name: Android
@@ -436,6 +501,7 @@ jobs:
     needs:
       - windows
       - linux
+      - macos
       - android
       - ios
       - web
@@ -486,6 +552,12 @@ jobs:
               cd "release-assets/${APP_NAME}-linux"
               tar -czf "../../release-upload/${APP_NAME}-${version}-linux-x64.tar.gz" .
             )
+          fi
+
+          if [[ -f release-assets/${APP_NAME}-macos/${APP_NAME}-macos.zip ]]; then
+            cp \
+              "release-assets/${APP_NAME}-macos/${APP_NAME}-macos.zip" \
+              "release-upload/${APP_NAME}-${version}-macos-universal.zip"
           fi
 
           if [[ -f release-assets/${APP_NAME}-android/app-release.apk ]]; then
